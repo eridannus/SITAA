@@ -10,14 +10,18 @@ Los procesos suelen depender de formularios aislados, hojas de cálculo y eviden
 
 ## Objetivo
 
-Centralizar el ciclo operativo de tutorías y asesorías, desde la planeación hasta el reporte, con registros configurables, trazabilidad, acceso por rol y controles de privacidad.
+Centralizar el ciclo operativo de tutorías y asesorías, desde la planeación hasta el reporte, con registros configurables, trazabilidad y acceso determinado por asignaciones de rol temporales, alcance institucional y área de servicio.
 
 ## Usuarios principales
 
-- Estudiantes que consultan actividades, registran asistencia y responden encuestas.
-- Tutores o asesores que planean y documentan sesiones.
-- Coordinadores que administran periodos, supervisan operación y generan reportes.
-- Administradores que configuran catálogos, usuarios, roles y parámetros institucionales.
+- Alumnos y alumnos tutores pares, cuyas responsabilidades pueden cambiar entre periodos.
+- Profesores tutores o asesores que planean y documentan actividades asignadas.
+- Responsables de tutorías o asesorías de carrera que coordinan su programa y configuran formularios de su área.
+- Enlaces y jefaturas que supervisan programas o divisiones dentro de su alcance.
+- Secretarios técnicos con acceso exclusivamente logístico.
+- Administradores técnicos responsables de configuración, sin acceso académico sensible implícito.
+
+Una persona puede tener varias asignaciones activas o históricas. Los permisos no forman parte fija del perfil: dependen del rol asignado, su vigencia, alcance (`own`, `program`, `division`, `system`) y área de servicio (`tutoring`, `advising`, `both`, `logistics`, `technical`).
 
 ## Capacidades previstas
 
@@ -25,7 +29,7 @@ Centralizar el ciclo operativo de tutorías y asesorías, desde la planeación h
 - Registro configurable de sesiones de tutoría o asesoría.
 - Asistencia mediante código QR.
 - Encuestas de satisfacción.
-- Paneles según rol.
+- Paneles según asignaciones y alcance.
 - Exportación CSV y reportes institucionales básicos.
 - Formularios configurables en una fase posterior.
 
@@ -40,6 +44,7 @@ Centralizar el ciclo operativo de tutorías y asesorías, desde la planeación h
 ## Principios
 
 - Seguridad y privacidad desde el diseño.
+- Mínimo privilegio según vigencia, alcance y área de servicio.
 - Configuración institucional sin sacrificar integridad de datos.
 - Experiencia sencilla en móvil para asistencia y encuestas.
 - Alcance compatible con los límites de los planes gratuitos.
@@ -49,6 +54,7 @@ Centralizar el ciclo operativo de tutorías y asesorías, desde la planeación h
 
 - Una sesión puede planearse, realizarse y cerrarse sin recurrir a archivos externos.
 - La asistencia queda asociada a estudiante, sesión, hora y método de registro.
-- Cada rol solo accede a los datos necesarios para su función.
-- Coordinación puede exportar resultados de un periodo en CSV.
+- Cada usuario accede solo a lo permitido por sus asignaciones vigentes.
+- El vencimiento de una asignación elimina sus permisos sin borrar su historial.
+- Coordinación puede exportar resultados dentro de su alcance autorizado.
 - Los indicadores básicos coinciden con los registros fuente.
