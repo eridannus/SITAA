@@ -28,7 +28,19 @@ npm run start  # Inicia la compilación de producción
 
 - `/`: página principal.
 - `/health`: comprobación básica del servicio; muestra `SITAA OK`.
+- `/supabase-test`: verifica la configuración y consulta `public.system_health`.
+
+## Configuración de Supabase
+
+Copia `.env.example` como `.env.local` y completa las variables públicas del proyecto:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_clave_anon_publica
+```
+
+La clave `anon` es pública y está sujeta a las políticas RLS. No agregues claves `service_role` ni secretos al repositorio.
 
 ## Alcance actual
 
-Esta etapa incluye únicamente la base visual y técnica de Next.js. Todavía no configura Supabase, autenticación ni tablas de base de datos. La definición del producto se encuentra en `docs/`.
+Esta etapa incluye la base visual y técnica de Next.js y una prueba de conexión pública con Supabase. Todavía no implementa autenticación ni tablas de dominio. La definición del producto se encuentra en `docs/`.
