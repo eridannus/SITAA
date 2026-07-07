@@ -30,12 +30,18 @@ export default function RootLayout({
                   <span className="hidden text-xs text-slate-500 sm:block">Tutorías y asesorías académicas</span>
                 </span>
               </Link>
-              <nav aria-label="Navegación principal">
+              <nav className="flex items-center gap-2" aria-label="Navegación principal">
                 <Link
                   href="/health"
-                  className="rounded-full border border-emerald-900/15 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:border-emerald-800 hover:bg-emerald-50"
+                  className="hidden rounded-full border border-emerald-900/15 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:border-emerald-800 hover:bg-emerald-50 sm:block"
                 >
                   Estado del sistema
+                </Link>
+                <Link
+                  href="/login"
+                  className="rounded-full bg-emerald-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-900"
+                >
+                  Iniciar sesión
                 </Link>
               </nav>
             </div>

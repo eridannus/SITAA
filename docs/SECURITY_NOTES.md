@@ -9,6 +9,8 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 ### Identidad y sesión
 
 - Usar Supabase Auth y exigir correo institucional cuando sea viable.
+- Mantener deshabilitado el registro público; las cuentas iniciales se crean mediante un proceso administrativo.
+- Gestionar la sesión con clientes SSR y cookies seguras; validar al usuario en el servidor antes de servir rutas protegidas.
 - Configurar redirecciones autorizadas y cookies seguras.
 - No revelar si un correo está registrado mediante mensajes de error diferenciados.
 - Revocar acceso al desactivar perfiles o vencer asignaciones.

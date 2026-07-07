@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { createSupabaseClient } from "@/lib/supabase/client";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "Prueba de Supabase",
@@ -21,7 +21,7 @@ async function getConnectionStatus(): Promise<ConnectionStatus> {
   }
 
   try {
-    const supabase = createSupabaseClient();
+    const supabase = await createSupabaseServerClient();
     const { error } = await supabase
       .schema("public")
       .from("system_health")
