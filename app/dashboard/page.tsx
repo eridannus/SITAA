@@ -25,8 +25,11 @@ const serviceAreaLabels: Record<ServiceArea, string> = {
   technical: "Técnica",
 };
 
-function getRoleLabel(role: { label?: string | null; name?: string | null; code: string } | null) {
-  return role?.label?.trim() || role?.name?.trim() || role?.code || "Rol sin etiqueta";
+function getRoleLabel(
+  role: { label?: string | null; name?: string | null; code: string } | null,
+  roleCode: string,
+) {
+  return role?.label?.trim() || role?.name?.trim() || roleCode;
 }
 
 function LogoutButton() {
@@ -137,7 +140,7 @@ export default async function DashboardPage() {
             {activeRoleAssignments.map((assignment) => (
               <article key={assignment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
                 <h3 className="text-lg font-bold text-slate-900">
-                  {getRoleLabel(assignment.role)}
+                  {getRoleLabel(assignment.role, assignment.role_code)}
                 </h3>
                 <dl className="mt-5 space-y-3 text-sm">
                   <div className="flex items-start justify-between gap-4">

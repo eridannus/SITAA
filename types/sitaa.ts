@@ -52,7 +52,7 @@ export interface Profile {
 export interface RoleAssignment {
   id: string;
   user_id: string;
-  role_id: string;
+  role_code: string;
   scope_type: AssignmentScope;
   service_area: ServiceArea;
   division_id: string | null;

@@ -101,15 +101,15 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
   const assignments = (assignmentData as RoleAssignment[]).filter((assignment) =>
     isAssignmentActive(assignment, new Date()),
   );
-  const roleIds = uniqueIds(assignments.map((assignment) => assignment.role_id));
+  const roleCodes = uniqueIds(assignments.map((assignment) => assignment.role_code));
   const programIds = uniqueIds([
     profile.primary_program_id,
     ...assignments.map((assignment) => assignment.program_id),
   ]);
 
   const [rolesResult, programsResult] = await Promise.all([
-    roleIds.length
-      ? supabase.from("roles").select("*").in("id", roleIds)
+    roleCodes.length
+      ? supabase.from("roles").select("*").in("code", roleCodes)
       : Promise.resolve({ data: [] as Role[], error: null }),
     programIds.length
       ? supabase.from("academic_programs").select("*").in("id", programIds)
@@ -147,7 +147,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
   }
 
   const divisions = divisionsResult.data as Division[];
-  const roleById = new Map(roles.map((role) => [role.id, role]));
+  const roleByCode = new Map(roles.map((role) => [role.code, role]));
   const programById = new Map(programs.map((program) => [program.id, program]));
   const divisionById = new Map(divisions.map((division) => [division.id, division]));
   const activeRoleAssignments = assignments.map((assignment) => {
@@ -158,7 +158,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
 
     return {
       ...assignment,
-      role: roleById.get(assignment.role_id) ?? null,
+      role: roleByCode.get(assignment.role_code) ?? null,
       program,
       division: divisionId ? (divisionById.get(divisionId) ?? null) : null,
     };

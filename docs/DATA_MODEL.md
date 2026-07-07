@@ -8,9 +8,9 @@ La integración actual utiliza cinco tablas públicas. Supabase Auth conserva la
 | --- | --- | --- |
 | `divisions` | Divisiones académicas | `id`, `code`, `name`, `is_active` |
 | `academic_programs` | Carreras o programas | `id`, `division_id`, `code`, `name`, `is_active` |
-| `roles` | Catálogo estable de roles | `id`, `code`, `name`, `description`, `is_active` |
+| `roles` | Catálogo estable de roles | `id`, `code`, `label`, `description`, `is_active` |
 | `profiles` | Perfil institucional vinculado a Auth | `id`, `full_name`, `student_number`, `employee_number`, `institutional_email`, `primary_program_id`, `status` |
-| `role_assignments` | Asignaciones múltiples, vigentes o históricas | `id`, `user_id`, `role_id`, `scope_type`, `service_area`, `division_id`, `program_id`, `starts_at`, `ends_at`, `status`, `is_active` |
+| `role_assignments` | Asignaciones múltiples, vigentes o históricas | `id`, `user_id`, `role_code`, `scope_type`, `service_area`, `division_id`, `program_id`, `starts_at`, `ends_at`, `status`, `is_active` |
 
 Los campos de auditoría `created_at` y `updated_at` pueden estar presentes en todas las tablas. `profiles.id` corresponde al identificador del usuario de Supabase Auth.
 
@@ -33,7 +33,7 @@ Para alcance `program` se requiere `program_id`; para `division`, `division_id`.
 - Una división contiene muchos programas.
 - Un perfil puede señalar un programa académico principal.
 - Un usuario puede tener cero o más asignaciones de rol activas o históricas.
-- Cada asignación referencia un rol y puede acotarse a un programa o división.
+- Cada asignación referencia `roles.code` mediante `role_code` y puede acotarse a un programa o división.
 - El dashboard consulta únicamente el perfil y las asignaciones del usuario autenticado; RLS debe aplicar el mismo límite.
 
 ## Reglas de integridad
