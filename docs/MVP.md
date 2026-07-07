@@ -9,7 +9,10 @@ Validar un flujo completo para un periodo académico: configuración, planeació
 ### Configuración institucional
 
 - Inicio de sesión con Supabase Auth.
-- Perfiles con número de cuenta de alumno o número de trabajador, programa y semestre cuando aplique.
+- Perfiles de identidad estable con nombres, apellidos, correo, tipo de persona, identificador institucional y programa principal cuando aplique.
+- Flujos diferenciados de registro o activación: alumnos con número de cuenta; trabajadores/profesores con número de trabajador.
+- Asignación inicial de alumno automatizable; roles de trabajadores y profesores sujetos a autorización.
+- El semestre no forma parte del perfil y solo se captura en contexto de actividad o formularios si existe acuerdo institucional.
 - Asignaciones múltiples de rol con vigencia, alcance y área de servicio.
 - Catálogos mínimos: periodos, divisiones, programas, grupos, categorías y tipos de servicio.
 

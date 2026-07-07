@@ -23,6 +23,13 @@ Cada asignación incluye usuario, rol, vigencia, alcance (`own`, `program`, `div
 
 Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al vencer la segunda asignación, mantiene solo sus permisos de alumno.
 
+## Identidad frente a autorización
+
+- `student` y `worker` son tipos de persona; no sustituyen las asignaciones de rol.
+- El alumno se identifica con número de cuenta y puede recibir o perder `peer_tutor` sin modificar su identidad base.
+- El trabajador se identifica con número de trabajador y puede recibir `professor`, responsabilidades de coordinación, jefatura, secretaría técnica u otras asignaciones autorizadas.
+- El programa principal describe afiliación y no concede permisos por sí mismo.
+
 ## Editores de formularios
 
 - `program_tutoring_lead` edita formularios de tutorías en su programa.

@@ -23,6 +23,17 @@ Centralizar el ciclo operativo, desde la planeación hasta el reporte, mediante 
 
 Una persona puede tener varias asignaciones activas o históricas. Los permisos dependen del rol, vigencia, alcance (`own`, `program`, `division`, `system`) y área de servicio (`tutoring`, `advising`, `both`, `logistics`, `technical`).
 
+## Identidad y registro
+
+El perfil conserva nombres, apellidos, correo, tipo de persona, identificador institucional y programa principal cuando aplique. No conserva un rol ni semestre actual.
+
+SITAA deberá ofrecer flujos diferenciados:
+
+- **Alumno:** nombres, apellidos, programa, correo y número de cuenta.
+- **Trabajador o profesor:** nombres, apellidos, programa o afiliación, correo y número de trabajador.
+
+La asignación inicial `student` puede automatizarse tras las validaciones institucionales. Los roles de trabajadores y profesores requieren autorización según su responsabilidad.
+
 ## Alcance funcional
 
 - Planeación semestral y registro de actividades.

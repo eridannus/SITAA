@@ -20,6 +20,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-006 | Roles mediante asignaciones múltiples y acotadas | Aceptada |
 | DEC-007 | Evidencia interna y participantes registrados | Aceptada |
 | DEC-008 | Catálogos operativos controlados | Aceptada |
+| DEC-009 | Perfil de identidad estable | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -88,6 +89,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** utilizar catálogos activos para periodos académicos, tipos de actividad y servicio, categorías de atención, modalidades, estados, ubicaciones y roles de participante antes de implementar actividades.
 
 **Consecuencias:** la operación referencia códigos controlados y solo expone valores activos. La primera interfaz es de consulta; la edición y sus permisos se definirán posteriormente.
+
+**Estado:** Aceptada.
+## DEC-009 — Perfil de identidad estable
+
+**Contexto:** el semestre y las responsabilidades institucionales cambian con el tiempo; almacenarlos como atributos actuales del perfil produciría datos ambiguos o sobrescritos.
+
+**Decisión:** `profiles` conserva nombres, apellidos, nombre completo, correo, tipo de persona, tipo y valor de identificador institucional y programa principal opcional. Alumnos usan número de cuenta; trabajadores y profesores, número de trabajador. El semestre se captura únicamente en el contexto de una actividad, participación o formulario cuando se requiera. Los roles permanecen en `role_assignments`.
+
+**Consecuencias:** los flujos de registro de alumnos y trabajadores serán distintos. La asignación inicial de alumno puede automatizarse; los roles de trabajadores y profesores requieren autorización. Cambiar responsabilidades no modifica la identidad base.
 
 **Estado:** Aceptada.
 ## Plantilla para nuevas decisiones
