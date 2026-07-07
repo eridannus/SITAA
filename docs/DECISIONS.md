@@ -23,6 +23,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-009 | Perfil de identidad estable | Aceptada |
 | DEC-010 | Listas de asistencia con identidad institucional | Aceptada |
 | DEC-011 | Programa académico obligatorio | Aceptada |
+| DEC-012 | Actividades como núcleo operativo | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -114,6 +115,13 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** todo perfil registrado o actualizado debe tener `primary_program_id`. El programa se selecciona de `academic_programs` entre los valores disponibles. Solo perfiles bootstrap o de prueba pueden conservar temporalmente `null` mientras completan su configuración.
 
 **Consecuencias:** el formulario impide guardar sin programa y el dashboard advierte cuando falta. El programa es información de afiliación y no concede roles ni permisos por sí mismo.
+
+**Estado:** Aceptada.
+## DEC-012 — Actividades como núcleo operativo
+
+**Decisión:** SITAA modela tutorías, asesorías, tutorías pares, actividades remediales y acompañamientos como `activities`, no únicamente como sesiones. Cada actividad referencia catálogos controlados, un programa, una persona responsable y quien la creó.
+
+**Consecuencias:** participantes, asistencia, QR, formularios y reportes se incorporarán posteriormente alrededor de la actividad. El estado inicial se deriva como `scheduled` cuando existe `starts_at` y `draft` cuando no existe.
 
 **Estado:** Aceptada.
 ## Plantilla para nuevas decisiones

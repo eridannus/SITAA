@@ -1,0 +1,167 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { ActivityListItem } from "@/types/activities";
+
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Actividades",
+};
+
+type ActivitiesPageProps = {
+  searchParams: Promise<{ created?: string | string[] }>;
+};
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Sin fecha programada";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Fecha no disponible";
+  }
+
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function ActivityCard({ activity }: { activity: ActivityListItem }) {
+  return (
+    <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-emerald-700">{activity.activityTypeLabel}</p>
+          <h2 className="mt-2 text-xl font-bold text-slate-900">{activity.title}</h2>
+          {activity.description && (
+            <p className="mt-3 line-clamp-3 leading-7 text-slate-600">{activity.description}</p>
+          )}
+        </div>
+        <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
+          {activity.statusLabel}
+        </span>
+      </div>
+
+      <dl className="mt-6 grid gap-4 border-t border-slate-100 pt-6 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="font-semibold text-slate-500">Fecha</dt>
+          <dd className="mt-1 text-slate-900">{formatDate(activity.starts_at)}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold text-slate-500">Programa</dt>
+          <dd className="mt-1 text-slate-900">{activity.programName}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold text-slate-500">Servicio y modalidad</dt>
+          <dd className="mt-1 text-slate-900">
+            {activity.serviceTypeLabel} · {activity.modalityLabel}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-semibold text-slate-500">Responsable</dt>
+          <dd className="mt-1 text-slate-900">{activity.responsibleName}</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+export default async function ActivitiesPage({ searchParams }: ActivitiesPageProps) {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login?error=sesion-requerida");
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return (
+      <section className="mx-auto max-w-4xl px-5 py-16 sm:px-8">
+        <h1 className="text-3xl font-bold text-slate-900">No fue posible cargar las actividades</h1>
+        <p className="mt-4 text-slate-600">Intenta nuevamente más tarde.</p>
+      </section>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <section className="mx-auto max-w-4xl px-5 py-16 sm:px-8">
+        <div className="rounded-3xl border border-amber-200 bg-white p-8 sm:p-12">
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-700">Activación pendiente</p>
+          <h1 className="mt-3 text-3xl font-bold text-slate-900">Necesitas un perfil activo en SITAA</h1>
+          <p className="mt-4 leading-7 text-slate-600">
+            Tu cuenta existe, pero aún no tiene un perfil institucional habilitado para consultar actividades.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  let activities: ActivityListItem[];
+
+  try {
+    activities = await getVisibleActivities();
+  } catch {
+    return (
+      <section className="mx-auto max-w-4xl px-5 py-16 sm:px-8">
+        <h1 className="text-3xl font-bold text-slate-900">No fue posible cargar las actividades</h1>
+        <p className="mt-4 text-slate-600">Intenta nuevamente más tarde.</p>
+      </section>
+    );
+  }
+
+  const params = await searchParams;
+  const wasCreated = Array.isArray(params.created)
+    ? params.created[0] === "1"
+    : params.created === "1";
+
+  return (
+    <main className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
+      <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">Actividades</h1>
+          <p className="mt-4 max-w-2xl leading-7 text-slate-600">
+            Consulta las actividades que tus permisos actuales te permiten ver.
+          </p>
+        </div>
+        <Link href="/activities/new" className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-900">
+          Nueva actividad
+        </Link>
+      </div>
+
+      {wasCreated && (
+        <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          La actividad se creó correctamente.
+        </div>
+      )}
+
+      {activities.length === 0 ? (
+        <div className="mt-10 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center">
+          <h2 className="text-xl font-bold text-slate-900">Aún no hay actividades visibles</h2>
+          <p className="mt-3 text-slate-600">Crea una actividad o espera a que te asignen acceso a una existente.</p>
+        </div>
+      ) : (
+        <div className="mt-10 grid gap-6 lg:grid-cols-2">
+          {activities.map((activity) => (
+            <ActivityCard key={activity.id} activity={activity} />
+          ))}
+        </div>
+      )}
+    </main>
+  );
+}

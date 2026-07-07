@@ -153,8 +153,20 @@ export default async function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-3">
           <Link
-            href="/profile"
+            href="/activities"
             className="rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+          >
+            Actividades
+          </Link>
+          <Link
+            href="/catalogs"
+            className="rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800"
+          >
+            Catálogos
+          </Link>
+          <Link
+            href="/profile"
+            className="rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800"
           >
             Mi perfil
           </Link>
