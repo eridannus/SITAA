@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
-import type { AssignmentScope, ServiceArea } from "@/types/sitaa";
+import type {
+  AssignmentScope,
+  InstitutionalIdType,
+  PersonType,
+  ServiceArea,
+} from "@/types/sitaa";
 import { logout } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +29,16 @@ const serviceAreaLabels: Record<ServiceArea, string> = {
   both: "Tutorías y asesorías",
   logistics: "Logística",
   technical: "Técnica",
+};
+
+const personTypeLabels: Record<PersonType, string> = {
+  student: "Alumno",
+  worker: "Trabajador",
+};
+
+const institutionalIdTypeLabels: Record<InstitutionalIdType, string> = {
+  student_account: "Número de cuenta",
+  worker_number: "Número de trabajador",
 };
 
 function getRoleLabel(
@@ -111,6 +127,15 @@ export default async function DashboardPage() {
             <div>
               <dt className="font-semibold text-slate-500">Correo</dt>
               <dd className="mt-1 text-base text-slate-900">{user.email}</dd>
+            </div>            <div>
+              <dt className="font-semibold text-slate-500">Tipo de persona</dt>
+              <dd className="mt-1 text-base text-slate-900">{personTypeLabels[profile.person_type]}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-500">
+                {institutionalIdTypeLabels[profile.institutional_id_type]}
+              </dt>
+              <dd className="mt-1 text-base text-slate-900">{profile.institutional_id_value}</dd>
             </div>
             {primaryProgram && (
               <div>
@@ -120,7 +145,15 @@ export default async function DashboardPage() {
             )}
           </dl>
         </div>
-        <LogoutButton />
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/profile"
+            className="rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+          >
+            Mi perfil
+          </Link>
+          <LogoutButton />
+        </div>
       </div>
 
       <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-8 sm:p-10">

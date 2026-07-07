@@ -21,6 +21,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-007 | Evidencia interna y participantes registrados | Aceptada |
 | DEC-008 | Catálogos operativos controlados | Aceptada |
 | DEC-009 | Perfil de identidad estable | Aceptada |
+| DEC-010 | Listas de asistencia con identidad institucional | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -98,6 +99,13 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** `profiles` conserva nombres, apellidos, nombre completo, correo, tipo de persona, tipo y valor de identificador institucional y programa principal opcional. Alumnos usan número de cuenta; trabajadores y profesores, número de trabajador. El semestre se captura únicamente en el contexto de una actividad, participación o formulario cuando se requiera. Los roles permanecen en `role_assignments`.
 
 **Consecuencias:** los flujos de registro de alumnos y trabajadores serán distintos. La asignación inicial de alumno puede automatizarse; los roles de trabajadores y profesores requieren autorización. Cambiar responsabilidades no modifica la identidad base.
+
+**Estado:** Aceptada.
+## DEC-010 — Listas de asistencia con identidad institucional
+
+**Decisión:** las listas de asistencia se generarán exclusivamente a partir de perfiles registrados en SITAA y mostrarán el identificador institucional que corresponda: número de cuenta para alumnos o número de trabajador para personal.
+
+**Consecuencias:** no se usarán nombres libres como participantes válidos. Los cambios de identidad se reflejan desde el perfil, mientras los roles permanecen separados en `role_assignments`.
 
 **Estado:** Aceptada.
 ## Plantilla para nuevas decisiones

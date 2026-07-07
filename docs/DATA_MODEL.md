@@ -32,6 +32,7 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 - `full_name` es la representación normalizada de nombres y apellidos; no sustituye sus campos separados.
 - Los roles y responsabilidades se obtienen exclusivamente de `role_assignments`.
 - El semestre, cuando un comité lo requiera, se captura en el contexto de participación, la actividad o una respuesta de formulario versionada; nunca como atributo actual de `profiles`.
+- La edición propia se limita a nombres, apellidos, tipo de persona, identificador institucional y programa principal; no incluye roles ni estado de activación.
 
 Los catálogos operativos se consultan por `code` y muestran `label` o `name`. Solo los valores con `is_active = true` se presentan en la operación normal. Son datos controlados previos a la implementación de actividades; el visor actual es de solo lectura.
 

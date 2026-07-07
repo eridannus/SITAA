@@ -32,6 +32,7 @@ npm run start  # Inicia la compilación de producción
 - `/login`: inicio de sesión con correo y contraseña.
 - `/dashboard`: panel protegido con perfil institucional y asignaciones de rol activas.
 - `/catalogs`: visor protegido de catálogos operativos activos.
+- `/profile`: edición protegida de identidad institucional básica.
 
 ## Configuración de Supabase
 
@@ -48,8 +49,8 @@ La clave `anon` es pública y está sujeta a las políticas RLS. No agregues cla
 
 El acceso usa Supabase Auth con correo y contraseña mediante cookies SSR. El registro público no está implementado: crea las cuentas autorizadas desde el panel administrativo de Supabase y mantén deshabilitada la opción de permitir nuevos registros en la configuración de Auth.
 
-Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard` o `/catalogs` serán enviados al inicio de sesión.
+Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs` o `/profile` serán enviados al inicio de sesión.
 
 ## Alcance actual
 
-Esta etapa incluye autenticación, perfiles institucionales y consulta de asignaciones de rol múltiples. El dashboard muestra el contexto vigente del usuario, pero todavía no aplica paneles especializados por rol ni implementa sesiones, planeación, asistencia, encuestas o reportes. La definición del producto se encuentra en `docs/`.
+Esta etapa incluye autenticación, edición segura de identidad institucional, perfiles y consulta de asignaciones de rol múltiples. El dashboard muestra el contexto vigente del usuario, pero todavía no aplica paneles especializados por rol ni implementa sesiones, planeación, asistencia, encuestas o reportes. La definición del producto se encuentra en `docs/`.

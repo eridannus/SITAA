@@ -37,14 +37,23 @@ export interface Role {
   updated_at?: string;
 }
 
+export type PersonType = "student" | "worker";
+
+export type InstitutionalIdType = "student_account" | "worker_number";
+
 export interface Profile {
   id: string;
-  full_name: string | null;
-  student_number?: string | null;
-  employee_number?: string | null;
-  institutional_email?: string | null;
+  first_names: string;
+  paternal_surname: string;
+  maternal_surname: string | null;
+  full_name: string;
+  email?: string | null;
+  person_type: PersonType;
+  institutional_id_type: InstitutionalIdType;
+  institutional_id_value: string;
   primary_program_id: string | null;
-  status: string;
+  status?: string;
+  is_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
