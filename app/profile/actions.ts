@@ -38,6 +38,10 @@ export async function updateProfile(formData: FormData) {
   const institutionalIdValue = getText(formData, "institutional_id_value");
   const primaryProgramId = getText(formData, "primary_program_id");
 
+  if (!primaryProgramId) {
+    redirect("/profile?error=programa-requerido");
+  }
+
   if (
     !isValidName(firstNames, true) ||
     !isValidName(paternalSurname, true) ||
@@ -45,22 +49,19 @@ export async function updateProfile(formData: FormData) {
     !validPersonTypes.has(personTypeValue) ||
     !institutionalIdValue ||
     institutionalIdValue.length > 50 ||
-    (primaryProgramId && !uuidPattern.test(primaryProgramId))
+    !uuidPattern.test(primaryProgramId)
   ) {
     redirect("/profile?error=datos-invalidos");
   }
 
-  if (primaryProgramId) {
-    const { data: program, error: programError } = await supabase
-      .from("academic_programs")
-      .select("id")
-      .eq("id", primaryProgramId)
-      .eq("is_active", true)
-      .maybeSingle();
+  const { data: program, error: programError } = await supabase
+    .from("academic_programs")
+    .select("*")
+    .eq("id", primaryProgramId)
+    .maybeSingle();
 
-    if (programError || !program) {
-      redirect("/profile?error=programa-invalido");
-    }
+  if (programError || !program || program.is_active === false) {
+    redirect("/profile?error=programa-invalido");
   }
 
   const institutionalIdType: InstitutionalIdType =
@@ -76,7 +77,7 @@ export async function updateProfile(formData: FormData) {
       person_type: personTypeValue,
       institutional_id_type: institutionalIdType,
       institutional_id_value: institutionalIdValue,
-      primary_program_id: primaryProgramId || null,
+      primary_program_id: primaryProgramId,
     })
     .eq("id", user.id)
     .select("id")

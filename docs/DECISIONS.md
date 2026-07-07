@@ -22,6 +22,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-008 | Catálogos operativos controlados | Aceptada |
 | DEC-009 | Perfil de identidad estable | Aceptada |
 | DEC-010 | Listas de asistencia con identidad institucional | Aceptada |
+| DEC-011 | Programa académico obligatorio | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -96,7 +97,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** el semestre y las responsabilidades institucionales cambian con el tiempo; almacenarlos como atributos actuales del perfil produciría datos ambiguos o sobrescritos.
 
-**Decisión:** `profiles` conserva nombres, apellidos, nombre completo, correo, tipo de persona, tipo y valor de identificador institucional y programa principal opcional. Alumnos usan número de cuenta; trabajadores y profesores, número de trabajador. El semestre se captura únicamente en el contexto de una actividad, participación o formulario cuando se requiera. Los roles permanecen en `role_assignments`.
+**Decisión:** `profiles` conserva nombres, apellidos, nombre completo, correo, tipo de persona, tipo y valor de identificador institucional y programa principal. Alumnos usan número de cuenta; trabajadores y profesores, número de trabajador. El semestre se captura únicamente en el contexto de una actividad, participación o formulario cuando se requiera. Los roles permanecen en `role_assignments`.
 
 **Consecuencias:** los flujos de registro de alumnos y trabajadores serán distintos. La asignación inicial de alumno puede automatizarse; los roles de trabajadores y profesores requieren autorización. Cambiar responsabilidades no modifica la identidad base.
 
@@ -106,6 +107,13 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** las listas de asistencia se generarán exclusivamente a partir de perfiles registrados en SITAA y mostrarán el identificador institucional que corresponda: número de cuenta para alumnos o número de trabajador para personal.
 
 **Consecuencias:** no se usarán nombres libres como participantes válidos. Los cambios de identidad se reflejan desde el perfil, mientras los roles permanecen separados en `role_assignments`.
+
+**Estado:** Aceptada.
+## DEC-011 — Programa académico obligatorio
+
+**Decisión:** todo perfil registrado o actualizado debe tener `primary_program_id`. El programa se selecciona de `academic_programs` entre los valores disponibles. Solo perfiles bootstrap o de prueba pueden conservar temporalmente `null` mientras completan su configuración.
+
+**Consecuencias:** el formulario impide guardar sin programa y el dashboard advierte cuando falta. El programa es información de afiliación y no concede roles ni permisos por sí mismo.
 
 **Estado:** Aceptada.
 ## Plantilla para nuevas decisiones

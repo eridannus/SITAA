@@ -21,7 +21,7 @@ export interface AcademicProgram {
   division_id: string;
   code: string;
   name: string;
-  is_active: boolean;
+  is_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }

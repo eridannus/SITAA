@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 const errorMessages: Record<string, string> = {
   "datos-invalidos": "Revisa los datos capturados e inténtalo nuevamente.",
   "programa-invalido": "El programa seleccionado no está disponible.",
+  "programa-requerido": "Selecciona un programa académico para guardar el perfil.",
   actualizacion: "No fue posible actualizar el perfil. Intenta nuevamente.",
   "perfil-inexistente": "Tu cuenta todavía no tiene un perfil institucional activado.",
 };
@@ -41,7 +42,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
   const [{ data: profileData, error: profileError }, { data: programData, error: programError }] =
     await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
-      supabase.from("academic_programs").select("*").eq("is_active", true),
+      supabase.from("academic_programs").select("*").order("name", { ascending: true }),
     ]);
 
   if (profileError) {
@@ -77,10 +78,11 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
 
   const programs = programError
     ? []
-    : ((programData ?? []) as AcademicProgram[]).sort((left, right) =>
-        left.name.localeCompare(right.name, "es"),
-      );
+    : ((programData ?? []) as AcademicProgram[])
+        .filter((program) => program.is_active !== false)
+        .sort((left, right) => left.name.localeCompare(right.name, "es"));
   const programsUnavailable = Boolean(programError);
+  const programsEmpty = !programsUnavailable && programs.length === 0;
   const params = await searchParams;
   const errorCode = getParam(params.error);
   const successCode = getParam(params.success);
@@ -113,7 +115,12 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         )}
         {programsUnavailable && (
           <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
-            No fue posible cargar los programas académicos. Puedes actualizar los demás datos; el programa actual se conservará.
+            No fue posible cargar los programas académicos. La actualización estará disponible cuando el catálogo pueda consultarse.
+          </div>
+        )}
+        {programsEmpty && (
+          <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+            No hay programas académicos disponibles. Contacta a la persona administradora de SITAA.
           </div>
         )}
 
@@ -148,24 +155,24 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
           </div>
           <div className="sm:col-span-2">
             <label htmlFor="primary_program_id" className="block text-sm font-semibold text-slate-700">Programa académico principal</label>
-            {programsUnavailable ? (
-              <>
-                <input type="hidden" name="primary_program_id" value={profile.primary_program_id ?? ""} />
-                <select id="primary_program_id" disabled className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500">
-                  <option>Programas no disponibles</option>
-                </select>
-              </>
+            {programsUnavailable || programsEmpty ? (
+              <select id="primary_program_id" disabled className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500">
+                <option>Programas no disponibles</option>
+              </select>
             ) : (
-              <select id="primary_program_id" name="primary_program_id" defaultValue={profile.primary_program_id ?? ""} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100">
-                <option value="">Sin programa asignado</option>
+              <select id="primary_program_id" name="primary_program_id" defaultValue={profile.primary_program_id ?? ""} required aria-describedby="primary_program_help" className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100">
+                <option value="" disabled>Selecciona un programa</option>
                 {programs.map((program) => (
                   <option key={program.id} value={program.id}>{program.name}</option>
                 ))}
               </select>
             )}
+            <p id="primary_program_help" className="mt-2 text-xs leading-5 text-slate-500">
+              El programa académico es obligatorio para completar tu perfil.
+            </p>
           </div>
           <div className="sm:col-span-2 flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
-            <button type="submit" className="rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200">
+            <button type="submit" disabled={programsUnavailable || programsEmpty} className="rounded-full bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200">
               Guardar cambios
             </button>
             <a href="/dashboard" className="rounded-full border border-slate-300 px-6 py-3 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800">

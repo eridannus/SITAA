@@ -127,7 +127,8 @@ export default async function DashboardPage() {
             <div>
               <dt className="font-semibold text-slate-500">Correo</dt>
               <dd className="mt-1 text-base text-slate-900">{user.email}</dd>
-            </div>            <div>
+            </div>
+            <div>
               <dt className="font-semibold text-slate-500">Tipo de persona</dt>
               <dd className="mt-1 text-base text-slate-900">{personTypeLabels[profile.person_type]}</dd>
             </div>
@@ -137,10 +138,15 @@ export default async function DashboardPage() {
               </dt>
               <dd className="mt-1 text-base text-slate-900">{profile.institutional_id_value}</dd>
             </div>
-            {primaryProgram && (
+            {primaryProgram ? (
               <div>
                 <dt className="font-semibold text-slate-500">Programa académico principal</dt>
                 <dd className="mt-1 text-base text-slate-900">{primaryProgram.name}</dd>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <dt className="font-semibold text-amber-800">Programa académico principal</dt>
+                <dd className="mt-1 text-sm font-semibold text-amber-900">Programa no asignado</dd>
               </div>
             )}
           </dl>
