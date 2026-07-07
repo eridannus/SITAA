@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AuthNavigationLink } from "@/components/auth-navigation-link";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -37,12 +38,7 @@ export default function RootLayout({
                 >
                   Estado del sistema
                 </Link>
-                <Link
-                  href="/login"
-                  className="rounded-full bg-emerald-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-900"
-                >
-                  Iniciar sesión
-                </Link>
+                <AuthNavigationLink />
               </nav>
             </div>
           </header>

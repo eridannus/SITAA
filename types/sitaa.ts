@@ -29,7 +29,8 @@ export interface AcademicProgram {
 export interface Role {
   id: string;
   code: string;
-  name: string;
+  label?: string | null;
+  name?: string | null;
   description?: string | null;
   is_active: boolean;
   created_at?: string;
