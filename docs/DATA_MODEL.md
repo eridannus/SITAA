@@ -1,81 +1,58 @@
-# Modelo de datos preliminar
+# Modelo de datos
 
-Este modelo es conceptual. Los nombres, tipos y restricciones definitivos se fijarán antes de crear migraciones.
+## Tablas implementadas
 
-## Identidad y autorización
+La integración actual utiliza cinco tablas públicas. Supabase Auth conserva la identidad de acceso; `profiles` y `role_assignments` contienen el contexto institucional.
 
-| Entidad | Propósito | Campos clave sugeridos |
+| Tabla | Propósito | Contrato utilizado por la aplicación |
 | --- | --- | --- |
-| `profiles` | Complemento institucional del usuario de Auth | `id`, nombre, matrícula o número de empleado, correo institucional, estado |
-| `roles` | Catálogo estable de capacidades | `id`, clave, nombre, estado |
-| `role_assignments` | Roles múltiples, temporales y acotados | usuario, rol, alcance, programa/división, área de servicio, periodo, inicio, fin, estado, otorgado por |
-| `divisions` | Divisiones académicas | clave, nombre, estado |
-| `academic_programs` | Carreras o programas pertenecientes a una división | división, clave, nombre, estado |
-| `academic_periods` | Semestres o periodos | clave, nombre, inicio, fin, estado |
+| `divisions` | Divisiones académicas | `id`, `code`, `name`, `is_active` |
+| `academic_programs` | Carreras o programas | `id`, `division_id`, `code`, `name`, `is_active` |
+| `roles` | Catálogo estable de roles | `id`, `code`, `name`, `description`, `is_active` |
+| `profiles` | Perfil institucional vinculado a Auth | `id`, `full_name`, `student_number`, `employee_number`, `institutional_email`, `primary_program_id`, `status` |
+| `role_assignments` | Asignaciones múltiples, vigentes o históricas | `id`, `user_id`, `role_id`, `scope_type`, `service_area`, `division_id`, `program_id`, `starts_at`, `ends_at`, `status`, `is_active` |
 
-`profiles` **no debe contener `role_code` ni otro rol fijo**. La autorización se deriva de `role_assignments`; una persona puede conservar asignaciones históricas y tener varias asignaciones activas.
+Los campos de auditoría `created_at` y `updated_at` pueden estar presentes en todas las tablas. `profiles.id` corresponde al identificador del usuario de Supabase Auth.
 
-### Valores controlados de asignación
+`profiles` **no contiene `role_code` ni otro rol fijo**. Una cuenta sin fila en `profiles` existe en Auth, pero aún no está activada en SITAA.
+
+## Asignaciones de rol
+
+Valores controlados:
 
 - Alcance: `own`, `program`, `division`, `system`.
 - Área de servicio: `tutoring`, `advising`, `both`, `logistics`, `technical`.
 - Roles: `student`, `peer_tutor`, `professor`, `program_tutoring_lead`, `program_advising_lead`, `division_tutoring_liaison`, `program_head`, `division_head`, `technical_secretary`, `technical_admin`.
 
-Para alcance `program` se exige programa y para `division` se exige división. `own` no admite referencias institucionales; `system` solo se utilizará para capacidades expresamente institucionales. La vigencia puede vincularse a un periodo y siempre debe poder evaluarse por fecha.
+Una asignación se considera activa cuando no está deshabilitada o revocada, su estado es activo y la fecha actual se encuentra entre `starts_at` y `ends_at`; los límites nulos representan vigencia abierta. Las asignaciones históricas se conservan, pero no conceden acceso actual.
 
-## Entidades operativas
+Para alcance `program` se requiere `program_id`; para `division`, `division_id`. `own` no requiere referencia institucional y `system` se reserva para capacidades institucionales explícitas.
 
-| Entidad | Propósito | Campos clave sugeridos |
-| --- | --- | --- |
-| `groups` | Grupos dentro de un periodo y programa | periodo, programa, clave, estado |
-| `group_memberships` | Estudiantes asociados a grupos | grupo, estudiante, inicio, fin |
-| `service_assignments` | Responsabilidad operativa sobre grupos o actividades | usuario, grupo/programa, área de servicio, función, periodo |
-| `session_types` | Tipos configurables de actividad | nombre, área de servicio, descripción, campos habilitados, estado |
-| `semester_plans` | Plan de trabajo del responsable | periodo, responsable, grupo, área de servicio, objetivos, estado |
-| `plan_items` | Actividades previstas | plan, tipo, tema, fecha estimada, objetivo, estado |
-| `sessions` | Instancia programada o realizada | plan/actividad, tipo, responsable, grupo, inicio/fin, modalidad, ubicación, tema, objetivo, notas, estado |
-| `attendance_windows` | Ventana y token del QR | sesión, huella del token, inicio, expiración, estado |
-| `attendance_records` | Asistencia individual | sesión, estudiante, fecha, método, estado, validado por |
-| `survey_templates` | Versión de encuesta aplicable | nombre, versión, programa, área de servicio, esquema, estado |
-| `survey_responses` | Respuesta de un estudiante | plantilla, sesión, estudiante, fecha, respuestas |
-| `audit_events` | Trazabilidad de acciones críticas | actor, acción, entidad, identificador, fecha, metadatos mínimos |
+## Relaciones implementadas
 
-`role_assignments` autoriza capacidades por alcance; `service_assignments` identifica responsabilidades operativas concretas. Una asignación operativa nunca amplía por sí sola los permisos del rol.
-
-## Relaciones esenciales
-
-- Una división contiene programas; un programa contiene grupos por periodo.
-- Un usuario tiene cero o más asignaciones de rol activas o históricas.
-- Una asignación vincula un rol con alcance, área de servicio y vigencia.
-- Un plan pertenece a un responsable, grupo, periodo y área de servicio; contiene actividades.
-- Una sesión tiene muchas asistencias y, como máximo, una por estudiante.
-- Una encuesta usa una versión inmutable de plantilla, acotada por programa y área de servicio cuando corresponda.
+- Una división contiene muchos programas.
+- Un perfil puede señalar un programa académico principal.
+- Un usuario puede tener cero o más asignaciones de rol activas o históricas.
+- Cada asignación referencia un rol y puede acotarse a un programa o división.
+- El dashboard consulta únicamente el perfil y las asignaciones del usuario autenticado; RLS debe aplicar el mismo límite.
 
 ## Reglas de integridad
 
 - Usar UUID y marcas de tiempo con zona horaria.
-- Separar Supabase Auth del perfil institucional y de las asignaciones de rol.
-- Validar que alcance y referencia institucional sean coherentes mediante restricciones.
-- Evitar asignaciones duplicadas o vigencias superpuestas equivalentes.
-- Finalizar o revocar asignaciones; no borrarlas si produjeron acciones auditables.
-- Impedir por restricción única la asistencia duplicada por `sesión + estudiante`.
-- No borrar registros operativos cerrados; usar estados, cancelación o archivado.
-- Mantener versiones de formularios para no reinterpretar respuestas históricas.
-- Mantener normalizados los campos usados en permisos, filtros e indicadores.
-- Exponer al secretario técnico únicamente una proyección logística explícita, no filas académicas completas.
+- Separar Supabase Auth, perfil institucional y asignaciones de rol.
+- Validar la coherencia entre `scope_type`, `program_id` y `division_id`.
+- Evitar asignaciones duplicadas o vigencias equivalentes superpuestas.
+- Revocar o finalizar asignaciones; no borrarlas si produjeron acciones auditables.
+- No conceder permisos por `primary_program_id`; es información de perfil, no autorización.
+- Mantener normalizados los campos utilizados en RLS, filtros e indicadores.
 
-## Estados sugeridos
+## Entidades previstas, no implementadas
 
-- Asignación de rol: `programada`, `activa`, `revocada`, `vencida`.
-- Periodo: `borrador`, `activo`, `cerrado`.
-- Plan: `borrador`, `enviado`, `aprobado`, `cerrado`.
-- Sesión: `programada`, `en_curso`, `realizada`, `cancelada`.
-- Asistencia: `presente`, `justificada`, `invalidada`.
+Grupos, membresías, responsables operativos, tipos de sesión, planes semestrales, sesiones, asistencia, encuestas y auditoría permanecen en fase de diseño. No existen migraciones de estas entidades en la etapa actual.
 
 ## Pendientes de definición
 
-- Reglas exactas para solapamiento y delegación de asignaciones.
-- Matriz de otorgamiento y revocación por rol.
-- Nivel de detalle académico permitido a cada jefatura.
-- Campos obligatorios por tipo y área de servicio.
-- Conservación y anonimización de encuestas.
+- Matriz de otorgamiento y revocación de asignaciones.
+- Reglas definitivas para solapamiento, suplencia y delegación.
+- Políticas RLS y pruebas por combinación de rol, alcance y área de servicio.
+- Conservación y anonimización de datos académicos futuros.

@@ -30,7 +30,7 @@ npm run start  # Inicia la compilación de producción
 - `/health`: comprobación básica del servicio; muestra `SITAA OK`.
 - `/supabase-test`: verifica la configuración y consulta `public.system_health`.
 - `/login`: inicio de sesión con correo y contraseña.
-- `/dashboard`: panel básico protegido para usuarios autenticados.
+- `/dashboard`: panel protegido con perfil institucional y asignaciones de rol activas.
 
 ## Configuración de Supabase
 
@@ -51,4 +51,4 @@ Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los 
 
 ## Alcance actual
 
-Esta etapa incluye la base visual y técnica de Next.js, una prueba de conexión pública y autenticación básica con Supabase. Todavía no implementa roles, paneles especializados ni tablas de dominio. La definición del producto se encuentra en `docs/`.
+Esta etapa incluye autenticación, perfiles institucionales y consulta de asignaciones de rol múltiples. El dashboard muestra el contexto vigente del usuario, pero todavía no aplica paneles especializados por rol ni implementa sesiones, planeación, asistencia, encuestas o reportes. La definición del producto se encuentra en `docs/`.
