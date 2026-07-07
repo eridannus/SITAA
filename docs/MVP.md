@@ -1,61 +1,66 @@
 # Producto mínimo viable
 
-## Objetivo del MVP
+## Objetivo
 
-Validar un flujo completo para un periodo académico: configuración, planeación, ejecución de sesiones, asistencia, encuesta y reporte.
+Validar un flujo completo para un periodo académico: configuración, planeación, actividad, participantes, asistencia, formulario dinámico y reporte.
 
 ## Incluido
 
-### Configuración
+### Configuración institucional
 
 - Inicio de sesión con Supabase Auth.
-- Perfiles institucionales y asignación de roles.
-- Catálogos mínimos: periodos, programas académicos, grupos y tipos de sesión.
-- Activación y cierre de un periodo académico.
+- Perfiles con número de cuenta de alumno o número de trabajador, programa y semestre cuando aplique.
+- Asignaciones múltiples de rol con vigencia, alcance y área de servicio.
+- Catálogos mínimos: periodos, divisiones, programas, grupos, categorías y tipos de servicio.
 
-### Operación
+### Actividades y participantes
 
-- Plan semestral de tutoría o asesoría por responsable y grupo.
-- Alta, edición, cancelación y cierre de sesiones.
-- Campos base de sesión: tipo, tema, objetivo, fecha, horario, modalidad, ubicación o enlace, responsable, grupo y notas.
-- Generación de un QR temporal por sesión.
-- Registro de asistencia con validación de identidad y prevención básica de duplicados.
-- Captura de una encuesta breve de satisfacción posterior a la sesión.
+- Alta, edición, cancelación y cierre de actividades.
+- Datos estructurados de actividad: nombre, categoría, servicio, fecha, horario, modalidad, lugar o enlace, responsable, programa y notas autorizadas.
+- Participantes vinculados a perfiles registrados en SITAA; no se admiten participantes externos de texto libre como flujo normal.
+- Registro de asistencia con validación de identidad y prevención de duplicados.
+- QR temporal cuando resulte aplicable.
+
+### Formularios dinámicos
+
+- Creación de formularios por usuarios autorizados dentro de su alcance.
+- Campos configurables, tipos de campo, orden y condición requerida u opcional.
+- Versionado: una versión publicada no cambia las respuestas históricas asociadas.
+- Respuestas vinculadas a usuario, actividad y versión del formulario.
+- Ningún campo académico se impone desde el código. Solo son obligatorios los datos técnicos necesarios para integridad, como identificadores, marcas de tiempo, `created_by`, `activity_id` y `form_version_id`.
 
 ### Consulta y reportes
 
-- Panel de estudiante con próximas sesiones e historial propio.
-- Panel de tutor o asesor con plan, sesiones y asistencia de sus grupos asignados.
-- Panel de coordinación con avance del periodo e indicadores agregados.
-- Panel administrativo para catálogos, usuarios y roles.
-- Exportación CSV filtrada por periodo, programa, responsable, tipo y estado.
-- Reportes básicos: sesiones planeadas/realizadas/canceladas, asistencia y satisfacción promedio.
+- Paneles básicos según asignaciones de rol.
+- Tablas, resúmenes y gráficas.
+- Filtros por actividad o evento, fecha, profesor o responsable, programa, tipo de servicio, categoría y campos configurados cuando sea técnicamente posible.
+- Exportación CSV y generación de reportes PDF dentro del alcance autorizado.
 
 ## Fuera del MVP
 
-- Constructor general de formularios y flujos de aprobación.
-- Aplicaciones móviles nativas.
-- Integración con sistemas escolares, SSO, correo o mensajería institucional.
+- Almacenamiento o catálogo de carteles, fotografías, oficios, materiales y demás evidencia documental externa.
+- Carpetas de Drive, enlaces de indicadores o metadatos para relacionar evidencias externas.
+- Participantes externos capturados únicamente como texto libre.
+- Aplicaciones móviles nativas e integraciones institucionales avanzadas.
 - Analítica predictiva, recomendaciones automáticas o IA.
-- Firma electrónica, constancias y reportes regulatorios avanzados.
-- Operación multiinstitución y personalización visual por institución.
+- Firma electrónica y reportes regulatorios avanzados.
 
 ## Flujo principal
 
-1. Administración configura periodo, catálogos, usuarios y asignaciones.
-2. El tutor o asesor registra su plan semestral.
-3. Crea o programa una sesión vinculada al plan.
-4. Al iniciar, habilita un QR de vigencia corta.
-5. El estudiante autenticado registra su asistencia.
-6. El responsable cierra la sesión y confirma incidencias.
-7. El estudiante responde la encuesta.
-8. Coordinación consulta indicadores o exporta CSV.
+1. Administración configura periodo, catálogos, perfiles y asignaciones.
+2. Un responsable autorizado crea o selecciona una versión de formulario.
+3. Se planea y programa una actividad.
+4. Se agregan participantes registrados en SITAA.
+5. Los participantes registran asistencia y responden los formularios aplicables.
+6. El responsable cierra la actividad.
+7. Un usuario autorizado consulta tablas, resúmenes o gráficas y exporta CSV o PDF.
 
 ## Criterios de aceptación globales
 
-- No existen pantallas o consultas que evadan las políticas RLS.
-- Un estudiante no puede registrar asistencia por otra persona ni duplicarla.
-- Un tutor solo administra sesiones dentro de sus asignaciones vigentes.
-- Los cambios de estado relevantes conservan autor, fecha y contexto.
-- Los CSV respetan los mismos filtros y permisos que la vista de origen.
-- Los flujos principales son utilizables desde una pantalla móvil.
+- RLS limita toda consulta y operación por asignación, alcance y área de servicio.
+- Ninguna asistencia o participación válida carece de perfil SITAA.
+- Una persona no puede registrar asistencia duplicada en la misma actividad.
+- Las respuestas conservan la versión de formulario utilizada.
+- La obligatoriedad académica se configura en el formulario y no se codifica globalmente.
+- Los filtros y exportaciones respetan los mismos permisos que la vista de origen.
+- Los flujos principales funcionan en una pantalla móvil.

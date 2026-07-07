@@ -12,47 +12,62 @@ La integración actual utiliza cinco tablas públicas. Supabase Auth conserva la
 | `profiles` | Perfil institucional vinculado a Auth | `id`, `full_name`, `student_number`, `employee_number`, `institutional_email`, `primary_program_id`, `status` |
 | `role_assignments` | Asignaciones múltiples, vigentes o históricas | `id`, `user_id`, `role_code`, `scope_type`, `service_area`, `division_id`, `program_id`, `starts_at`, `ends_at`, `status`, `is_active` |
 
-Los campos de auditoría `created_at` y `updated_at` pueden estar presentes en todas las tablas. `profiles.id` corresponde al identificador del usuario de Supabase Auth.
+`profiles` no contiene un rol fijo. Debe soportar número de cuenta de alumno, número de trabajador, programa y semestre cuando sean aplicables. Una cuenta sin perfil existe en Auth, pero todavía no está activada en SITAA.
 
-`profiles` **no contiene `role_code` ni otro rol fijo**. Una cuenta sin fila en `profiles` existe en Auth, pero aún no está activada en SITAA.
+## Entidades previstas
 
-## Asignaciones de rol
+### Actividades y participación
 
-Valores controlados:
+| Entidad | Propósito | Relaciones mínimas |
+| --- | --- | --- |
+| `activities` | Actividad o evento de tutoría/asesoría | periodo, programa, servicio, categoría, responsable y datos operativos |
+| `activity_participants` | Personas convocadas o registradas | actividad y `profile_id` obligatorios |
+| `attendance_records` | Registro de asistencia o check-in | actividad, `profile_id`, fecha, método y estado |
 
-- Alcance: `own`, `program`, `division`, `system`.
-- Área de servicio: `tutoring`, `advising`, `both`, `logistics`, `technical`.
-- Roles: `student`, `peer_tutor`, `professor`, `program_tutoring_lead`, `program_advising_lead`, `division_tutoring_liaison`, `program_head`, `division_head`, `technical_secretary`, `technical_admin`.
+Todos los participantes deben referenciar `profiles`. No se modela un participante externo de texto libre como flujo normal. Si una persona no está registrada, no puede formar parte correctamente de la lista de asistencia producida por SITAA.
 
-Una asignación se considera activa cuando no está deshabilitada o revocada, su estado es activo y la fecha actual se encuentra entre `starts_at` y `ends_at`; los límites nulos representan vigencia abierta. Las asignaciones históricas se conservan, pero no conceden acceso actual.
+### Formularios dinámicos
 
-Para alcance `program` se requiere `program_id`; para `division`, `division_id`. `own` no requiere referencia institucional y `system` se reserva para capacidades institucionales explícitas.
+| Entidad | Propósito | Relaciones mínimas |
+| --- | --- | --- |
+| `forms` | Identidad y alcance del formulario | programa/división, área de servicio, creador y estado |
+| `form_versions` | Versión publicable e inmutable | formulario, número de versión, `created_by`, fecha y estado |
+| `form_fields` | Definición ordenada de campos | versión, clave, etiqueta, tipo, orden, requerido y configuración |
+| `form_responses` | Envío de un formulario | `activity_id`, `form_version_id`, perfil, `created_by` y fecha |
+| `form_response_values` | Valor de cada campo respondido | respuesta, campo y valor tipado o serializado |
 
-## Relaciones implementadas
+Los tipos de campo podrán incluir, de manera controlada, texto corto/largo, número, fecha, opción única, opciones múltiples, escala y otros tipos aprobados. Los editores eligen campos, orden y obligatoriedad.
 
-- Una división contiene muchos programas.
-- Un perfil puede señalar un programa académico principal.
-- Un usuario puede tener cero o más asignaciones de rol activas o históricas.
-- Cada asignación referencia `roles.code` mediante `role_code` y puede acotarse a un programa o división.
-- El dashboard consulta únicamente el perfil y las asignaciones del usuario autenticado; RLS debe aplicar el mismo límite.
+SITAA no codifica campos académicos universalmente obligatorios. Solo se exigen campos técnicos indispensables para integridad, como IDs, marcas de tiempo, `created_by`, `activity_id` y `form_version_id`.
+
+Una versión publicada no se modifica. Las nuevas decisiones académicas generan otra versión y las respuestas anteriores conservan su referencia original.
+
+## Reportes
+
+Tablas, resúmenes, gráficas, CSV y PDF se derivan de actividades, perfiles, asistencia y respuestas. Deben admitir filtros por actividad, fecha, responsable, programa, servicio, categoría y campos configurados cuando su tipo permita consulta consistente.
+
+## Evidencia fuera del modelo
+
+No se proponen tablas ni campos para administrar archivos o referencias documentales externas. Quedan excluidos explícitamente:
+
+- `activity_evidence`;
+- `evidence_type`;
+- `external_url`;
+- `used_for_indicator`;
+- `evidence_indicator_links`.
+
+Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Drive o enlaces de indicadores. La evidencia interna de SITAA son sus propios registros estructurados, respuestas, resúmenes y exportaciones.
 
 ## Reglas de integridad
 
 - Usar UUID y marcas de tiempo con zona horaria.
-- Separar Supabase Auth, perfil institucional y asignaciones de rol.
-- Validar la coherencia entre `scope_type`, `program_id` y `division_id`.
-- Evitar asignaciones duplicadas o vigencias equivalentes superpuestas.
-- Revocar o finalizar asignaciones; no borrarlas si produjeron acciones auditables.
-- No conceder permisos por `primary_program_id`; es información de perfil, no autorización.
-- Mantener normalizados los campos utilizados en RLS, filtros e indicadores.
+- Separar Auth, perfil y asignaciones de rol.
+- Validar alcance, área de servicio y vigencia mediante RLS y restricciones.
+- Vincular participantes y asistencias a perfiles SITAA.
+- Evitar participación o asistencia duplicada por actividad y perfil.
+- Conservar versiones publicadas y sus respuestas.
+- Normalizar los campos usados en permisos e indicadores; documentar límites de filtrado para campos dinámicos.
 
-## Entidades previstas, no implementadas
+## Estado de implementación
 
-Grupos, membresías, responsables operativos, tipos de sesión, planes semestrales, sesiones, asistencia, encuestas y auditoría permanecen en fase de diseño. No existen migraciones de estas entidades en la etapa actual.
-
-## Pendientes de definición
-
-- Matriz de otorgamiento y revocación de asignaciones.
-- Reglas definitivas para solapamiento, suplencia y delegación.
-- Políticas RLS y pruebas por combinación de rol, alcance y área de servicio.
-- Conservación y anonimización de datos académicos futuros.
+Las entidades de actividades, participantes, asistencia, formularios y reportes permanecen en diseño. Este documento no crea ni autoriza migraciones SQL.
