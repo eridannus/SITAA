@@ -44,7 +44,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
       supabase.from("academic_programs").select("*").eq("is_active", true),
     ]);
 
-  if (profileError || programError) {
+  if (profileError) {
     return (
       <section className="mx-auto max-w-4xl px-5 py-16 sm:px-8 sm:py-20">
         <div className="rounded-3xl border border-red-200 bg-white p-8 sm:p-12">
@@ -75,9 +75,12 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
     );
   }
 
-  const programs = (programData as AcademicProgram[]).sort((left, right) =>
-    left.name.localeCompare(right.name, "es"),
-  );
+  const programs = programError
+    ? []
+    : ((programData ?? []) as AcademicProgram[]).sort((left, right) =>
+        left.name.localeCompare(right.name, "es"),
+      );
+  const programsUnavailable = Boolean(programError);
   const params = await searchParams;
   const errorCode = getParam(params.error);
   const successCode = getParam(params.success);
@@ -106,6 +109,11 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         {errorMessage && (
           <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             {errorMessage}
+          </div>
+        )}
+        {programsUnavailable && (
+          <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+            No fue posible cargar los programas académicos. Puedes actualizar los demás datos; el programa actual se conservará.
           </div>
         )}
 
@@ -140,12 +148,21 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
           </div>
           <div className="sm:col-span-2">
             <label htmlFor="primary_program_id" className="block text-sm font-semibold text-slate-700">Programa académico principal</label>
-            <select id="primary_program_id" name="primary_program_id" defaultValue={profile.primary_program_id ?? ""} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100">
-              <option value="">Sin programa principal</option>
-              {programs.map((program) => (
-                <option key={program.id} value={program.id}>{program.name}</option>
-              ))}
-            </select>
+            {programsUnavailable ? (
+              <>
+                <input type="hidden" name="primary_program_id" value={profile.primary_program_id ?? ""} />
+                <select id="primary_program_id" disabled className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500">
+                  <option>Programas no disponibles</option>
+                </select>
+              </>
+            ) : (
+              <select id="primary_program_id" name="primary_program_id" defaultValue={profile.primary_program_id ?? ""} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100">
+                <option value="">Sin programa asignado</option>
+                {programs.map((program) => (
+                  <option key={program.id} value={program.id}>{program.name}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div className="sm:col-span-2 flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
             <button type="submit" className="rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200">
