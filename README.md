@@ -31,6 +31,7 @@ npm run start  # Inicia la compilación de producción
 - `/supabase-test`: verifica la configuración y consulta `public.system_health`.
 - `/login`: inicio de sesión con correo y contraseña.
 - `/dashboard`: panel protegido con perfil institucional y asignaciones de rol activas.
+- `/catalogs`: visor protegido de catálogos operativos activos.
 
 ## Configuración de Supabase
 
@@ -47,7 +48,7 @@ La clave `anon` es pública y está sujeta a las políticas RLS. No agregues cla
 
 El acceso usa Supabase Auth con correo y contraseña mediante cookies SSR. El registro público no está implementado: crea las cuentas autorizadas desde el panel administrativo de Supabase y mantén deshabilitada la opción de permitir nuevos registros en la configuración de Auth.
 
-Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard` serán enviados al inicio de sesión.
+Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard` o `/catalogs` serán enviados al inicio de sesión.
 
 ## Alcance actual
 

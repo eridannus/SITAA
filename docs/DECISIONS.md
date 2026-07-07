@@ -19,6 +19,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-005 | Formularios dinámicos versionados | Aceptada |
 | DEC-006 | Roles mediante asignaciones múltiples y acotadas | Aceptada |
 | DEC-007 | Evidencia interna y participantes registrados | Aceptada |
+| DEC-008 | Catálogos operativos controlados | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -80,6 +81,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
+## DEC-008 — Catálogos operativos controlados
+
+**Contexto:** actividades, formularios y reportes necesitan vocabularios estables para evitar variantes libres y resultados inconsistentes.
+
+**Decisión:** utilizar catálogos activos para periodos académicos, tipos de actividad y servicio, categorías de atención, modalidades, estados, ubicaciones y roles de participante antes de implementar actividades.
+
+**Consecuencias:** la operación referencia códigos controlados y solo expone valores activos. La primera interfaz es de consulta; la edición y sus permisos se definirán posteriormente.
+
+**Estado:** Aceptada.
 ## Plantilla para nuevas decisiones
 
 ### DEC-XXX — Título

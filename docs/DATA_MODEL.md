@@ -2,7 +2,7 @@
 
 ## Tablas implementadas
 
-La integración actual utiliza cinco tablas públicas. Supabase Auth conserva la identidad de acceso; `profiles` y `role_assignments` contienen el contexto institucional.
+La integración actual utiliza tablas institucionales y catálogos operativos públicos. Supabase Auth conserva la identidad de acceso; `profiles` y `role_assignments` contienen el contexto institucional.
 
 | Tabla | Propósito | Contrato utilizado por la aplicación |
 | --- | --- | --- |
@@ -11,8 +11,18 @@ La integración actual utiliza cinco tablas públicas. Supabase Auth conserva la
 | `roles` | Catálogo estable de roles | `id`, `code`, `label`, `description`, `is_active` |
 | `profiles` | Perfil institucional vinculado a Auth | `id`, `full_name`, `student_number`, `employee_number`, `institutional_email`, `primary_program_id`, `status` |
 | `role_assignments` | Asignaciones múltiples, vigentes o históricas | `id`, `user_id`, `role_code`, `scope_type`, `service_area`, `division_id`, `program_id`, `starts_at`, `ends_at`, `status`, `is_active` |
+| `academic_periods` | Periodos académicos operativos | `id`, `code`, `label` o `name`, `description`, `is_active` |
+| `activity_types` | Tipos de actividad | `id`, `code`, `label` o `name`, `description`, `is_active` |
+| `service_types` | Tipos de servicio | `id`, `code`, `label` o `name`, `description`, `is_active` |
+| `attention_categories` | Categorías de atención | `id`, `code`, `label` o `name`, `description`, `is_active` |
+| `activity_modalities` | Modalidades de actividad | `id`, `code`, `label` o `name`, `description`, `is_active` |
+| `activity_statuses` | Estados del ciclo de actividad | `id`, `code`, `label` o `name`, `description`, `is_active` |
+| `location_types` | Tipos de ubicación | `id`, `code`, `label` o `name`, `description`, `is_active` |
+| `participant_roles` | Roles dentro de una actividad | `id`, `code`, `label` o `name`, `description`, `is_active` |
 
 `profiles` no contiene un rol fijo. Debe soportar número de cuenta de alumno, número de trabajador, programa y semestre cuando sean aplicables. Una cuenta sin perfil existe en Auth, pero todavía no está activada en SITAA.
+
+Los catálogos operativos se consultan por `code` y muestran `label` o `name`. Solo los valores con `is_active = true` se presentan en la operación normal. Son datos controlados previos a la implementación de actividades; el visor actual es de solo lectura.
 
 ## Entidades previstas
 
