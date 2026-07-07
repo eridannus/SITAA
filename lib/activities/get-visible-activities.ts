@@ -73,8 +73,8 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
         profiles.get(activity.responsible_profile_id)?.full_name || "Responsable sin nombre",
     }))
     .sort((left, right) => {
-      const leftDate = left.starts_at ?? left.created_at ?? "";
-      const rightDate = right.starts_at ?? right.created_at ?? "";
+      const leftDate = left.start_date ?? left.starts_at ?? left.created_at ?? "";
+      const rightDate = right.start_date ?? right.starts_at ?? right.created_at ?? "";
       return rightDate.localeCompare(leftDate);
     });
 }

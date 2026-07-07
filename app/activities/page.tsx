@@ -15,24 +15,57 @@ type ActivitiesPageProps = {
   searchParams: Promise<{ created?: string | string[] }>;
 };
 
+const durationLabels = {
+  one_hour: "1 hora",
+  two_hours: "2 horas",
+  custom: "Personalizada",
+} as const;
+
 function formatDate(value: string | null) {
-  if (!value) {
-    return "Sin fecha programada";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Fecha no disponible";
-  }
-
+  if (!value) return "Fecha no disponible";
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("es-MX", {
     dateStyle: "medium",
-    timeStyle: "short",
+    timeZone: "UTC",
   }).format(date);
 }
 
+function formatTime(value: string | null) {
+  return value ? value.slice(0, 5) : "--:--";
+}
+
+function getSchedule(activity: ActivityListItem) {
+  if (activity.start_date && activity.start_time && activity.end_date && activity.end_time) {
+    return {
+      dates:
+        activity.start_date === activity.end_date
+          ? formatDate(activity.start_date)
+          : `${formatDate(activity.start_date)} → ${formatDate(activity.end_date)}`,
+      times: `${formatTime(activity.start_time)}–${formatTime(activity.end_time)}`,
+      duration: activity.duration_mode
+        ? durationLabels[activity.duration_mode]
+        : "Duración no especificada",
+    };
+  }
+
+  return {
+    dates: activity.starts_at ? "Registro compatible anterior" : "Fecha no disponible",
+    times: activity.starts_at
+      ? new Intl.DateTimeFormat("es-MX", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: "America/Mexico_City",
+        }).format(new Date(activity.starts_at))
+      : "--:--",
+    duration: "Duración no especificada",
+  };
+}
+
 function ActivityCard({ activity }: { activity: ActivityListItem }) {
+  const schedule = getSchedule(activity);
+
   return (
     <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -51,7 +84,15 @@ function ActivityCard({ activity }: { activity: ActivityListItem }) {
       <dl className="mt-6 grid gap-4 border-t border-slate-100 pt-6 text-sm sm:grid-cols-2">
         <div>
           <dt className="font-semibold text-slate-500">Fecha</dt>
-          <dd className="mt-1 text-slate-900">{formatDate(activity.starts_at)}</dd>
+          <dd className="mt-1 text-slate-900">{schedule.dates}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold text-slate-500">Horario (24 horas)</dt>
+          <dd className="mt-1 text-slate-900">{schedule.times}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold text-slate-500">Duración</dt>
+          <dd className="mt-1 text-slate-900">{schedule.duration}</dd>
         </div>
         <div>
           <dt className="font-semibold text-slate-500">Programa</dt>

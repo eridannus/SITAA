@@ -28,7 +28,7 @@ function activeCatalog<T extends CatalogRow>(rows: T[]) {
 export async function getActivityFormOptions(): Promise<ActivityFormOptions> {
   const supabase = await createSupabaseServerClient();
   const results = await Promise.all([
-    supabase.from("academic_periods").select("*"),
+    supabase.from("academic_periods").select("*").eq("is_active", true),
     supabase.from("academic_programs").select("*").order("name", { ascending: true }),
     supabase.from("activity_types").select("*"),
     supabase.from("service_types").select("*"),

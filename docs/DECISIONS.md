@@ -24,6 +24,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-010 | Listas de asistencia con identidad institucional | Aceptada |
 | DEC-011 | Programa académico obligatorio | Aceptada |
 | DEC-012 | Actividades como núcleo operativo | Aceptada |
+| DEC-013 | Fecha, hora y duración de actividades | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -121,7 +122,14 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** SITAA modela tutorías, asesorías, tutorías pares, actividades remediales y acompañamientos como `activities`, no únicamente como sesiones. Cada actividad referencia catálogos controlados, un programa, una persona responsable y quien la creó.
 
-**Consecuencias:** participantes, asistencia, QR, formularios y reportes se incorporarán posteriormente alrededor de la actividad. El estado inicial se deriva como `scheduled` cuando existe `starts_at` y `draft` cuando no existe.
+**Consecuencias:** participantes, asistencia, QR, formularios y reportes se incorporarán posteriormente alrededor de la actividad. Las nuevas actividades requieren inicio y se crean con estado `scheduled`.
+
+**Estado:** Aceptada.
+## DEC-013 — Fecha, hora y duración de actividades
+
+**Decisión:** toda actividad requiere fecha y hora de inicio en formato de 24 horas. La duración usa `one_hour`, `two_hours` o `custom`; las dos primeras calculan el término y la personalizada exige fecha y hora finales. El periodo académico se asigna automáticamente desde el único periodo activo.
+
+**Consecuencias:** `activities` conserva fecha y hora en campos separados y también completa `starts_at`/`ends_at` por compatibilidad. La validación usa la fecha actual de Ciudad de México y no permite inicios pasados ni términos anteriores al inicio.
 
 **Estado:** Aceptada.
 ## Plantilla para nuevas decisiones

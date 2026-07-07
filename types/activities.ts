@@ -9,6 +9,8 @@ import type {
 } from "@/types/catalogs";
 import type { AcademicProgram } from "@/types/sitaa";
 
+export type DurationMode = "one_hour" | "two_hours" | "custom";
+
 export interface Activity {
   id: string;
   title: string;
@@ -21,6 +23,11 @@ export interface Activity {
   modality_code: string;
   location_type_code: string | null;
   location_detail: string | null;
+  start_date: string | null;
+  start_time: string | null;
+  end_date: string | null;
+  end_time: string | null;
+  duration_mode: DurationMode | null;
   starts_at: string | null;
   ends_at: string | null;
   responsible_profile_id: string;
@@ -39,6 +46,31 @@ export interface ActivityFormOptions {
   modalities: ActivityModality[];
   statuses: ActivityStatus[];
   locationTypes: LocationType[];
+}
+
+export interface ActivityFormValues {
+  title: string;
+  description: string;
+  program_id: string;
+  activity_type_code: string;
+  service_type_code: string;
+  attention_category_code: string;
+  modality_code: string;
+  location_type_code: string;
+  location_detail: string;
+  start_date: string;
+  start_time: string;
+  duration_mode: string;
+  end_date: string;
+  end_time: string;
+}
+
+export type ActivityFormField = keyof ActivityFormValues | "academic_period_id";
+
+export interface ActivityFormState {
+  values: ActivityFormValues;
+  errors: Partial<Record<ActivityFormField, string>>;
+  message: string | null;
 }
 
 export interface ActivityListItem extends Activity {
