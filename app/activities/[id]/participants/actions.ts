@@ -39,7 +39,8 @@ async function requireEditor(activityId: string) {
 type SearchRow = {
   profile_id?: string; id?: string; full_name?: string | null; email?: string | null;
   institutional_id_type?: InstitutionalIdType | null; institutional_id_value?: string | null;
-  primary_program_id?: string | null; program_name?: string | null;
+  primary_program_id?: string | null; program_id?: string | null;
+  program_name?: string | null; academic_program_name?: string | null;
 };
 
 export async function searchParticipationProfiles(activityId: string, _previous: ParticipantSearchState, formData: FormData): Promise<ParticipantSearchState> {
@@ -47,26 +48,53 @@ export async function searchParticipationProfiles(activityId: string, _previous:
   const query = typeof queryValue === "string" ? queryValue.trim() : "";
   if (query.length < 2) return { query, results: [], error: "Escribe al menos dos caracteres para buscar." };
   const editor = await requireEditor(activityId);
-  if (!editor) return { query, results: [], error: "No tienes permiso para agregar participantes." };
+  if (!editor) return { query, results: [], error: "No tienes permiso para buscar participantes en esta actividad." };
 
   const { data, error } = await editor.supabase.rpc("search_profiles_for_participation", {
     target_activity_id: activityId,
     search_text: query,
   });
   if (error) {
-    const errorText = [error.message, error.details, error.hint].filter(Boolean).join(" ");
-    const programMismatch = "La persona seleccionada pertenece a otro programa académico.";
+    const rawError = [error.code, error.message, error.details, error.hint]
+      .filter(Boolean)
+      .join(" ");
+    const normalizedError = rawError
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+    if (
+      error.code === "42501" ||
+      /permission|not authorized|row-level|rls|permiso|autorizad/.test(normalizedError)
+    ) {
+      return {
+        query,
+        results: [],
+        error: "No tienes permiso para buscar participantes en esta actividad.",
+      };
+    }
+
+    if (
+      /actividad.*no tiene.*programa|sin programa|programa academico asignado/.test(
+        normalizedError,
+      )
+    ) {
+      return {
+        query,
+        results: [],
+        error: "La actividad no tiene programa académico asignado.",
+      };
+    }
+
     return {
       query,
       results: [],
-      error: errorText.includes(programMismatch)
-        ? programMismatch
-        : "No fue posible buscar perfiles. Intenta nuevamente.",
+      error: "No fue posible realizar la búsqueda de participantes.",
     };
   }
 
-  const rows = ((data ?? []) as SearchRow[]).filter((row) => row.primary_program_id === editor.activity.program_id);
-  const programIds = [...new Set(rows.map((row) => row.primary_program_id).filter((id): id is string => Boolean(id)))];
+  const rows = (data ?? []) as SearchRow[];
+  const programIds = [...new Set(rows.map((row) => row.primary_program_id ?? row.program_id).filter((id): id is string => Boolean(id)))];
   const programsResult = programIds.length ? await editor.supabase.from("academic_programs").select("id, name").in("id", programIds) : { data: [] as { id: string; name: string }[], error: null };
   const programMap = new Map((programsResult.data ?? []).map((program) => [program.id, program.name]));
   const results: ParticipationProfileSearchResult[] = rows.map((row) => ({
