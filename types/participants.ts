@@ -28,6 +28,10 @@ export interface ParticipationProfileSearchResult {
   program_name: string;
 }
 
+export interface ParticipantMutationState {
+  error: string | null;
+}
+
 export interface ParticipantSearchState {
   query: string;
   results: ParticipationProfileSearchResult[];

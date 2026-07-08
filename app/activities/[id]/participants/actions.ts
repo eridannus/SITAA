@@ -7,7 +7,7 @@ import { canManageActivityScope } from "@/lib/activities/activity-scope-permissi
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Activity, ActivityFormValues } from "@/types/activities";
-import type { ParticipantSearchState, ParticipationProfileSearchResult } from "@/types/participants";
+import type { ParticipantMutationState, ParticipantSearchState, ParticipationProfileSearchResult } from "@/types/participants";
 import type { InstitutionalIdType } from "@/types/sitaa";
 
 function activityValues(activity: Activity): ActivityFormValues {
@@ -32,29 +32,19 @@ async function requireEditor(activityId: string) {
   const activity = data as Activity;
   const options = await getActivityFormOptions();
   if (!canManageActivityScope(context, activityValues(activity), options.programs, activity.division_id)) return null;
-  return { context, supabase };
+  return { supabase };
 }
 
 type SearchRow = {
-  profile_id?: string;
-  id?: string;
-  full_name?: string | null;
-  email?: string | null;
-  institutional_id_type?: InstitutionalIdType | null;
-  institutional_id_value?: string | null;
-  primary_program_id?: string | null;
-  program_name?: string | null;
+  profile_id?: string; id?: string; full_name?: string | null; email?: string | null;
+  institutional_id_type?: InstitutionalIdType | null; institutional_id_value?: string | null;
+  primary_program_id?: string | null; program_name?: string | null;
 };
 
-export async function searchParticipationProfiles(
-  activityId: string,
-  _previous: ParticipantSearchState,
-  formData: FormData,
-): Promise<ParticipantSearchState> {
+export async function searchParticipationProfiles(activityId: string, _previous: ParticipantSearchState, formData: FormData): Promise<ParticipantSearchState> {
   const queryValue = formData.get("search_text");
   const query = typeof queryValue === "string" ? queryValue.trim() : "";
   if (query.length < 2) return { query, results: [], error: "Escribe al menos dos caracteres para buscar." };
-
   const editor = await requireEditor(activityId);
   if (!editor) return { query, results: [], error: "No tienes permiso para agregar participantes." };
 
@@ -63,52 +53,51 @@ export async function searchParticipationProfiles(
 
   const rows = (data ?? []) as SearchRow[];
   const programIds = [...new Set(rows.map((row) => row.primary_program_id).filter((id): id is string => Boolean(id)))];
-  const programsResult = programIds.length
-    ? await editor.supabase.from("academic_programs").select("id, name").in("id", programIds)
-    : { data: [] as { id: string; name: string }[], error: null };
+  const programsResult = programIds.length ? await editor.supabase.from("academic_programs").select("id, name").in("id", programIds) : { data: [] as { id: string; name: string }[], error: null };
   const programMap = new Map((programsResult.data ?? []).map((program) => [program.id, program.name]));
-
-  const results: ParticipationProfileSearchResult[] = rows
-    .map((row) => ({
-      profile_id: row.profile_id ?? row.id ?? "",
-      full_name: row.full_name?.trim() || "Perfil sin nombre",
-      email: row.email?.trim() || "Correo no disponible",
-      institutional_id_type: row.institutional_id_type ?? "student_account",
-      institutional_id_value: row.institutional_id_value?.trim() || "No disponible",
-      primary_program_id: row.primary_program_id ?? null,
-      program_name: row.program_name?.trim() || (row.primary_program_id ? programMap.get(row.primary_program_id) ?? "Programa no disponible" : "Programa no asignado"),
-    }))
-    .filter((row) => Boolean(row.profile_id));
-
+  const results: ParticipationProfileSearchResult[] = rows.map((row) => ({
+    profile_id: row.profile_id ?? row.id ?? "",
+    full_name: row.full_name?.trim() || "Perfil sin nombre",
+    email: row.email?.trim() || "Correo no disponible",
+    institutional_id_type: row.institutional_id_type ?? "student_account",
+    institutional_id_value: row.institutional_id_value?.trim() || "No disponible",
+    primary_program_id: row.primary_program_id ?? null,
+    program_name: row.program_name?.trim() || (row.primary_program_id ? programMap.get(row.primary_program_id) ?? "Programa no disponible" : "Programa no asignado"),
+  })).filter((row) => Boolean(row.profile_id));
   return { query, results, error: null };
 }
 
-export async function addActivityParticipant(activityId: string, formData: FormData) {
+function addErrorMessage(error: { code?: string; message?: string; details?: string; hint?: string }) {
+  const text = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
+  if (error.code === "23505" || /duplicate|already|ya (está|esta)|registrad/.test(text)) {
+    return "Esta persona ya está registrada en la actividad.";
+  }
+  if (error.code === "42501" || /permission|not authorized|row-level|rls|permiso|autorizad/.test(text)) {
+    return "No tienes permiso para agregar participantes a esta actividad.";
+  }
+  return "No fue posible agregar a la persona. Intenta nuevamente.";
+}
+
+export async function addActivityParticipant(
+  activityId: string,
+  _previous: ParticipantMutationState,
+  formData: FormData,
+): Promise<ParticipantMutationState> {
   const profileId = formData.get("profile_id");
   const roleCode = formData.get("participant_role_code");
   if (typeof profileId !== "string" || !profileId || typeof roleCode !== "string" || !roleCode) {
-    redirect(`/activities/${activityId}?participant=invalid`);
+    return { error: "Selecciona un perfil registrado y un rol de participante." };
   }
 
   const editor = await requireEditor(activityId);
-  if (!editor) redirect(`/activities/${activityId}?participant=forbidden`);
+  if (!editor) return { error: "No tienes permiso para agregar participantes a esta actividad." };
 
-  const [{ data: existing, error: duplicateError }, { data: role, error: roleError }] = await Promise.all([
-    editor.supabase.from("activity_participants").select("id").eq("activity_id", activityId).eq("profile_id", profileId).maybeSingle(),
-    editor.supabase.from("participant_roles").select("code, is_active").eq("code", roleCode).maybeSingle(),
-  ]);
-  if (duplicateError || roleError) redirect(`/activities/${activityId}?participant=error`);
-  if (existing) redirect(`/activities/${activityId}?participant=duplicate`);
-  if (!role || role.is_active === false) redirect(`/activities/${activityId}?participant=invalid`);
-
-  const { error } = await editor.supabase.from("activity_participants").insert({
-    activity_id: activityId,
-    profile_id: profileId,
-    participant_role_code: roleCode,
-    created_by: editor.context.user.id,
+  const { error } = await editor.supabase.rpc("add_activity_participant", {
+    target_activity_id: activityId,
+    target_profile_id: profileId,
+    target_participant_role_code: roleCode,
   });
-  if (error?.code === "23505") redirect(`/activities/${activityId}?participant=duplicate`);
-  if (error) redirect(`/activities/${activityId}?participant=error`);
+  if (error) return { error: addErrorMessage(error) };
 
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
@@ -118,16 +107,16 @@ export async function addActivityParticipant(activityId: string, formData: FormD
 export async function removeActivityParticipant(activityId: string, participantId: string, formData: FormData) {
   if (formData.get("confirmation") !== "confirmed") redirect(`/activities/${activityId}?participant=remove-error`);
   const editor = await requireEditor(activityId);
-  if (!editor) redirect(`/activities/${activityId}?participant=forbidden`);
+  if (!editor) redirect(`/activities/${activityId}?participant=remove-forbidden`);
 
-  const { data, error } = await editor.supabase
-    .from("activity_participants")
-    .delete()
-    .eq("id", participantId)
-    .eq("activity_id", activityId)
-    .select("id")
-    .maybeSingle();
-  if (error || !data) redirect(`/activities/${activityId}?participant=remove-error`);
+  const { error } = await editor.supabase.rpc("remove_activity_participant", {
+    target_participant_id: participantId,
+  });
+  if (error) {
+    const text = [error.code, error.message, error.details].filter(Boolean).join(" ").toLowerCase();
+    const code = /permission|not authorized|row-level|rls|permiso|autorizad/.test(text) ? "remove-forbidden" : "remove-error";
+    redirect(`/activities/${activityId}?participant=${code}`);
+  }
 
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
