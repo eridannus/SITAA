@@ -64,12 +64,21 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 
 ## Entidades previstas
 
-### Participación y asistencia previstas
+### Participación, registro y asistencia previstas
 
 | Entidad | Propósito | Relaciones mínimas |
 | --- | --- | --- |
-| `activity_participants` | Perfiles registrados vinculados a una actividad | `id`, `activity_id`, `profile_id`, `participant_role_code`, `created_by`, `created_at`; combinación actividad/perfil única |
-| `attendance_records` | Registro de asistencia o check-in | actividad, `profile_id`, fecha, método y estado |
+| `activity_participants` | Perfiles registrados vinculados a una actividad por registro o invitación | `id`, `activity_id`, `profile_id`, `participant_role_code`, `created_by`, `created_at`; combinación actividad/perfil única |
+| `attendance_records` | Confirmación de asistencia/check-in de participantes registrados | actividad, `profile_id`, fecha, fuente, estado, usuario o proceso que registró/corrigió |
+| `activity_access_codes` | Códigos o enlaces temporales para registro o asistencia | actividad, flujo, código corto, estado, vigencia, regeneración y responsable |
+
+Registro y asistencia son flujos distintos: registrar o invitar agrega participantes; el check-in confirma que asistieron. La asistencia debe poder marcarse y corregirse manualmente por la persona responsable o editor autorizado.
+
+Estados de asistencia previstos: `pending`, `attended`, `absent`, `justified`. Fuentes previstas: `manual`, `qr`, `code`, `system`.
+
+Los flujos futuros de registro y asistencia podrán usar QR, enlace directo o código corto de tres palabras. El QR no será el único método. Los códigos de tres palabras serán breves, en minúsculas, con palabras en español, sin acentos, ñ ni caracteres especiales, fáciles de dictar y únicos entre códigos activos.
+
+Por defecto, el registro estará cerrado y la asistencia estará limitada a participantes registrados. Más adelante podrán habilitarse registro abierto o check-in abierto para tipos de actividad seleccionados.
 
 Todos los participantes deben referenciar `profiles`. No se modela un participante externo de texto libre como flujo normal. Si una persona no está registrada, no puede formar parte correctamente de la lista de asistencia producida por SITAA.
 

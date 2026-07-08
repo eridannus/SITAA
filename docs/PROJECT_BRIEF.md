@@ -38,7 +38,8 @@ La asignación inicial `student` puede automatizarse tras las validaciones insti
 
 - Planeación semestral y registro de actividades.
 - Participantes vinculados exclusivamente a perfiles registrados en SITAA.
-- Asistencia mediante registro o código QR.
+- Registro/invitación de participantes separado de la confirmación de asistencia.
+- Asistencia con corrección manual obligatoria y mecanismos futuros por QR, enlace directo o código corto de tres palabras.
 - Formularios dinámicos similares a Google Forms, con campos configurables y versiones inmutables.
 - Tablas, resúmenes y gráficas filtrables.
 - Exportaciones CSV y reportes PDF.

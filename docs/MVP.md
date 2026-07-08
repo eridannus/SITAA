@@ -21,8 +21,9 @@ Validar un flujo completo para un periodo académico: configuración, planeació
 - Alta, edición, cancelación y cierre de actividades.
 - Datos estructurados de actividad: nombre, categoría, servicio, fecha, horario, modalidad, lugar o enlace, responsable, programa y notas autorizadas.
 - Participantes vinculados a perfiles registrados en SITAA; no se admiten participantes externos de texto libre como flujo normal.
-- Registro de asistencia con validación de identidad y prevención de duplicados.
-- QR temporal cuando resulte aplicable.
+- Registro/invitación de participantes separado del check-in de asistencia.
+- Registro de asistencia con validación de identidad, prevención de duplicados y corrección manual obligatoria.
+- Mecanismos futuros de acceso para registro y asistencia: QR, enlace directo y código corto de tres palabras; el QR no será el único método.
 
 ### Formularios dinámicos
 
