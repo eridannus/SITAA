@@ -102,7 +102,7 @@ export default async function DashboardPage() {
           <p className="mt-4 leading-7 text-slate-600">
             La cuenta de acceso existe, pero todavía no tiene un perfil institucional. Contacta a la persona administradora para completar la activación.
           </p>
-          <p className="mt-4 text-sm text-slate-500">Cuenta: {context.user.email}</p>
+          <p className="mt-4 break-all text-sm text-slate-500">Cuenta: {context.user.email}</p>
           <div className="mt-8">
             <LogoutButton />
           </div>
@@ -116,17 +116,17 @@ export default async function DashboardPage() {
   return (
     <section className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
       <div className="flex flex-col gap-6 rounded-3xl border border-emerald-950/10 bg-white p-8 shadow-xl shadow-emerald-950/5 sm:p-12 lg:flex-row lg:items-start lg:justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">
             Panel principal
           </p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">
             {profile.full_name || "Usuario de SITAA"}
           </h1>
-          <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-2">
+          <dl className="mt-6 grid min-w-0 gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="font-semibold text-slate-500">Correo</dt>
-              <dd className="mt-1 text-base text-slate-900">{user.email}</dd>
+              <dd className="mt-1 break-all text-base text-slate-900">{user.email}</dd>
             </div>
             <div>
               <dt className="font-semibold text-slate-500">Tipo de persona</dt>
@@ -136,7 +136,7 @@ export default async function DashboardPage() {
               <dt className="font-semibold text-slate-500">
                 {institutionalIdTypeLabels[profile.institutional_id_type]}
               </dt>
-              <dd className="mt-1 text-base text-slate-900">{profile.institutional_id_value}</dd>
+              <dd className="mt-1 break-words text-base text-slate-900">{profile.institutional_id_value}</dd>
             </div>
             {primaryProgram ? (
               <div>
@@ -189,29 +189,29 @@ export default async function DashboardPage() {
         ) : (
           <div className="mt-7 grid gap-4 md:grid-cols-2">
             {activeRoleAssignments.map((assignment) => (
-              <article key={assignment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+              <article key={assignment.id} className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-6">
                 <h3 className="text-lg font-bold text-slate-900">
                   {getRoleLabel(assignment.role, assignment.role_code)}
                 </h3>
                 <dl className="mt-5 space-y-3 text-sm">
                   <div className="flex items-start justify-between gap-4">
                     <dt className="font-semibold text-slate-500">Alcance</dt>
-                    <dd className="text-right text-slate-900">{scopeLabels[assignment.scope_type]}</dd>
+                    <dd className="min-w-0 break-words text-right text-slate-900">{scopeLabels[assignment.scope_type]}</dd>
                   </div>
                   <div className="flex items-start justify-between gap-4">
                     <dt className="font-semibold text-slate-500">Área de servicio</dt>
-                    <dd className="text-right text-slate-900">{serviceAreaLabels[assignment.service_area]}</dd>
+                    <dd className="min-w-0 break-words text-right text-slate-900">{serviceAreaLabels[assignment.service_area]}</dd>
                   </div>
                   {assignment.division && (
                     <div className="flex items-start justify-between gap-4">
                       <dt className="font-semibold text-slate-500">División</dt>
-                      <dd className="text-right text-slate-900">{assignment.division.name}</dd>
+                      <dd className="min-w-0 break-words text-right text-slate-900">{assignment.division.name}</dd>
                     </div>
                   )}
                   {assignment.program && (
                     <div className="flex items-start justify-between gap-4">
                       <dt className="font-semibold text-slate-500">Programa</dt>
-                      <dd className="text-right text-slate-900">{assignment.program.name}</dd>
+                      <dd className="min-w-0 break-words text-right text-slate-900">{assignment.program.name}</dd>
                     </div>
                   )}
                 </dl>

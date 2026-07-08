@@ -67,7 +67,7 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 
 | Entidad | Propósito | Relaciones mínimas |
 | --- | --- | --- |
-| `activity_participants` | Personas convocadas o registradas | actividad y `profile_id` obligatorios; contexto académico opcional, incluido semestre si se acuerda |
+| `activity_participants` | Perfiles registrados vinculados a una actividad | `id`, `activity_id`, `profile_id`, `participant_role_code`, `created_by`, `created_at`; combinación actividad/perfil única |
 | `attendance_records` | Registro de asistencia o check-in | actividad, `profile_id`, fecha, método y estado |
 
 Todos los participantes deben referenciar `profiles`. No se modela un participante externo de texto libre como flujo normal. Si una persona no está registrada, no puede formar parte correctamente de la lista de asistencia producida por SITAA.
@@ -118,4 +118,4 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 
 ## Estado de implementación
 
-La tabla `activities` y su alta, listado, edición y eliminación básicos están implementados. Participantes, asistencia, formularios y reportes permanecen en diseño. Este documento no crea ni autoriza migraciones SQL.
+Las tablas `activities` y `activity_participants` están implementadas con alta, consulta y retiro sujeto a RLS. Asistencia, formularios y reportes permanecen en diseño. Este documento no crea ni autoriza migraciones SQL.

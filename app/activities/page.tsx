@@ -29,18 +29,18 @@ function schedule(activity: ActivityListItem) {
 function ActivityCard({ activity }: { activity: ActivityListItem }) {
   const when = schedule(activity);
   return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">
+    <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div><p className="text-sm font-semibold text-emerald-700">{activity.activityTypeLabel}</p><h2 className="mt-2 text-xl font-bold text-slate-900">{activity.title}</h2>{activity.description && <p className="mt-3 line-clamp-3 leading-7 text-slate-600">{activity.description}</p>}</div>
+        <div className="min-w-0"><p className="break-words text-sm font-semibold text-emerald-700">{activity.activityTypeLabel}</p><h2 className="mt-2 break-words text-xl font-bold text-slate-900">{activity.title}</h2>{activity.description && <p className="mt-3 line-clamp-3 leading-7 text-slate-600">{activity.description}</p>}</div>
         <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">{activity.statusLabel}</span>
       </div>
       <dl className="mt-6 grid gap-4 border-t border-slate-100 pt-6 text-sm sm:grid-cols-2">
-        <div><dt className="font-semibold text-slate-500">Fecha</dt><dd className="mt-1 text-slate-900">{when.dates}</dd></div>
-        <div><dt className="font-semibold text-slate-500">Horario (24 horas)</dt><dd className="mt-1 text-slate-900">{when.times}</dd></div>
-        <div><dt className="font-semibold text-slate-500">Duración</dt><dd className="mt-1 text-slate-900">{when.duration}</dd></div>
-        <div><dt className="font-semibold text-slate-500">Programa</dt><dd className="mt-1 text-slate-900">{activity.programName}</dd></div>
-        <div><dt className="font-semibold text-slate-500">Servicio y modalidad</dt><dd className="mt-1 text-slate-900">{activity.serviceTypeLabel} · {activity.modalityLabel}</dd></div>
-        <div><dt className="font-semibold text-slate-500">Responsable</dt><dd className="mt-1 text-slate-900">{activity.responsibleName}</dd></div>
+        <div><dt className="font-semibold text-slate-500">Fecha</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{when.dates}</dd></div>
+        <div><dt className="font-semibold text-slate-500">Horario (24 horas)</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{when.times}</dd></div>
+        <div><dt className="font-semibold text-slate-500">Duración</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{when.duration}</dd></div>
+        <div><dt className="font-semibold text-slate-500">Programa</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.programName}</dd></div>
+        <div><dt className="font-semibold text-slate-500">Servicio y modalidad</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.serviceTypeLabel} · {activity.modalityLabel}</dd></div>
+        <div><dt className="font-semibold text-slate-500">Responsable</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.responsibleName}</dd></div>
       </dl>
       <Link href={`/activities/${activity.id}`} className="mt-6 inline-flex text-sm font-bold text-emerald-800 hover:text-emerald-950">Ver y editar →</Link>
     </article>
@@ -68,7 +68,7 @@ export default async function ActivitiesPage({ searchParams }: Props) {
         {canCreate && <Link href="/activities/new" className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-900">Nueva actividad</Link>}
       </div>
       {(created || deleted) && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{created ? "La actividad se creó correctamente." : "La actividad se eliminó correctamente."}</div>}
-      {activities.length === 0 ? <div className="mt-10 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><h2 className="text-xl font-bold text-slate-900">Aún no hay actividades visibles</h2><p className="mt-3 text-slate-600">Crea una actividad o espera a que te asignen acceso a una existente.</p></div> : <div className="mt-10 grid gap-6 lg:grid-cols-2">{activities.map((activity) => <ActivityCard key={activity.id} activity={activity} />)}</div>}
+      {activities.length === 0 ? <div className="mt-10 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><h2 className="text-xl font-bold text-slate-900">Aún no hay actividades visibles</h2><p className="mt-3 text-slate-600">{canCreate ? "Crea una actividad o espera a que te asignen acceso a una existente." : "Aún no tienes actividades asignadas. Cuando seas agregado como participante, aparecerán aquí."}</p></div> : <div className="mt-10 grid gap-6 lg:grid-cols-2">{activities.map((activity) => <ActivityCard key={activity.id} activity={activity} />)}</div>}
     </main>
   );
 }

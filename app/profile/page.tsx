@@ -124,43 +124,43 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
           </div>
         )}
 
-        <form action={updateProfile} className="grid gap-6 sm:grid-cols-2">
-          <div className="sm:col-span-2">
+        <form action={updateProfile} className="grid min-w-0 gap-6 sm:grid-cols-2">
+          <div className="min-w-0 sm:col-span-2">
             <label htmlFor="email" className="block text-sm font-semibold text-slate-700">Correo</label>
-            <input id="email" value={user.email} disabled className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500" />
+            <p id="email" className="mt-2 min-w-0 break-all rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-600">{user.email}</p>
           </div>
-          <div className="sm:col-span-2">
+          <div className="min-w-0 sm:col-span-2">
             <label htmlFor="first_names" className="block text-sm font-semibold text-slate-700">Nombre(s)</label>
-            <input id="first_names" name="first_names" defaultValue={profile.first_names} required maxLength={100} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
+            <input id="first_names" name="first_names" defaultValue={profile.first_names} required maxLength={100} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
           </div>
           <div>
             <label htmlFor="paternal_surname" className="block text-sm font-semibold text-slate-700">Apellido paterno</label>
-            <input id="paternal_surname" name="paternal_surname" defaultValue={profile.paternal_surname} required maxLength={100} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
+            <input id="paternal_surname" name="paternal_surname" defaultValue={profile.paternal_surname} required maxLength={100} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
           </div>
           <div>
             <label htmlFor="maternal_surname" className="block text-sm font-semibold text-slate-700">Apellido materno</label>
-            <input id="maternal_surname" name="maternal_surname" defaultValue={profile.maternal_surname ?? ""} maxLength={100} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
+            <input id="maternal_surname" name="maternal_surname" defaultValue={profile.maternal_surname ?? ""} maxLength={100} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
           </div>
           <div>
             <label htmlFor="person_type" className="block text-sm font-semibold text-slate-700">Tipo de persona</label>
-            <select id="person_type" name="person_type" defaultValue={profile.person_type} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100">
+            <select id="person_type" name="person_type" defaultValue={profile.person_type} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100">
               <option value="student">Alumno</option>
               <option value="worker">Trabajador</option>
             </select>
           </div>
           <div>
             <label htmlFor="institutional_id_value" className="block text-sm font-semibold text-slate-700">Identificador institucional</label>
-            <input id="institutional_id_value" name="institutional_id_value" defaultValue={profile.institutional_id_value} required maxLength={50} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
+            <input id="institutional_id_value" name="institutional_id_value" defaultValue={profile.institutional_id_value} required maxLength={50} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
             <p className="mt-2 text-xs leading-5 text-slate-500">Número de cuenta para alumnos o número de trabajador para personal.</p>
           </div>
-          <div className="sm:col-span-2">
+          <div className="min-w-0 sm:col-span-2">
             <label htmlFor="primary_program_id" className="block text-sm font-semibold text-slate-700">Programa académico principal</label>
             {programsUnavailable || programsEmpty ? (
-              <select id="primary_program_id" disabled className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500">
+              <select id="primary_program_id" disabled className="mt-2 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500">
                 <option>Programas no disponibles</option>
               </select>
             ) : (
-              <select id="primary_program_id" name="primary_program_id" defaultValue={profile.primary_program_id ?? ""} required aria-describedby="primary_program_help" className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100">
+              <select id="primary_program_id" name="primary_program_id" defaultValue={profile.primary_program_id ?? ""} required aria-describedby="primary_program_help" className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100">
                 <option value="" disabled>Selecciona un programa</option>
                 {programs.map((program) => (
                   <option key={program.id} value={program.id}>{program.name}</option>

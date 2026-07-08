@@ -4,26 +4,35 @@ import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { canManageActivityScope, getActivityScopeAccess } from "@/lib/activities/activity-scope-permissions";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
+import { getActivityParticipants } from "@/lib/activities/get-activity-participants";
 import { getMexicoCityToday } from "@/lib/activities/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Activity, ActivityFormOptions, ActivityFormValues } from "@/types/activities";
+import type { ParticipantRole } from "@/types/catalogs";
 import { ActivityForm } from "../new/activity-form";
 import { DeleteActivityButton } from "./delete-activity-button";
+import { ParticipantManager } from "./participants/participant-manager";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Editar actividad" };
-type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[] }> };
+export const metadata: Metadata = { title: "Detalle de actividad" };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[] }> };
 
 function formValues(activity: Activity): ActivityFormValues {
   return {
-    title: activity.title ?? "", scope_type: activity.scope_type ?? "program",
-    description: activity.description ?? "", program_id: activity.program_id ?? "",
-    activity_type_code: activity.activity_type_code ?? "", service_type_code: activity.service_type_code ?? "",
-    attention_category_code: activity.attention_category_code ?? "", modality_code: activity.modality_code ?? "",
-    location_type_code: activity.location_type_code ?? "", location_detail: activity.location_detail ?? "",
-    start_date: activity.start_date ?? "", start_time: activity.start_time?.slice(0, 5) ?? "",
-    duration_mode: activity.duration_mode ?? "custom", end_date: activity.end_date ?? "", end_time: activity.end_time?.slice(0, 5) ?? "",
+    title: activity.title ?? "", scope_type: activity.scope_type ?? "program", description: activity.description ?? "",
+    program_id: activity.program_id ?? "", activity_type_code: activity.activity_type_code ?? "",
+    service_type_code: activity.service_type_code ?? "", attention_category_code: activity.attention_category_code ?? "",
+    modality_code: activity.modality_code ?? "", location_type_code: activity.location_type_code ?? "",
+    location_detail: activity.location_detail ?? "", start_date: activity.start_date ?? "",
+    start_time: activity.start_time?.slice(0, 5) ?? "", duration_mode: activity.duration_mode ?? "custom",
+    end_date: activity.end_date ?? "", end_time: activity.end_time?.slice(0, 5) ?? "",
   };
+}
+function param(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value; }
+function date(value: string | null) {
+  if (!value) return "No disponible";
+  const [year, month, day] = value.split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
 export default async function ActivityDetailPage({ params, searchParams }: Props) {
@@ -34,24 +43,47 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const { data, error } = await supabase.from("activities").select("*").eq("id", id).maybeSingle();
   if (error || !data) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800">Volver a actividades</Link></main>;
 
+  const activity = data as Activity;
   let options: ActivityFormOptions;
   try { options = await getActivityFormOptions(); }
-  catch { return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar el formulario</h1></main>; }
-  if (options.academicPeriods.length !== 1) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No es posible editar la actividad</h1><p className="mt-4">Debe existir exactamente un periodo académico activo.</p></main>;
+  catch { return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar la actividad</h1></main>; }
 
-  const activity = data as Activity;
   const values = formValues(activity);
   const access = getActivityScopeAccess(context, options.programs, options.divisions);
   const canEdit = canManageActivityScope(context, values, options.programs, activity.division_id);
-  if (!canEdit) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Consulta de actividad</h1><p className="mt-4">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800">Volver a actividades</Link></main>;
-
+  const [{ data: roleData, error: roleError }, participantsResult] = await Promise.all([
+    supabase.from("participant_roles").select("*").eq("is_active", true),
+    getActivityParticipants(id).then((participants) => ({ participants, error: null })).catch(() => ({ participants: [], error: true })),
+  ]);
+  const roles = roleError ? [] : [...(roleData as ParticipantRole[])].sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0));
   const query = await searchParams;
-  const updated = (Array.isArray(query.updated) ? query.updated[0] : query.updated) === "1";
-  const deleteError = (Array.isArray(query.error) ? query.error[0] : query.error) === "delete";
+  const updated = param(query.updated) === "1";
+  const deleteError = param(query.error) === "delete";
+  const participantStatus = param(query.participant);
+
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Actividad</p><h1 className="mt-3 text-3xl font-bold text-emerald-950 sm:text-4xl">Editar actividad</h1></div><Link href="/activities" className="rounded-full border border-slate-300 px-6 py-3 text-sm font-bold">Volver a actividades</Link></div>
+    <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0"><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Actividad</p><h1 className="mt-3 break-words text-3xl font-bold text-emerald-950 sm:text-4xl">{canEdit ? "Editar actividad" : activity.title}</h1></div>
+      <Link href="/activities" className="shrink-0 rounded-full border border-slate-300 px-6 py-3 text-sm font-bold">Volver a actividades</Link>
+    </div>
     {updated && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Los cambios se guardaron correctamente.</div>}
-    <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10"><ActivityForm options={options} access={access} activePeriod={options.academicPeriods[0]} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} /></div>
-    <section className="mt-10 rounded-3xl border border-red-200 bg-red-50 p-7 sm:p-10"><h2 className="text-xl font-bold text-red-950">Eliminar actividad</h2><p className="mt-3 text-red-800">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold text-red-800">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>
+
+    {canEdit && options.academicPeriods.length === 1 ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10"><ActivityForm options={options} access={access} activePeriod={options.academicPeriods[0]} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} /></div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
+      <h2 className="break-words text-2xl font-bold text-slate-900">{activity.title}</h2>
+      {activity.description && <p className="mt-4 break-words leading-7 text-slate-600">{activity.description}</p>}
+      <dl className="mt-6 grid min-w-0 gap-4 text-sm sm:grid-cols-2">
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Fecha</dt><dd className="break-words text-slate-900">{date(activity.start_date)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Horario</dt><dd className="break-words text-slate-900">{activity.start_time?.slice(0,5) ?? "--:--"}–{activity.end_time?.slice(0,5) ?? "--:--"}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Programa</dt><dd className="break-words text-slate-900">{activity.scope_type === "division" ? "Ambos programas" : options.programs.find((item) => item.id === activity.program_id)?.name ?? "Programa no disponible"}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Ubicación</dt><dd className="break-words text-slate-900">{activity.location_detail ?? "No disponible"}</dd></div>
+      </dl>
+      {!canEdit && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
+    </section>}
+
+    {participantsResult.error
+      ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>
+      : <ParticipantManager activityId={id} participants={participantsResult.participants} roles={roles} canEdit={canEdit && !roleError} status={participantStatus} />}
+
+    {canEdit && <section className="mt-10 rounded-3xl border border-red-200 bg-red-50 p-7 sm:p-10"><h2 className="text-xl font-bold text-red-950">Eliminar actividad</h2><p className="mt-3 text-red-800">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold text-red-800">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
   </main>;
 }

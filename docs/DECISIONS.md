@@ -28,6 +28,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-014 | Validación, edición y eliminación de actividades base | Aceptada |
 | DEC-015 | Alcance de actividades por programa o división | Aceptada |
 | DEC-016 | Selección de alcance consciente de permisos | Aceptada |
+| DEC-017 | Participantes registrados por actividad | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -159,6 +160,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** los selectores de alcance y programa solo se muestran cuando el usuario tiene más de una opción válida. Una combinación única se presenta como información de solo lectura y se impone nuevamente en el servidor.
 
 **Consecuencias:** profesores, tutores pares y responsables con un único programa no realizan selecciones redundantes. Alumnos sin rol operativo no ven la acción de alta; los roles divisionales y técnicos conservan las opciones amplias autorizadas.
+
+**Estado:** Aceptada.
+
+
+## DEC-017 — Participantes registrados por actividad
+
+**Decisión:** cada participante de una actividad referencia un perfil SITAA y un rol del catálogo participant_roles. La búsqueda se realiza por nombre, correo o identificador institucional mediante la función autorizada de Supabase; no se admiten personas de texto libre ni duplicados por actividad.
+
+**Consecuencias:** los editores autorizados agregan o retiran participantes bajo RLS. Ser participante concede visibilidad de la actividad conforme a las políticas de lectura, pero no permisos de edición ni asistencia automática.
 
 **Estado:** Aceptada.
 
