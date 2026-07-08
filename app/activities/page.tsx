@@ -101,7 +101,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
         </div>
         {(activity.locationTypeLabel || locationDetail) ? (
           <div className="min-w-0 sm:col-span-2">
-            <dt className="break-words font-semibold text-emerald-700">{locationHeading}</dt>
+            <dt className="break-words font-semibold text-slate-500">{locationHeading}</dt>
             {locationDetail ? (
               isHttpUrl(locationDetail) ? (
                 <dd className="mt-1 min-w-0 break-all text-slate-900">
@@ -173,4 +173,5 @@ export default async function ActivitiesPage({ searchParams }: Props) {
     </main>
   );
 }
+
 
