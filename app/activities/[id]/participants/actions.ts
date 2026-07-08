@@ -49,8 +49,21 @@ export async function searchParticipationProfiles(activityId: string, _previous:
   const editor = await requireEditor(activityId);
   if (!editor) return { query, results: [], error: "No tienes permiso para agregar participantes." };
 
-  const { data, error } = await editor.supabase.rpc("search_profiles_for_participation", { search_text: query });
-  if (error) return { query, results: [], error: "No fue posible buscar perfiles. Intenta nuevamente." };
+  const { data, error } = await editor.supabase.rpc("search_profiles_for_participation", {
+    target_activity_id: activityId,
+    search_text: query,
+  });
+  if (error) {
+    const errorText = [error.message, error.details, error.hint].filter(Boolean).join(" ");
+    const programMismatch = "La persona seleccionada pertenece a otro programa académico.";
+    return {
+      query,
+      results: [],
+      error: errorText.includes(programMismatch)
+        ? programMismatch
+        : "No fue posible buscar perfiles. Intenta nuevamente.",
+    };
+  }
 
   const rows = ((data ?? []) as SearchRow[]).filter((row) => row.primary_program_id === editor.activity.program_id);
   const programIds = [...new Set(rows.map((row) => row.primary_program_id).filter((id): id is string => Boolean(id)))];
