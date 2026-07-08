@@ -68,6 +68,7 @@ export interface ActivityFormValues {
 export type ActivityFormField = keyof ActivityFormValues | "academic_period_id";
 
 export interface ActivityFormState {
+  revision: number;
   values: ActivityFormValues;
   errors: Partial<Record<ActivityFormField, string>>;
   message: string | null;

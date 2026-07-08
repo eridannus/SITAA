@@ -25,6 +25,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-011 | Programa académico obligatorio | Aceptada |
 | DEC-012 | Actividades como núcleo operativo | Aceptada |
 | DEC-013 | Fecha, hora y duración de actividades | Aceptada |
+| DEC-014 | Validación, edición y eliminación de actividades base | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -132,6 +133,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** `activities` conserva fecha y hora en campos separados y también completa `starts_at`/`ends_at` por compatibilidad. La validación usa la fecha actual de Ciudad de México y no permite inicios pasados ni términos anteriores al inicio.
 
 **Estado:** Aceptada.
+
+## DEC-014 — Validación, edición y eliminación de actividades base
+
+**Decisión:** todos los campos operativos de una actividad son obligatorios salvo description. Las fechas se muestran como DD/MM/YYYY y las horas en formato de 24 horas. El módulo base permite editar y eliminar actividades, siempre sujeto a autenticación, confirmación explícita para eliminar y políticas RLS.
+
+**Consecuencias:** creación y edición comparten validación y conservan los valores rechazados. El periodo se obtiene del único periodo activo; responsible_profile_id y created_by no cambian al editar. La opción «Ambos programas» queda pendiente: requerirá un modelo posterior de alcance de actividad para que division_tutoring_liaison pueda seleccionar Diseño Gráfico, Arquitectura o ambos sin debilitar permisos.
+
+**Estado:** Aceptada.
+
 ## Plantilla para nuevas decisiones
 
 ### DEC-XXX — Título

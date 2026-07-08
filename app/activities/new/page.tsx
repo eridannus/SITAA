@@ -116,7 +116,22 @@ export default async function NewActivityPage() {
         <ActivityForm
           options={options}
           activePeriod={options.academicPeriods[0]}
-          initialProgramId={profile.primary_program_id ?? ""}
+          initialValues={{
+            title: "",
+            description: "",
+            program_id: profile.primary_program_id ?? "",
+            activity_type_code: "",
+            service_type_code: "",
+            attention_category_code: "",
+            modality_code: "",
+            location_type_code: "",
+            location_detail: "",
+            start_date: "",
+            start_time: "",
+            duration_mode: "one_hour",
+            end_date: "",
+            end_time: "",
+          }}
           today={getMexicoCityToday()}
         />
       </div>

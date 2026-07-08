@@ -46,6 +46,15 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 - Las duraciones de una y dos horas calculan automáticamente `end_date` y `end_time`; la personalizada exige ambos campos.
 - `starts_at` y `ends_at` se mantienen como campos de compatibilidad derivados de fecha y hora separadas.
 
+
+### Reglas del flujo base implementado
+
+- Todos los campos operativos de la actividad son obligatorios salvo description.
+- Las fechas se presentan como DD/MM/YYYY y las horas en formato de 24 horas.
+- Alta y actualización usan el único periodo académico activo; no se puede seleccionar manualmente.
+- La edición conserva responsible_profile_id y created_by; lectura, actualización y eliminación dependen de RLS.
+- TODO: modelar el alcance para que el enlace divisional pueda elegir Diseño Gráfico, Arquitectura o ambos, sin crear «Ambos programas» como programa ficticio.
+
 ## Entidades previstas
 
 ### Participación y asistencia previstas
@@ -103,4 +112,4 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 
 ## Estado de implementación
 
-La tabla `activities` y su alta/listado básicos están implementados. Participantes, asistencia, formularios y reportes permanecen en diseño. Este documento no crea ni autoriza migraciones SQL.
+La tabla `activities` y su alta, listado, edición y eliminación básicos están implementados. Participantes, asistencia, formularios y reportes permanecen en diseño. Este documento no crea ni autoriza migraciones SQL.
