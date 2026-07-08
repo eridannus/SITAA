@@ -84,6 +84,12 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
           <dt className="font-semibold text-slate-500">Horario (24 horas)</dt>
           <dd className="mt-1 min-w-0 break-words text-slate-900">{when.times}</dd>
         </div>
+        {!studentOnly ? (
+          <div className="min-w-0">
+            <dt className="font-semibold text-slate-500">Semestre</dt>
+            <dd className="mt-1 min-w-0 break-words text-slate-900">{activity.academicPeriodLabel ?? "Sin semestre asignado"}</dd>
+          </div>
+        ) : null}
         <div className="min-w-0">
           <dt className="font-semibold text-slate-500">Duración</dt>
           <dd className="mt-1 min-w-0 break-words text-slate-900">{when.duration}</dd>

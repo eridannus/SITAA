@@ -5,12 +5,11 @@ import { useFormStatus } from "react-dom";
 import { createActivity, updateActivity } from "@/app/activities/actions";
 import { calculatePresetEnd } from "@/lib/activities/date-time";
 import type { ActivityFormOptions, ActivityFormState, ActivityFormValues, ActivityScopeAccess, DurationMode } from "@/types/activities";
-import type { AcademicPeriod, CatalogRow } from "@/types/catalogs";
+import type { CatalogRow } from "@/types/catalogs";
 
 interface Props {
   options: ActivityFormOptions;
   access: ActivityScopeAccess;
-  activePeriod: AcademicPeriod;
   initialValues: ActivityFormValues;
   today: string;
   mode?: "create" | "edit";
@@ -31,23 +30,33 @@ function SubmitButton({ mode }: { mode: "create" | "edit" }) {
   </button>;
 }
 
-export function ActivityForm({ options, access, activePeriod, initialValues, today, mode = "create", activityId }: Props) {
+export function ActivityForm({ options, access, initialValues, today, mode = "create", activityId }: Props) {
   const action = mode === "edit" && activityId ? updateActivity.bind(null, activityId) : createActivity;
   const [state, formAction] = useActionState<ActivityFormState, FormData>(action, { revision: 0, values: initialValues, errors: {}, message: null });
   return <form action={formAction} className="grid gap-6 sm:grid-cols-2" noValidate>
-    <Fields key={state.revision} state={state} options={options} access={access} activePeriod={activePeriod} today={today} mode={mode} />
+    <Fields key={state.revision} state={state} options={options} access={access} today={today} mode={mode} />
   </form>;
 }
 
-function Fields({ state, options, access, activePeriod, today, mode }: {
+function Fields({ state, options, access, today, mode }: {
   state: ActivityFormState; options: ActivityFormOptions; access: ActivityScopeAccess;
-  activePeriod: AcademicPeriod; today: string; mode: "create" | "edit";
+  today: string; mode: "create" | "edit";
 }) {
   const [liveValues, setLiveValues] = useState(state.values);
   const calculatedEnd = useMemo(
     () => calculatePresetEnd(liveValues.start_date, liveValues.start_time, liveValues.duration_mode as DurationMode),
     [liveValues.duration_mode, liveValues.start_date, liveValues.start_time],
   );
+  const semesterInfo = useMemo(() => {
+    if (!liveValues.start_date) {
+      return { tone: "neutral" as const, text: "Selecciona una fecha de inicio para asignar el semestre." };
+    }
+    const semester = options.academicPeriods.find((period) =>
+      period.start_date && period.end_date && liveValues.start_date >= period.start_date && liveValues.start_date <= period.end_date,
+    );
+    if (semester) return { tone: "ok" as const, text: "Semestre: " + label(semester) };
+    return { tone: "warning" as const, text: "No hay semestre registrado para esta fecha." };
+  }, [liveValues.start_date, options.academicPeriods]);
   const set = (field: keyof ActivityFormValues, value: string) => setLiveValues((current) => ({ ...current, [field]: value }));
   const inputClass = (field: keyof ActivityFormValues) => `mt-2 w-full rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${state.errors[field] ? "border-red-400 focus:border-red-600 focus:ring-red-100" : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"}`;
   const common = (field: keyof ActivityFormValues) => ({
@@ -63,7 +72,7 @@ function Fields({ state, options, access, activePeriod, today, mode }: {
 
   return <>
     {state.message && <div role="alert" className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"><p className="font-semibold">Revisa los campos señalados.</p><p>{state.message}</p></div>}
-    <div className="sm:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><p className="text-sm font-semibold text-emerald-700">Periodo académico activo</p><p className="mt-1 text-lg font-bold text-emerald-950">{label(activePeriod)}</p><FieldError message={state.errors.academic_period_id} /></div>
+    <div className={`sm:col-span-2 rounded-2xl border p-5 ${semesterInfo.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}><p className="text-sm font-semibold">{semesterInfo.text}</p><FieldError message={state.errors.academic_period_id} /></div>
     <div className="sm:col-span-2"><label htmlFor="title" className="block text-sm font-semibold text-slate-700">Título</label><input id="title" name="title" required maxLength={200} {...common("title")} /><FieldError message={state.errors.title} /></div>
     <div className="sm:col-span-2"><label htmlFor="description" className="block text-sm font-semibold text-slate-700">Descripción (opcional)</label><textarea id="description" name="description" rows={4} maxLength={5000} {...common("description")} /><FieldError message={state.errors.description} /></div>
 
@@ -92,7 +101,7 @@ function Fields({ state, options, access, activePeriod, today, mode }: {
     {catalogSelect("modality_code", "Modalidad", "Selecciona una modalidad", options.modalities)}
     {catalogSelect("location_type_code", "Tipo de ubicación", "Selecciona un tipo de ubicación", options.locationTypes)}
     <div><label htmlFor="location_detail" className="block text-sm font-semibold text-slate-700">Detalle de ubicación</label><input id="location_detail" name="location_detail" required maxLength={500} placeholder="Aula, edificio o enlace" {...common("location_detail")} /><FieldError message={state.errors.location_detail} /></div>
-    <div><label htmlFor="start_date" className="block text-sm font-semibold text-slate-700">Fecha de inicio</label><input id="start_date" name="start_date" type="date" required min={today} {...common("start_date")} /><FieldError message={state.errors.start_date} /></div>
+    <div><label htmlFor="start_date" className="block text-sm font-semibold text-slate-700">Fecha de inicio</label><input id="start_date" name="start_date" type="date" required min={mode === "create" ? today : undefined} {...common("start_date")} /><FieldError message={state.errors.start_date} /></div>
     <div><label htmlFor="start_time" className="block text-sm font-semibold text-slate-700">Hora de inicio</label><input id="start_time" name="start_time" type="time" required step={60} lang="es-MX" {...common("start_time")} /><div className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError message={state.errors.start_time} /></div>
     <div className="sm:col-span-2"><label htmlFor="duration_mode" className="block text-sm font-semibold text-slate-700">Duración</label><select id="duration_mode" name="duration_mode" required {...common("duration_mode")}><option value="one_hour">1 hora</option><option value="two_hours">2 horas</option><option value="custom">Personalizada</option></select><FieldError message={state.errors.duration_mode} /></div>
     {liveValues.duration_mode === "custom" ? <>

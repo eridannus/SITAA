@@ -36,7 +36,7 @@ function valuesFrom(formData: FormData): ActivityFormValues {
 function invalid(previous: ActivityFormState, values: ActivityFormValues, errors: ActivityFormState["errors"], message = "Revisa los campos marcados antes de continuar."): ActivityFormState {
   return { revision: previous.revision + 1, values, errors, message };
 }
-function validate(values: ActivityFormValues) {
+function validate(values: ActivityFormValues, { enforceFutureStartDate }: { enforceFutureStartDate: boolean }) {
   const errors: Partial<Record<ActivityFormField, string>> = {};
   if (!values.title) errors.title = "Escribe el título de la actividad.";
   else if (values.title.length > 200) errors.title = "El título no puede exceder 200 caracteres.";
@@ -53,7 +53,7 @@ function validate(values: ActivityFormValues) {
   if (!isValidDate(values.start_date)) errors.start_date = "Indica una fecha de inicio válida.";
   if (!isValidTime(values.start_time)) errors.start_time = "Indica una hora válida en formato de 24 horas.";
   if (!durationModes.has(values.duration_mode as DurationMode)) errors.duration_mode = "Selecciona una duración.";
-  if (isValidDate(values.start_date) && values.start_date < getMexicoCityToday()) errors.start_date = "La fecha de inicio no puede ser anterior a hoy.";
+  if (enforceFutureStartDate && isValidDate(values.start_date) && values.start_date < getMexicoCityToday()) errors.start_date = "La fecha de inicio no puede ser anterior a hoy.";
 
   let endDate = values.end_date;
   let endTime = values.end_time;
@@ -81,9 +81,8 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   let options;
   try { options = await getActivityFormOptions(); }
   catch { return invalid(previous, values, {}, "No fue posible validar los catálogos operativos."); }
-  if (options.academicPeriods.length !== 1) return invalid(previous, values, { academic_period_id: "No hay un periodo académico activo y único." }, "No es posible guardar actividades hasta configurar un periodo académico activo.");
 
-const supabase = await createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const existingResult = activityId
     ? await supabase
         .from("activities")
@@ -120,7 +119,7 @@ const supabase = await createSupabaseServerClient();
   values.scope_type = "program";
   if (access.allowedPrograms.length === 1) values.program_id = access.allowedPrograms[0].id;
 
-  const result = validate(values);
+  const result = validate(values, { enforceFutureStartDate: !activityId });
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
   const selectedProgram = options.programs.find((item) => item.id === values.program_id);
@@ -143,10 +142,19 @@ const supabase = await createSupabaseServerClient();
   for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opción seleccionada ya no está disponible.";
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
+  const { data: semesterData, error: semesterError } = await supabase.rpc("get_academic_period_for_date", { target_date: values.start_date });
+  if (semesterError) {
+    return invalid(previous, values, { academic_period_id: "No fue posible asignar el semestre." }, "No fue posible validar el semestre de la actividad.");
+  }
+  const semesterRows = Array.isArray(semesterData) ? semesterData : (semesterData ? [semesterData] : []);
+  const academicPeriodId = typeof semesterData === "string"
+    ? semesterData
+    : (semesterRows[0] as { id?: string } | undefined)?.id ?? null;
+
   const payload = {
     title: values.title,
     description: values.description || null,
-    academic_period_id: options.academicPeriods[0].id,
+    academic_period_id: academicPeriodId,
     scope_type: "program",
     division_id: divisionId,
     program_id: values.program_id,

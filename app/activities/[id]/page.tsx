@@ -102,12 +102,13 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     </div>
     {updated && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Los cambios se guardaron correctamente.</div>}
 
-    {canEdit && options.academicPeriods.length === 1 ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10"><ActivityForm options={options} access={access} activePeriod={options.academicPeriods[0]} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} /></div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
+    {canEdit ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10"><ActivityForm options={options} access={access} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} /></div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <h2 className="break-words text-2xl font-bold text-slate-900">{activity.title}</h2>
       {activity.description && <p className="mt-4 break-words leading-7 text-slate-600">{activity.description}</p>}
       <dl className="mt-6 grid min-w-0 gap-4 text-sm sm:grid-cols-2">
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Fecha</dt><dd className="break-words text-slate-900">{date(activity.start_date)}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Horario</dt><dd className="break-words text-slate-900">{activity.start_time?.slice(0,5) ?? "--:--"}–{activity.end_time?.slice(0,5) ?? "--:--"}</dd></div>
+        {!studentOnly && <div className="min-w-0"><dt className="font-semibold text-slate-500">Semestre</dt><dd className="break-words text-slate-900">{card?.academicPeriodLabel ?? "Sin semestre asignado"}</dd></div>}
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Programa</dt><dd className="break-words text-slate-900">{programName}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Responsable</dt><dd className="break-words text-slate-900">{responsibleName}</dd></div>
         <div className="min-w-0 sm:col-span-2"><dt className="break-words font-semibold text-slate-500">{locationHeading}</dt>{locationDetail ? (isHttpUrl(locationDetail) ? <dd className="mt-1 min-w-0 break-all text-slate-900"><a className="cursor-pointer text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2" href={locationDetail} target="_blank" rel="noopener noreferrer">{locationDetail}</a></dd> : <dd className="mt-1 min-w-0 break-words text-slate-900">{locationDetail}</dd>) : null}</div>
