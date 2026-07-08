@@ -35,6 +35,9 @@ function date(value: string | null) {
   const [year, month, day] = value.split("-");
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
+function isHttpUrl(value: string) {
+  return value.startsWith("http://") || value.startsWith("https://");
+}
 
 export default async function ActivityDetailPage({ params, searchParams }: Props) {
   const { id } = await params;
@@ -89,6 +92,8 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const participantStatus = param(query.participant);
   const responsibleName = card?.responsibleName || "Responsable no disponible";
   const programName = card?.programName || (activity.scope_type === "division" ? "Ambos programas" : options.programs.find((item) => item.id === activity.program_id)?.name ?? "Programa no disponible");
+  const locationDetail = activity.location_detail?.trim();
+  const locationHeading = card?.locationTypeLabel?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.label?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.name?.trim() || "Ubicación";
 
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -105,7 +110,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Horario</dt><dd className="break-words text-slate-900">{activity.start_time?.slice(0,5) ?? "--:--"}–{activity.end_time?.slice(0,5) ?? "--:--"}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Programa</dt><dd className="break-words text-slate-900">{programName}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Responsable</dt><dd className="break-words text-slate-900">{responsibleName}</dd></div>
-        <div className="min-w-0"><dt className="font-semibold text-slate-500">Ubicación</dt><dd className="break-words text-slate-900">{activity.location_detail ?? "No disponible"}</dd></div>
+        <div className="min-w-0 sm:col-span-2"><dt className="break-words font-semibold text-emerald-700">{locationHeading}</dt>{locationDetail ? (isHttpUrl(locationDetail) ? <dd className="mt-1 min-w-0 break-all text-slate-900"><a className="cursor-pointer text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2" href={locationDetail} target="_blank" rel="noopener noreferrer">{locationDetail}</a></dd> : <dd className="mt-1 min-w-0 break-words text-slate-900">{locationDetail}</dd>) : null}</div>
       </dl>
       {studentOnly && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">{card?.ownParticipantRoleLabel ? `Tu participación: ${card.ownParticipantRoleLabel}.` : "Estás registrado como participante en esta actividad."}</p>}
       {!studentOnly && !canEdit && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
@@ -118,4 +123,6 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     {canEdit && <section className="mt-10 rounded-3xl border border-red-200 bg-red-50 p-7 sm:p-10"><h2 className="text-xl font-bold text-red-950">Eliminar actividad</h2><p className="mt-3 text-red-800">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold text-red-800">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
   </main>;
 }
+
+
 

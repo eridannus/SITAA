@@ -61,6 +61,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
   const when = schedule(activity);
   const description = activity.description?.trim();
   const locationDetail = activity.location_detail?.trim();
+  const locationHeading = activity.locationTypeLabel?.trim() || "Ubicación";
 
   return (
     <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">
@@ -100,8 +101,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
         </div>
         {(activity.locationTypeLabel || locationDetail) ? (
           <div className="min-w-0 sm:col-span-2">
-            <dt className="font-semibold text-slate-500">Ubicación</dt>
-            {activity.locationTypeLabel ? <dd className="mt-1 break-words font-semibold text-emerald-700">{activity.locationTypeLabel}</dd> : null}
+            <dt className="break-words font-semibold text-emerald-700">{locationHeading}</dt>
             {locationDetail ? (
               isHttpUrl(locationDetail) ? (
                 <dd className="mt-1 min-w-0 break-all text-slate-900">
@@ -173,3 +173,4 @@ export default async function ActivitiesPage({ searchParams }: Props) {
     </main>
   );
 }
+
