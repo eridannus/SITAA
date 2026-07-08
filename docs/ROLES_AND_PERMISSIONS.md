@@ -51,7 +51,7 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - Solo quienes pueden editar una actividad pueden agregar o retirar participantes; la búsqueda usa perfiles registrados y roles de participante controlados.
 - En el MVP, la búsqueda y el alta de participantes se limitan a perfiles cuyo `primary_program_id` coincide con el `program_id` de la actividad; la interfaz filtra y el servidor valida nuevamente.
 - Un alumno agregado como participante puede consultar la actividad conforme a RLS, sin recibir permisos de edición.
-- Los usuarios con únicamente el rol `student` ven resúmenes de sus actividades asignadas y, cuando aplique, su propia condición de participación; no ven el padrón completo de participantes ni controles administrativos.
+- Los usuarios con únicamente el rol `student` ven resúmenes de sus actividades asignadas, incluyendo descripción y ubicación cuando existan; no ven el padrón completo de participantes ni controles administrativos.
 - Toda elevación, revocación o modificación de permisos debe quedar auditada.
 - La interfaz no sustituye RLS.
 
@@ -78,3 +78,4 @@ Cada política comprobará identidad, asignación vigente, alcance, programa o d
 - Procedimiento de suplencias temporales.
 - Flujo colegiado para aprobar campos obligatorios y publicar versiones.
 - Nivel de detalle y umbrales de agregación para jefaturas.
+

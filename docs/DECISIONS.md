@@ -186,7 +186,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 ## DEC-019 — Privacidad del padrón de participantes
 
-**Decisión:** los alumnos con rol exclusivamente `student` consultan únicamente el resumen de las actividades donde participan y su propia condición de participación. El padrón completo de participantes se reserva para usuarios autorizados a gestionar la actividad.
+**Decisión:** los alumnos con rol exclusivamente `student` consultan únicamente el resumen de las actividades donde participan, con descripción y ubicación cuando existan. El padrón completo de participantes se reserva para usuarios autorizados a gestionar la actividad.
 
 **Consecuencias:** la interfaz no invoca funciones de listado de participantes para alumnos y no muestra errores de permisos derivados de esa restricción. RLS y RPC mantienen la autorización definitiva; ser participante no concede visibilidad sobre otros participantes.
 
@@ -202,3 +202,4 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** beneficios, costos y riesgos.
 
 **Estado:** Propuesta, Aceptada o Sustituida por DEC-XXX.
+

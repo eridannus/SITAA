@@ -20,7 +20,9 @@ type VisibleActivityCardRow = Partial<Activity> & {
   responsible_full_name?: string | null;
   responsible_name?: string | null;
   can_edit?: boolean | null;
+  viewer_can_edit?: boolean | null;
   is_participant?: boolean | null;
+  viewer_is_participant?: boolean | null;
   participant_role_label?: string | null;
 };
 
@@ -117,11 +119,12 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
       statusLabel: row.status_label?.trim() || label(statuses.get(statusCode), statusCode),
       locationTypeLabel: row.location_type_label?.trim() || (locationCode ? label(locations.get(locationCode), locationCode) : null),
       responsibleName: row.responsible_full_name?.trim() || row.responsible_name?.trim() || "Responsable no disponible",
-      canEdit: row.can_edit === true,
-      isParticipant: row.is_participant === true,
+      canEdit: row.viewer_can_edit === true || row.can_edit === true,
+      isParticipant: row.viewer_is_participant === true || row.is_participant === true,
       ownParticipantRoleLabel: row.participant_role_label?.trim() || null,
     };
   }).filter((activity) => Boolean(activity.id)).sort((left, right) =>
     (right.start_date ?? right.starts_at ?? right.created_at ?? "").localeCompare(left.start_date ?? left.starts_at ?? left.created_at ?? ""),
   );
 }
+
