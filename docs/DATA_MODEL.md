@@ -44,6 +44,7 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 - division_id es obligatorio en ambos alcances.
 - En alcance program, program_id es obligatorio y su división debe coincidir con division_id.
 - En alcance division, program_id es nulo; para la División de Diseño y Edificación representa «Ambos programas».
+- En el MVP, altas y ediciones operativas usan exclusivamente scope_type = program; program_id es obligatorio y division_id se deriva del programa. El alcance divisional queda reservado y no se expone en la interfaz.
 
 ### Reglas temporales de actividades
 

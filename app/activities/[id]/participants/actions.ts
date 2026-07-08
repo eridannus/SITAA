@@ -30,9 +30,10 @@ async function requireEditor(activityId: string) {
   const { data, error } = await supabase.from("activities").select("*").eq("id", activityId).maybeSingle();
   if (error || !data) return null;
   const activity = data as Activity;
+  if (activity.scope_type !== "program" || !activity.program_id) return null;
   const options = await getActivityFormOptions();
   if (!canManageActivityScope(context, activityValues(activity), options.programs, activity.division_id)) return null;
-  return { supabase };
+  return { supabase, activity };
 }
 
 type SearchRow = {
@@ -51,7 +52,7 @@ export async function searchParticipationProfiles(activityId: string, _previous:
   const { data, error } = await editor.supabase.rpc("search_profiles_for_participation", { search_text: query });
   if (error) return { query, results: [], error: "No fue posible buscar perfiles. Intenta nuevamente." };
 
-  const rows = (data ?? []) as SearchRow[];
+  const rows = ((data ?? []) as SearchRow[]).filter((row) => row.primary_program_id === editor.activity.program_id);
   const programIds = [...new Set(rows.map((row) => row.primary_program_id).filter((id): id is string => Boolean(id)))];
   const programsResult = programIds.length ? await editor.supabase.from("academic_programs").select("id, name").in("id", programIds) : { data: [] as { id: string; name: string }[], error: null };
   const programMap = new Map((programsResult.data ?? []).map((program) => [program.id, program.name]));
@@ -91,6 +92,16 @@ export async function addActivityParticipant(
 
   const editor = await requireEditor(activityId);
   if (!editor) return { error: "No tienes permiso para agregar participantes a esta actividad." };
+
+  const { data: selectedProfile, error: profileError } = await editor.supabase
+    .from("profiles")
+    .select("primary_program_id")
+    .eq("id", profileId)
+    .maybeSingle();
+  if (profileError || !selectedProfile) return { error: "No fue posible verificar el programa académico de la persona." };
+  if (selectedProfile.primary_program_id !== editor.activity.program_id) {
+    return { error: "La persona seleccionada pertenece a otro programa académico." };
+  }
 
   const { error } = await editor.supabase.rpc("add_activity_participant", {
     target_activity_id: activityId,

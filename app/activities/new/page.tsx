@@ -24,7 +24,7 @@ export default async function NewActivityPage() {
   if (options.academicPeriods.length !== 1) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No es posible crear actividades</h1><p className="mt-4">Debe existir exactamente un periodo académico activo.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link></section>;
 
   const access = getActivityScopeAccess(context, options.programs, options.divisions);
-  if (!access.allowedPrograms.length && !access.canUseDivisionScope) {
+  if (!access.allowedPrograms.length) {
     const roleCodes = new Set(context.activeRoleAssignments.map((item) => item.role_code));
     const needsPrimaryProgram =
       !context.profile.primary_program_id &&
@@ -38,12 +38,12 @@ export default async function NewActivityPage() {
     </section>;
   }
 
-  const singleProgram = access.allowedPrograms.length === 1 && !access.canUseDivisionScope;
+  const singleProgram = access.allowedPrograms.length === 1;
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p><h1 className="mt-3 text-3xl font-bold text-emerald-950 sm:text-4xl">Nueva actividad</h1><p className="mt-4 text-slate-600">Registra la información base de la actividad.</p></div><Link href="/activities" className="rounded-full border border-slate-300 px-6 py-3 text-sm font-bold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link></div>
     <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <ActivityForm options={options} access={access} activePeriod={options.academicPeriods[0]} today={getMexicoCityToday()} initialValues={{
-        title: "", scope_type: singleProgram ? "program" : "", description: "",
+        title: "", scope_type: "program", description: "",
         program_id: singleProgram ? access.allowedPrograms[0].id : "",
         activity_type_code: "", service_type_code: "", attention_category_code: "",
         modality_code: "", location_type_code: "", location_detail: "",

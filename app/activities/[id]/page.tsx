@@ -50,7 +50,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
 
   const values = formValues(activity);
   const access = getActivityScopeAccess(context, options.programs, options.divisions);
-  const canEdit = canManageActivityScope(context, values, options.programs, activity.division_id);
+  const canEdit = activity.scope_type === "program" && canManageActivityScope(context, values, options.programs, activity.division_id);
   const [{ data: roleData, error: roleError }, participantsResult] = await Promise.all([
     supabase.from("participant_roles").select("*").eq("is_active", true),
     getActivityParticipants(id).then((participants) => ({ participants, error: null })).catch(() => ({ participants: [], error: true })),

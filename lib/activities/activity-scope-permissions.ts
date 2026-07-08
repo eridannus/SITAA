@@ -26,7 +26,7 @@ export function getActivityScopeAccess(context: AuthenticatedUserContext, progra
   const liaisonDivisionIds = new Set(assignments.filter((item) => item.role_code === "division_tutoring_liaison").map((item) => item.division_id).filter((id): id is string => Boolean(id)));
   const allowedProgramIds = new Set<string>();
 
-  if (isTechnicalAdmin) activePrograms.forEach((program) => allowedProgramIds.add(program.id));
+  if (isTechnicalAdmin && targetDivision) activePrograms.filter((program) => program.division_id === targetDivision.id).forEach((program) => allowedProgramIds.add(program.id));
   else for (const assignment of assignments) {
     if ((assignment.role_code === "professor" || assignment.role_code === "peer_tutor") && context.profile?.primary_program_id) allowedProgramIds.add(context.profile.primary_program_id);
     else if (PROGRAM_ROLES.has(assignment.role_code) && assignment.program_id) allowedProgramIds.add(assignment.program_id);

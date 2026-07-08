@@ -49,6 +49,7 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - `technical_admin` no obtiene por su rol lectura de contenido académico sensible.
 - Los participantes y asistencias siempre referencian perfiles SITAA.
 - Solo quienes pueden editar una actividad pueden agregar o retirar participantes; la búsqueda usa perfiles registrados y roles de participante controlados.
+- En el MVP, la búsqueda y el alta de participantes se limitan a perfiles cuyo `primary_program_id` coincide con el `program_id` de la actividad; la interfaz filtra y el servidor valida nuevamente.
 - Un alumno agregado como participante puede consultar la actividad conforme a RLS, sin recibir permisos de edición.
 - Toda elevación, revocación o modificación de permisos debe quedar auditada.
 - La interfaz no sustituye RLS.
@@ -60,8 +61,8 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - program_tutoring_lead opera tutorías en el programa asignado.
 - program_advising_lead opera asesorías en el programa asignado.
 - program_head opera actividades únicamente en el programa asignado.
-- division_tutoring_liaison puede elegir Diseño Gráfico, Arquitectura o «Ambos programas» dentro de su división y área de servicio.
-- technical_admin puede crear actividades en cualquier programa o en el alcance divisional para soporte y pruebas.
+- division_tutoring_liaison puede elegir Diseño Gráfico o Arquitectura dentro de su división y área de servicio. «Ambos programas» queda reservado fuera del MVP.
+- technical_admin puede crear actividades de prueba o soporte en Diseño Gráfico o Arquitectura durante el MVP; el alcance divisional queda reservado.
 - La interfaz filtra opciones, la acción del servidor repite la validación y RLS conserva la autorización definitiva.
 - Cuando solo existe una combinación válida de alcance y programa, la interfaz la muestra como información de solo lectura; el servidor impone esa combinación e ignora valores manipulados.
 

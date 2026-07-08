@@ -29,6 +29,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-015 | Alcance de actividades por programa o división | Aceptada |
 | DEC-016 | Selección de alcance consciente de permisos | Aceptada |
 | DEC-017 | Participantes registrados por actividad | Aceptada |
+| DEC-018 | Alcance programático exclusivo durante el MVP | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -169,6 +170,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** cada participante de una actividad referencia un perfil SITAA y un rol del catálogo participant_roles. La búsqueda se realiza por nombre, correo o identificador institucional mediante la función autorizada de Supabase; no se admiten personas de texto libre ni duplicados por actividad.
 
 **Consecuencias:** los editores autorizados agregan o retiran participantes bajo RLS. Ser participante concede visibilidad de la actividad conforme a las políticas de lectura, pero no permisos de edición ni asistencia automática.
+
+**Estado:** Aceptada.
+
+
+## DEC-018 — Alcance programático exclusivo durante el MVP
+
+**Decisión:** durante el MVP, toda actividad creada o editada pertenece a un único programa: Diseño Gráfico o Arquitectura. El alcance division permanece en el esquema como capacidad reservada, pero «Ambos programas» no se expone en la interfaz ni se acepta en las acciones operativas del MVP.
+
+**Consecuencias:** division_tutoring_liaison y technical_admin eligen uno de los programas permitidos. La búsqueda y el alta de participantes exigen coincidencia entre el programa principal del perfil y el programa de la actividad.
 
 **Estado:** Aceptada.
 

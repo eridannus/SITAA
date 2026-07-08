@@ -84,23 +84,20 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   if (options.academicPeriods.length !== 1) return invalid(previous, values, { academic_period_id: "No hay un periodo académico activo y único." }, "No es posible guardar actividades hasta configurar un periodo académico activo.");
 
   const access = getActivityScopeAccess(context, options.programs, options.divisions);
-  if (!access.allowedPrograms.length && !access.canUseDivisionScope) {
+  if (!access.allowedPrograms.length) {
     return invalid(previous, values, { scope_type: "Tus asignaciones no permiten crear actividades." }, "No tienes permiso para crear o modificar actividades.");
   }
 
-  if (!access.canUseDivisionScope) {
-    values.scope_type = "program";
-    if (access.allowedPrograms.length === 1) values.program_id = access.allowedPrograms[0].id;
-  }
+  values.scope_type = "program";
+  if (access.allowedPrograms.length === 1) values.program_id = access.allowedPrograms[0].id;
 
   const result = validate(values);
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
-  const selectedProgram = values.scope_type === "program" ? options.programs.find((item) => item.id === values.program_id) : null;
-  const divisionId = values.scope_type === "program" ? selectedProgram?.division_id ?? null : access.divisionScopeId;
+  const selectedProgram = options.programs.find((item) => item.id === values.program_id);
+  const divisionId = selectedProgram?.division_id ?? null;
   if (!divisionId) {
-    const field = values.scope_type === "program" ? "program_id" : "division_id";
-    return invalid(previous, values, { [field]: "No fue posible determinar una división autorizada." }, "Revisa el alcance seleccionado.");
+    return invalid(previous, values, { program_id: "Selecciona un programa académico válido." }, "Revisa el programa seleccionado.");
   }
   if (!canManageActivityScope(context, values, options.programs, divisionId)) {
     return invalid(previous, values, { scope_type: "Tus asignaciones no permiten este alcance y tipo de servicio." }, "No tienes permiso para guardar la actividad con esta combinación.");
@@ -113,7 +110,7 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     ["modality_code", options.modalities.some((item) => item.code === values.modality_code)],
     ["location_type_code", options.locationTypes.some((item) => item.code === values.location_type_code)],
   ];
-  if (values.scope_type === "program") checks.push(["program_id", Boolean(selectedProgram)]);
+  checks.push(["program_id", Boolean(selectedProgram)]);
   for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opción seleccionada ya no está disponible.";
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
@@ -121,9 +118,9 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     title: values.title,
     description: values.description || null,
     academic_period_id: options.academicPeriods[0].id,
-    scope_type: values.scope_type,
+    scope_type: "program",
     division_id: divisionId,
-    program_id: values.scope_type === "program" ? values.program_id : null,
+    program_id: values.program_id,
     activity_type_code: values.activity_type_code,
     service_type_code: values.service_type_code,
     attention_category_code: values.attention_category_code,
