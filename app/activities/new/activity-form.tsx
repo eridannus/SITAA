@@ -58,17 +58,18 @@ function Fields({ state, options, activePeriod, today, mode }: {
   today: string;
   mode: "create" | "edit";
 }) {
-  const [values, setValues] = useState(state.values);
+  const [liveValues, setLiveValues] = useState(state.values);
   const calculatedEnd = useMemo(
-    () => calculatePresetEnd(values.start_date, values.start_time, values.duration_mode as DurationMode),
-    [values.duration_mode, values.start_date, values.start_time],
+    () => calculatePresetEnd(liveValues.start_date, liveValues.start_time, liveValues.duration_mode as DurationMode),
+    [liveValues.duration_mode, liveValues.start_date, liveValues.start_time],
   );
   const set = (field: keyof ActivityFormValues, value: string) =>
-    setValues((current) => ({ ...current, [field]: value }));
+    setLiveValues((current) => ({ ...current, [field]: value }));
   const inputClass = (field: keyof ActivityFormValues) =>
     `mt-2 w-full rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${state.errors[field] ? "border-red-400 focus:border-red-600 focus:ring-red-100" : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"}`;
   const common = (field: keyof ActivityFormValues) => ({
-    value: values[field],
+    key: state.revision + ":" + field,
+    defaultValue: state.values[field],
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => set(field, event.target.value),
     "aria-invalid": Boolean(state.errors[field]),
     "aria-describedby": state.errors[field] ? `${field}-error` : undefined,
@@ -143,11 +144,11 @@ function Fields({ state, options, activePeriod, today, mode }: {
         </select>
         <FieldError message={state.errors.duration_mode} />
       </div>
-      {values.duration_mode === "custom" ? (
+      {liveValues.duration_mode === "custom" ? (
         <>
           <div>
             <label htmlFor="end_date" className="block text-sm font-semibold text-slate-700">Fecha de término</label>
-            <input id="end_date" name="end_date" type="date" required min={values.start_date || today} {...common("end_date")} />
+            <input id="end_date" name="end_date" type="date" required min={liveValues.start_date || today} {...common("end_date")} />
             <FieldError message={state.errors.end_date} />
           </div>
           <div>
