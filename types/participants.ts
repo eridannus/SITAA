@@ -1,10 +1,19 @@
-import type { InstitutionalIdType } from "@/types/sitaa";
+﻿import type { InstitutionalIdType } from "@/types/sitaa";
+
+export type AttendanceStatus = "pending" | "attended" | "absent" | "justified";
+export type AttendanceSource = "system" | "manual" | "qr" | "code";
 
 export interface ActivityParticipant {
   id: string;
   activity_id: string;
   profile_id: string;
   participant_role_code: string;
+  attendance_status: AttendanceStatus | null;
+  attendance_source: AttendanceSource | null;
+  checked_in_at: string | null;
+  attendance_updated_by: string | null;
+  attendance_updated_at: string | null;
+  attendance_notes: string | null;
   created_by?: string | null;
   created_at?: string;
 }

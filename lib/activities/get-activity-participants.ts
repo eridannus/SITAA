@@ -1,5 +1,5 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { ActivityParticipantDisplay } from "@/types/participants";
+﻿import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { ActivityParticipantDisplay, AttendanceSource, AttendanceStatus } from "@/types/participants";
 import type { InstitutionalIdType } from "@/types/sitaa";
 
 type ParticipantRpcRow = {
@@ -17,6 +17,12 @@ type ParticipantRpcRow = {
   academic_program_name?: string | null;
   participant_role_label?: string | null;
   role_label?: string | null;
+  attendance_status?: AttendanceStatus | null;
+  attendance_source?: AttendanceSource | null;
+  checked_in_at?: string | null;
+  attendance_updated_by?: string | null;
+  attendance_updated_at?: string | null;
+  attendance_notes?: string | null;
   created_by?: string | null;
   created_at?: string;
 };
@@ -37,6 +43,12 @@ export async function getActivityParticipants(activityId: string): Promise<Activ
       participant_role_code: roleCode,
       created_by: row.created_by ?? null,
       created_at: row.created_at,
+      attendance_status: row.attendance_status ?? "pending",
+      attendance_source: row.attendance_source ?? "system",
+      checked_in_at: row.checked_in_at ?? null,
+      attendance_updated_by: row.attendance_updated_by ?? null,
+      attendance_updated_at: row.attendance_updated_at ?? null,
+      attendance_notes: row.attendance_notes?.trim() || null,
       full_name: row.full_name?.trim() || "Perfil sin nombre",
       email: row.email?.trim() || "Correo no disponible",
       institutional_id_type: row.institutional_id_type ?? "student_account",

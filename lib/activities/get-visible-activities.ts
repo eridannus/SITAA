@@ -1,6 +1,7 @@
 ﻿import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Activity, ActivityListItem, ActivityScopeType, DurationMode } from "@/types/activities";
+import type { AttendanceSource, AttendanceStatus } from "@/types/participants";
 import type { CatalogRow } from "@/types/catalogs";
 
 type VisibleActivityCardRow = Partial<Activity> & {
@@ -24,6 +25,9 @@ type VisibleActivityCardRow = Partial<Activity> & {
   is_participant?: boolean | null;
   viewer_is_participant?: boolean | null;
   participant_role_label?: string | null;
+  viewer_attendance_status?: AttendanceStatus | null;
+  viewer_attendance_source?: AttendanceSource | null;
+  viewer_checked_in_at?: string | null;
 };
 
 type ActivityProgramFallback = Pick<Activity, "id" | "scope_type" | "division_id" | "program_id">;
@@ -122,9 +126,13 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
       canEdit: row.viewer_can_edit === true || row.can_edit === true,
       isParticipant: row.viewer_is_participant === true || row.is_participant === true,
       ownParticipantRoleLabel: row.participant_role_label?.trim() || null,
+      viewerAttendanceStatus: row.viewer_attendance_status ?? null,
+      viewerAttendanceSource: row.viewer_attendance_source ?? null,
+      viewerCheckedInAt: row.viewer_checked_in_at ?? null,
     };
   }).filter((activity) => Boolean(activity.id)).sort((left, right) =>
     (right.start_date ?? right.starts_at ?? right.created_at ?? "").localeCompare(left.start_date ?? left.starts_at ?? left.created_at ?? ""),
   );
 }
+
 

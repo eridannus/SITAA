@@ -3,6 +3,7 @@
   AttentionCategory, LocationType, ServiceType,
 } from "@/types/catalogs";
 import type { AcademicProgram, Division } from "@/types/sitaa";
+import type { AttendanceSource, AttendanceStatus } from "@/types/participants";
 
 export type DurationMode = "one_hour" | "two_hours" | "custom";
 export type ActivityScopeType = "program" | "division";
@@ -92,5 +93,9 @@ export interface ActivityListItem extends Activity {
   canEdit: boolean;
   isParticipant: boolean;
   ownParticipantRoleLabel: string | null;
+  viewerAttendanceStatus: AttendanceStatus | null;
+  viewerAttendanceSource: AttendanceSource | null;
+  viewerCheckedInAt: string | null;
 }
+
 

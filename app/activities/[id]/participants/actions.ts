@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -7,8 +7,10 @@ import { canManageActivityScope } from "@/lib/activities/activity-scope-permissi
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Activity, ActivityFormValues } from "@/types/activities";
-import type { ParticipantMutationState, ParticipantSearchState, ParticipationProfileSearchResult } from "@/types/participants";
+import type { AttendanceStatus, ParticipantMutationState, ParticipantSearchState, ParticipationProfileSearchResult } from "@/types/participants";
 import type { InstitutionalIdType } from "@/types/sitaa";
+
+const attendanceStatuses = new Set<AttendanceStatus>(["pending", "attended", "absent", "justified"]);
 
 function activityValues(activity: Activity): ActivityFormValues {
   return {
@@ -55,42 +57,18 @@ export async function searchParticipationProfiles(activityId: string, _previous:
     search_text: query,
   });
   if (error) {
-    const rawError = [error.code, error.message, error.details, error.hint]
-      .filter(Boolean)
-      .join(" ");
-    const normalizedError = rawError
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
+    const rawError = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" ");
+    const normalizedError = rawError.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-    if (
-      error.code === "42501" ||
-      /permission|not authorized|row-level|rls|permiso|autorizad/.test(normalizedError)
-    ) {
-      return {
-        query,
-        results: [],
-        error: "No tienes permiso para buscar participantes en esta actividad.",
-      };
+    if (error.code === "42501" || /permission|not authorized|row-level|rls|permiso|autorizad/.test(normalizedError)) {
+      return { query, results: [], error: "No tienes permiso para buscar participantes en esta actividad." };
     }
 
-    if (
-      /actividad.*no tiene.*programa|sin programa|programa academico asignado/.test(
-        normalizedError,
-      )
-    ) {
-      return {
-        query,
-        results: [],
-        error: "La actividad no tiene programa académico asignado.",
-      };
+    if (/actividad.*no tiene.*programa|sin programa|programa academico asignado/.test(normalizedError)) {
+      return { query, results: [], error: "La actividad no tiene programa académico asignado." };
     }
 
-    return {
-      query,
-      results: [],
-      error: "No fue posible realizar la búsqueda de participantes.",
-    };
+    return { query, results: [], error: "No fue posible realizar la búsqueda de participantes." };
   }
 
   const rows = (data ?? []) as SearchRow[];
@@ -112,16 +90,19 @@ export async function searchParticipationProfiles(activityId: string, _previous:
 function addErrorMessage(error: { code?: string; message?: string; details?: string; hint?: string }) {
   const text = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
   const normalizedText = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (/otro programa academico/.test(normalizedText)) {
-    return "La persona seleccionada pertenece a otro programa académico.";
-  }
-  if (error.code === "23505" || /duplicate|already|ya (está|esta)|registrad/.test(text)) {
-    return "Esta persona ya está registrada en la actividad.";
-  }
-  if (error.code === "42501" || /permission|not authorized|row-level|rls|permiso|autorizad/.test(text)) {
-    return "No tienes permiso para agregar participantes a esta actividad.";
-  }
+  if (/otro programa academico/.test(normalizedText)) return "La persona seleccionada pertenece a otro programa académico.";
+  if (error.code === "23505" || /duplicate|already|ya (está|esta)|registrad/.test(text)) return "Esta persona ya está registrada en la actividad.";
+  if (error.code === "42501" || /permission|not authorized|row-level|rls|permiso|autorizad/.test(text)) return "No tienes permiso para agregar participantes a esta actividad.";
   return "No fue posible agregar a la persona. Intenta nuevamente.";
+}
+
+function attendanceErrorMessage(error: { code?: string; message?: string; details?: string; hint?: string }) {
+  const text = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
+  const normalizedText = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (error.code === "42501" || /permission|not authorized|row-level|rls|permiso|autorizad/.test(normalizedText)) {
+    return "No tienes permiso para modificar la asistencia de esta actividad.";
+  }
+  return "No fue posible actualizar la asistencia.";
 }
 
 export async function addActivityParticipant(
@@ -139,12 +120,7 @@ export async function addActivityParticipant(
   const editor = await requireEditor(activityId);
   if (!editor) return { error: "No tienes permiso para agregar participantes a esta actividad." };
 
-  if (
-    typeof participantProgramId === "string" &&
-    participantProgramId &&
-    editor.activity.program_id &&
-    participantProgramId !== editor.activity.program_id
-  ) {
+  if (typeof participantProgramId === "string" && participantProgramId && editor.activity.program_id && participantProgramId !== editor.activity.program_id) {
     return { error: "La persona seleccionada pertenece a otro programa académico." };
   }
 
@@ -158,6 +134,36 @@ export async function addActivityParticipant(
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
   redirect(`/activities/${activityId}?participant=added#participants`);
+}
+
+export async function updateParticipantAttendance(
+  activityId: string,
+  participantId: string,
+  _previous: ParticipantMutationState,
+  formData: FormData,
+): Promise<ParticipantMutationState> {
+  const status = formData.get("attendance_status");
+  const notesValue = formData.get("attendance_notes");
+  const notes = typeof notesValue === "string" ? notesValue.trim() : "";
+
+  if (typeof status !== "string" || !attendanceStatuses.has(status as AttendanceStatus)) {
+    return { error: "Selecciona un estado de asistencia válido." };
+  }
+  if (notes.length > 1000) return { error: "Las notas no pueden exceder 1000 caracteres." };
+
+  const editor = await requireEditor(activityId);
+  if (!editor) return { error: "No tienes permiso para modificar la asistencia de esta actividad." };
+
+  const { error } = await editor.supabase.rpc("update_activity_participant_attendance", {
+    target_participant_id: participantId,
+    new_attendance_status: status,
+    new_attendance_notes: notes || null,
+  });
+  if (error) return { error: attendanceErrorMessage(error) };
+
+  revalidatePath("/activities");
+  revalidatePath(`/activities/${activityId}`);
+  redirect(`/activities/${activityId}?participant=attendance-updated#participants`);
 }
 
 export async function removeActivityParticipant(activityId: string, participantId: string, formData: FormData) {

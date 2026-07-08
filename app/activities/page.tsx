@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Actividades" };
 type Props = { searchParams: Promise<{ created?: string | string[]; deleted?: string | string[] }> };
 const durationLabels = { one_hour: "1 hora", two_hours: "2 horas", custom: "Personalizada" } as const;
+const attendanceStatusLabels = { pending: "Pendiente", attended: "Asistió", absent: "No asistió", justified: "Justificada" } as const;
 
 function formatDate(value: string | null) {
   if (!value) return "Fecha no disponible";
@@ -118,9 +119,12 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
       </dl>
 
       {studentOnly ? (
-        <p className="mt-6 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-          Actividad asignada
-        </p>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <p className="inline-flex w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+            Actividad asignada
+          </p>
+          {activity.viewerAttendanceStatus ? <p className="text-sm font-semibold text-slate-700">Asistencia: {attendanceStatusLabels[activity.viewerAttendanceStatus]}</p> : null}
+        </div>
       ) : (
         <Link href={`/activities/${activity.id}`} className="mt-6 inline-flex cursor-pointer text-sm font-bold text-emerald-800 hover:text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
           {activity.canEdit ? "Ver y editar →" : "Ver actividad →"}
@@ -173,5 +177,6 @@ export default async function ActivitiesPage({ searchParams }: Props) {
     </main>
   );
 }
+
 
 

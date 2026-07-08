@@ -194,7 +194,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Estado:** Aceptada.
 ## DEC-020 — Registro, asistencia y códigos de acceso
 
-**Decisión:** SITAA separa registro/invitación de participantes y confirmación de asistencia. La asistencia puede registrarse por QR, enlace directo, código corto de tres palabras o captura manual, pero la corrección manual por responsable o editor autorizado siempre debe existir.
+**Decisión:** SITAA separa registro/invitación de participantes y confirmación de asistencia. La asistencia manual es el mecanismo base y obligatorio; QR, enlace directo y código corto de tres palabras podrán actualizar después los mismos campos de asistencia, pero la corrección manual por responsable o editor autorizado siempre debe existir.
 
 **Consecuencias:** el QR no será el único método de acceso. Los códigos de tres palabras serán breves, en minúsculas, con palabras en español, sin acentos, ñ ni caracteres especiales, fáciles de dictar y únicos entre códigos activos. El responsable podrá abrir o cerrar registro y abrir, cerrar o regenerar check-in; el check-in podrá usarse al inicio, durante o al final de la actividad.
 

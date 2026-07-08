@@ -68,7 +68,7 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 
 | Entidad | Propósito | Relaciones mínimas |
 | --- | --- | --- |
-| `activity_participants` | Perfiles registrados vinculados a una actividad por registro o invitación | `id`, `activity_id`, `profile_id`, `participant_role_code`, `created_by`, `created_at`; combinación actividad/perfil única |
+| `activity_participants` | Perfiles registrados vinculados a una actividad por registro o invitación | `id`, `activity_id`, `profile_id`, `participant_role_code`, campos de asistencia, `created_by`, `created_at`; combinación actividad/perfil única |
 | `attendance_records` | Confirmación de asistencia/check-in de participantes registrados | actividad, `profile_id`, fecha, fuente, estado, usuario o proceso que registró/corrigió |
 | `activity_access_codes` | Códigos o enlaces temporales para registro o asistencia | actividad, flujo, código corto, estado, vigencia, regeneración y responsable |
 
@@ -129,3 +129,11 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 ## Estado de implementación
 
 Las tablas `activities` y `activity_participants` están implementadas con alta, consulta y retiro sujeto a RLS. Asistencia, formularios y reportes permanecen en diseño. Este documento no crea ni autoriza migraciones SQL.
+### Campos de asistencia implementados en participantes
+
+`activity_participants` conserva la asistencia manual y futura del participante mediante: `attendance_status`, `attendance_source`, `checked_in_at`, `attendance_updated_by`, `attendance_updated_at` y `attendance_notes`.
+
+- `attendance_status`: `pending`, `attended`, `absent`, `justified`.
+- `attendance_source`: `system`, `manual`, `qr`, `code`.
+- La actualización manual usa la misma estructura que después podrán actualizar QR, enlaces o códigos.
+- Las correcciones manuales deben conservar quién actualizó, cuándo y las notas disponibles.
