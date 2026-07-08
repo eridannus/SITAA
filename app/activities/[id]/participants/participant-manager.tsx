@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
@@ -146,7 +146,7 @@ function AttendanceListView({ activityId, participants }: { activityId: string; 
   return <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-4">
     <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => setSelectedIds(participants.map((participant) => participant.id))} disabled={!participants.length || allSelected} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Seleccionar visibles</button>
+        <button type="button" onClick={() => setSelectedIds(participants.map((participant) => participant.id))} disabled={!participants.length || allSelected} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Seleccionar todos</button>
         <button type="button" onClick={() => setSelectedIds([])} disabled={!selectedIds.length} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Limpiar selección</button>
         <p className="text-sm font-semibold text-slate-600">{selectedIds.length} seleccionado{selectedIds.length === 1 ? "" : "s"}</p>
       </div>
@@ -202,6 +202,16 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
     searchParticipationProfiles.bind(null, activityId),
     { query: "", results: [], error: null },
   );
+  const attendanceSummary = {
+    registered: participants.length,
+    attended: participants.filter((participant) => participant.attendance_status === "attended").length,
+    absent: participants.filter((participant) => participant.attendance_status === "absent").length,
+  };
+  const summaryCards = [
+    { label: "Registrados", value: attendanceSummary.registered },
+    { label: "Asistieron", value: attendanceSummary.attended },
+    { label: "Faltaron", value: attendanceSummary.absent },
+  ];
   const statusMessages: Record<string, string> = {
     added: "Participante agregado correctamente.",
     removed: "Participante eliminado correctamente.",
@@ -215,7 +225,15 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
   };
 
   return <section id="participants" className="mt-10 scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
-    <div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Registro institucional</p><h2 className="mt-2 text-2xl font-bold text-slate-900">Participantes</h2><p className="mt-3 text-slate-600">Solo pueden agregarse perfiles registrados en SITAA.</p></div>
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+      <div className="min-w-0"><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Registro institucional</p><h2 className="mt-2 text-2xl font-bold text-slate-900">Participantes</h2><p className="mt-3 text-slate-600">Solo pueden agregarse perfiles registrados en SITAA.</p></div>
+      {canEdit && <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[24rem]">
+        {summaryCards.map((item) => <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{item.label}</p>
+          <p className="mt-2 text-3xl font-bold text-slate-900">{item.value}</p>
+        </div>)}
+      </div>}
+    </div>
     {status && statusMessages[status] && <div role={status.includes("error") || status.includes("forbidden") || status === "duplicate" || status === "invalid" ? "alert" : "status"} className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">{statusMessages[status]}</div>}
 
     {canEdit && participants.length > 0 && <div className="mt-7 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">

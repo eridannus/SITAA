@@ -205,9 +205,9 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 ## DEC-021 — Pase de lista compacto
 
-**Decisión:** SITAA mantiene tarjetas detalladas de participantes y agrega una vista compacta de pase de lista para actividades con muchos participantes.
+**Decisión:** SITAA mantiene tarjetas detalladas de participantes, agrega una vista compacta de pase de lista para actividades con muchos participantes e incluye conteos rápidos de registrados, asistieron y faltaron.
 
-**Consecuencias:** los editores autorizados pueden seleccionar participantes visibles y aplicar cambios masivos de asistencia. La vista compacta no reemplaza la edición individual; ambas actualizan los mismos campos de asistencia y respetan RLS.
+**Consecuencias:** los editores autorizados pueden revisar el estado general de asistencia, seleccionar participantes y aplicar cambios masivos. La vista compacta no reemplaza la edición individual; ambas actualizan los mismos campos de asistencia y respetan RLS.
 
 **Estado:** Aceptada.
 
