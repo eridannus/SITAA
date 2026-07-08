@@ -1,10 +1,11 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
-import { hasActivityCreationRole } from "@/lib/activities/activity-scope-permissions";
+import { canManageActivityScope, hasActivityCreationRole, isStudentOnlyUser } from "@/lib/activities/activity-scope-permissions";
+import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
-import type { ActivityListItem } from "@/types/activities";
+import type { ActivityFormValues, ActivityListItem } from "@/types/activities";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Actividades" };
@@ -19,14 +20,34 @@ function formatDate(value: string | null) {
 function formatTime(value: string | null) { return value ? value.slice(0, 5) : "--:--"; }
 function schedule(activity: ActivityListItem) {
   if (activity.start_date && activity.start_time && activity.end_date && activity.end_time) return {
-    dates: activity.start_date === activity.end_date ? formatDate(activity.start_date) : `${formatDate(activity.start_date)} → ${formatDate(activity.end_date)}`,
-    times: `${formatTime(activity.start_time)}–${formatTime(activity.end_time)}`,
-    duration: activity.duration_mode ? durationLabels[activity.duration_mode] : "Duración no especificada",
+    dates: activity.start_date === activity.end_date ? formatDate(activity.start_date) : `${formatDate(activity.start_date)} â†’ ${formatDate(activity.end_date)}`,
+    times: `${formatTime(activity.start_time)}â€“${formatTime(activity.end_time)}`,
+    duration: activity.duration_mode ? durationLabels[activity.duration_mode] : "DuraciÃ³n no especificada",
   };
-  return { dates: "Fecha no disponible", times: "--:--", duration: "Duración no especificada" };
+  return { dates: "Fecha no disponible", times: "--:--", duration: "DuraciÃ³n no especificada" };
 }
 
-function ActivityCard({ activity }: { activity: ActivityListItem }) {
+function permissionValues(activity: ActivityListItem): ActivityFormValues {
+  return {
+    title: activity.title,
+    scope_type: activity.scope_type,
+    description: activity.description ?? "",
+    program_id: activity.program_id ?? "",
+    activity_type_code: activity.activity_type_code,
+    service_type_code: activity.service_type_code,
+    attention_category_code: activity.attention_category_code ?? "",
+    modality_code: activity.modality_code,
+    location_type_code: activity.location_type_code ?? "",
+    location_detail: activity.location_detail ?? "",
+    start_date: activity.start_date ?? "",
+    start_time: activity.start_time ?? "",
+    duration_mode: activity.duration_mode ?? "custom",
+    end_date: activity.end_date ?? "",
+    end_time: activity.end_time ?? "",
+  };
+}
+
+function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; studentOnly: boolean }) {
   const when = schedule(activity);
   return (
     <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">
@@ -37,12 +58,20 @@ function ActivityCard({ activity }: { activity: ActivityListItem }) {
       <dl className="mt-6 grid gap-4 border-t border-slate-100 pt-6 text-sm sm:grid-cols-2">
         <div><dt className="font-semibold text-slate-500">Fecha</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{when.dates}</dd></div>
         <div><dt className="font-semibold text-slate-500">Horario (24 horas)</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{when.times}</dd></div>
-        <div><dt className="font-semibold text-slate-500">Duración</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{when.duration}</dd></div>
+        <div><dt className="font-semibold text-slate-500">DuraciÃ³n</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{when.duration}</dd></div>
         <div><dt className="font-semibold text-slate-500">Programa</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.programName}</dd></div>
-        <div><dt className="font-semibold text-slate-500">Servicio y modalidad</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.serviceTypeLabel} · {activity.modalityLabel}</dd></div>
+        <div><dt className="font-semibold text-slate-500">Servicio y modalidad</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.serviceTypeLabel} Â· {activity.modalityLabel}</dd></div>
         <div><dt className="font-semibold text-slate-500">Responsable</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.responsibleName}</dd></div>
       </dl>
-      <Link href={`/activities/${activity.id}`} className="mt-6 inline-flex text-sm font-bold text-emerald-800 hover:text-emerald-950 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Ver y editar →</Link>
+      {studentOnly ? (
+        <p className="mt-6 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+          Actividad asignada
+        </p>
+      ) : (
+        <Link href={`/activities/${activity.id}`} className="mt-6 inline-flex cursor-pointer text-sm font-bold text-emerald-800 hover:text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+          {activity.canEdit ? "Ver y editar â†’" : "Ver actividad â†’"}
+        </Link>
+      )}
     </article>
   );
 }
@@ -50,13 +79,31 @@ function ActivityCard({ activity }: { activity: ActivityListItem }) {
 export default async function ActivitiesPage({ searchParams }: Props) {
   const context = await getAuthenticatedUserContext();
   if (!context) redirect("/login?error=sesion-requerida");
-  if (context.error) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar las actividades</h1><p className="mt-4">Intenta nuevamente más tarde.</p></section>;
-  if (!context.profile) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Necesitas un perfil activo en SITAA</h1><p className="mt-4">Tu cuenta existe, pero aún no tiene un perfil institucional habilitado.</p></section>;
+  if (context.error) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar las actividades</h1><p className="mt-4">Intenta nuevamente mÃ¡s tarde.</p></section>;
+  if (!context.profile) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Necesitas un perfil activo en SITAA</h1><p className="mt-4">Tu cuenta existe, pero aÃºn no tiene un perfil institucional habilitado.</p></section>;
   const canCreate = hasActivityCreationRole(context);
+  const studentOnly = isStudentOnlyUser(context);
 
   let activities: ActivityListItem[];
-  try { activities = await getVisibleActivities(); }
-  catch { return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar las actividades</h1><p className="mt-4">Intenta nuevamente más tarde.</p></section>; }
+  try {
+    const [visibleActivities, options] = await Promise.all([
+      getVisibleActivities(),
+      getActivityFormOptions(),
+    ]);
+    const technicalAdmin = context.activeRoleAssignments.some((item) => item.role_code === "technical_admin");
+    activities = visibleActivities.map((activity) => ({
+      ...activity,
+      canEdit: activity.canEdit || (
+        !studentOnly &&
+        (
+          (activity.scope_type === "program" &&
+            canManageActivityScope(context, permissionValues(activity), options.programs, activity.division_id)) ||
+          (activity.scope_type === "division" && (technicalAdmin || activity.created_by === context.user.id))
+        )
+      ),
+    }));
+  }
+  catch { return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar las actividades</h1><p className="mt-4">Intenta nuevamente mÃ¡s tarde.</p></section>; }
 
   const query = await searchParams;
   const created = (Array.isArray(query.created) ? query.created[0] : query.created) === "1";
@@ -64,11 +111,12 @@ export default async function ActivitiesPage({ searchParams }: Props) {
   return (
     <main className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
       <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-        <div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p><h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">Actividades</h1><p className="mt-4 max-w-2xl leading-7 text-slate-600">Consulta las actividades que tus permisos actuales te permiten ver.</p></div>
+        <div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">OperaciÃ³n acadÃ©mica</p><h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">Actividades</h1><p className="mt-4 max-w-2xl leading-7 text-slate-600">Consulta las actividades que tus permisos actuales te permiten ver.</p></div>
         {canCreate && <Link href="/activities/new" className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Nueva actividad</Link>}
       </div>
-      {(created || deleted) && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{created ? "La actividad se creó correctamente." : "La actividad se eliminó correctamente."}</div>}
-      {activities.length === 0 ? <div className="mt-10 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><h2 className="text-xl font-bold text-slate-900">Aún no hay actividades visibles</h2><p className="mt-3 text-slate-600">{canCreate ? "Crea una actividad o espera a que te asignen acceso a una existente." : "Aún no tienes actividades asignadas. Cuando seas agregado como participante, aparecerán aquí."}</p></div> : <div className="mt-10 grid gap-6 lg:grid-cols-2">{activities.map((activity) => <ActivityCard key={activity.id} activity={activity} />)}</div>}
+      {(created || deleted) && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{created ? "La actividad se creÃ³ correctamente." : "La actividad se eliminÃ³ correctamente."}</div>}
+      {activities.length === 0 ? <div className="mt-10 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><h2 className="text-xl font-bold text-slate-900">AÃºn no hay actividades visibles</h2><p className="mt-3 text-slate-600">{canCreate ? "Crea una actividad o espera a que te asignen acceso a una existente." : "AÃºn no tienes actividades asignadas. Cuando seas agregado como participante, aparecerÃ¡n aquÃ­."}</p></div> : <div className="mt-10 grid gap-6 lg:grid-cols-2">{activities.map((activity) => <ActivityCard key={activity.id} activity={activity} studentOnly={studentOnly} />)}</div>}
     </main>
   );
 }
+

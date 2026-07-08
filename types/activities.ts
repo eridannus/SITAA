@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AcademicPeriod, ActivityModality, ActivityStatus, ActivityType,
   AttentionCategory, LocationType, ServiceType,
 } from "@/types/catalogs";
@@ -89,4 +89,8 @@ export interface ActivityListItem extends Activity {
   statusLabel: string;
   locationTypeLabel: string | null;
   responsibleName: string;
+  canEdit: boolean;
+  isParticipant: boolean;
+  ownParticipantRoleLabel: string | null;
 }
+

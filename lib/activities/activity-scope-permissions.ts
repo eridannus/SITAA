@@ -5,6 +5,13 @@ import type { AcademicProgram, Division, ServiceArea } from "@/types/sitaa";
 const PROGRAM_ROLES = new Set(["program_tutoring_lead", "program_advising_lead", "program_head"]);
 const CREATION_ROLES = new Set(["professor", "peer_tutor", "program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
 
+export function isStudentOnlyUser(context: AuthenticatedUserContext) {
+  return (
+    context.activeRoleAssignments.length > 0 &&
+    context.activeRoleAssignments.every((item) => item.role_code === "student")
+  );
+}
+
 export function hasActivityCreationRole(context: AuthenticatedUserContext) {
   return context.activeRoleAssignments.some((item) => CREATION_ROLES.has(item.role_code));
 }

@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -38,32 +38,32 @@ function invalid(previous: ActivityFormState, values: ActivityFormValues, errors
 }
 function validate(values: ActivityFormValues) {
   const errors: Partial<Record<ActivityFormField, string>> = {};
-  if (!values.title) errors.title = "Escribe el título de la actividad.";
-  else if (values.title.length > 200) errors.title = "El título no puede exceder 200 caracteres.";
-  if (values.description.length > 5000) errors.description = "La descripción no puede exceder 5000 caracteres.";
+  if (!values.title) errors.title = "Escribe el tÃ­tulo de la actividad.";
+  else if (values.title.length > 200) errors.title = "El tÃ­tulo no puede exceder 200 caracteres.";
+  if (values.description.length > 5000) errors.description = "La descripciÃ³n no puede exceder 5000 caracteres.";
   if (values.scope_type !== "program" && values.scope_type !== "division") errors.scope_type = "Selecciona el alcance de la actividad.";
-  if (values.scope_type === "program" && !values.program_id) errors.program_id = "Selecciona un programa académico.";
+  if (values.scope_type === "program" && !values.program_id) errors.program_id = "Selecciona un programa acadÃ©mico.";
   if (!values.activity_type_code) errors.activity_type_code = "Selecciona un tipo de actividad.";
   if (!values.service_type_code) errors.service_type_code = "Selecciona un tipo de servicio.";
-  if (!values.attention_category_code) errors.attention_category_code = "Selecciona una categoría de atención.";
+  if (!values.attention_category_code) errors.attention_category_code = "Selecciona una categorÃ­a de atenciÃ³n.";
   if (!values.modality_code) errors.modality_code = "Selecciona una modalidad.";
-  if (!values.location_type_code) errors.location_type_code = "Selecciona un tipo de ubicación.";
+  if (!values.location_type_code) errors.location_type_code = "Selecciona un tipo de ubicaciÃ³n.";
   if (!values.location_detail) errors.location_detail = "Indica el lugar, aula o enlace de la actividad.";
   else if (values.location_detail.length > 500) errors.location_detail = "El detalle no puede exceder 500 caracteres.";
-  if (!isValidDate(values.start_date)) errors.start_date = "Indica una fecha de inicio válida.";
-  if (!isValidTime(values.start_time)) errors.start_time = "Indica una hora válida en formato de 24 horas.";
-  if (!durationModes.has(values.duration_mode as DurationMode)) errors.duration_mode = "Selecciona una duración.";
+  if (!isValidDate(values.start_date)) errors.start_date = "Indica una fecha de inicio vÃ¡lida.";
+  if (!isValidTime(values.start_time)) errors.start_time = "Indica una hora vÃ¡lida en formato de 24 horas.";
+  if (!durationModes.has(values.duration_mode as DurationMode)) errors.duration_mode = "Selecciona una duraciÃ³n.";
   if (isValidDate(values.start_date) && values.start_date < getMexicoCityToday()) errors.start_date = "La fecha de inicio no puede ser anterior a hoy.";
 
   let endDate = values.end_date;
   let endTime = values.end_time;
   const durationMode = values.duration_mode as DurationMode;
   if (durationMode === "custom") {
-    if (!isValidDate(endDate)) errors.end_date = "Indica una fecha de término válida.";
-    if (!isValidTime(endTime)) errors.end_time = "Indica una hora válida en formato de 24 horas.";
+    if (!isValidDate(endDate)) errors.end_date = "Indica una fecha de tÃ©rmino vÃ¡lida.";
+    if (!isValidTime(endTime)) errors.end_time = "Indica una hora vÃ¡lida en formato de 24 horas.";
     if (isValidDate(values.start_date) && isValidDate(endDate)) {
-      if (endDate < values.start_date) errors.end_date = "La fecha de término no puede ser anterior al inicio.";
-      else if (endDate === values.start_date && isValidTime(values.start_time) && isValidTime(endTime) && endTime <= values.start_time) errors.end_time = "La hora de término debe ser posterior a la hora de inicio.";
+      if (endDate < values.start_date) errors.end_date = "La fecha de tÃ©rmino no puede ser anterior al inicio.";
+      else if (endDate === values.start_date && isValidTime(values.start_time) && isValidTime(endTime) && endTime <= values.start_time) errors.end_time = "La hora de tÃ©rmino debe ser posterior a la hora de inicio.";
     }
   } else if (durationMode === "one_hour" || durationMode === "two_hours") {
     const calculated = calculatePresetEnd(values.start_date, values.start_time, durationMode);
@@ -80,10 +80,39 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
 
   let options;
   try { options = await getActivityFormOptions(); }
-  catch { return invalid(previous, values, {}, "No fue posible validar los catálogos operativos."); }
-  if (options.academicPeriods.length !== 1) return invalid(previous, values, { academic_period_id: "No hay un periodo académico activo y único." }, "No es posible guardar actividades hasta configurar un periodo académico activo.");
+  catch { return invalid(previous, values, {}, "No fue posible validar los catÃ¡logos operativos."); }
+  if (options.academicPeriods.length !== 1) return invalid(previous, values, { academic_period_id: "No hay un periodo acadÃ©mico activo y Ãºnico." }, "No es posible guardar actividades hasta configurar un periodo acadÃ©mico activo.");
 
-  const access = getActivityScopeAccess(context, options.programs, options.divisions);
+const supabase = await createSupabaseServerClient();
+  const existingResult = activityId
+    ? await supabase
+        .from("activities")
+        .select("id, scope_type, division_id, created_by")
+        .eq("id", activityId)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (existingResult.error) {
+    return invalid(previous, values, {}, "No fue posible validar la actividad existente.");
+  }
+  const existingActivity = existingResult.data;
+  const isTechnicalAdmin = context.activeRoleAssignments.some(
+    (item) => item.role_code === "technical_admin",
+  );
+  const legacyCleanup = Boolean(
+    existingActivity?.scope_type === "division" &&
+      (isTechnicalAdmin || existingActivity.created_by === context.user.id),
+  );
+
+
+  let access = getActivityScopeAccess(context, options.programs, options.divisions);
+  if (legacyCleanup && existingActivity) {
+    access = {
+      ...access,
+      allowedPrograms: options.programs.filter(
+        (program) => program.division_id === existingActivity.division_id,
+      ),
+    };
+  }
   if (!access.allowedPrograms.length) {
     return invalid(previous, values, { scope_type: "Tus asignaciones no permiten crear actividades." }, "No tienes permiso para crear o modificar actividades.");
   }
@@ -97,10 +126,10 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   const selectedProgram = options.programs.find((item) => item.id === values.program_id);
   const divisionId = selectedProgram?.division_id ?? null;
   if (!divisionId) {
-    return invalid(previous, values, { program_id: "Selecciona un programa académico válido." }, "Revisa el programa seleccionado.");
+    return invalid(previous, values, { program_id: "Selecciona un programa acadÃ©mico vÃ¡lido." }, "Revisa el programa seleccionado.");
   }
-  if (!canManageActivityScope(context, values, options.programs, divisionId)) {
-    return invalid(previous, values, { scope_type: "Tus asignaciones no permiten este alcance y tipo de servicio." }, "No tienes permiso para guardar la actividad con esta combinación.");
+  if (!legacyCleanup && !canManageActivityScope(context, values, options.programs, divisionId)) {
+    return invalid(previous, values, { scope_type: "Tus asignaciones no permiten este alcance y tipo de servicio." }, "No tienes permiso para guardar la actividad con esta combinaciÃ³n.");
   }
 
   const checks: Array<[ActivityFormField, boolean]> = [
@@ -111,7 +140,7 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     ["location_type_code", options.locationTypes.some((item) => item.code === values.location_type_code)],
   ];
   checks.push(["program_id", Boolean(selectedProgram)]);
-  for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opción seleccionada ya no está disponible.";
+  for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opciÃ³n seleccionada ya no estÃ¡ disponible.";
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
   const payload = {
@@ -135,7 +164,6 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     starts_at: toMexicoCityTimestamp(values.start_date, values.start_time),
     ends_at: toMexicoCityTimestamp(result.endDate, result.endTime),
   };
-  const supabase = await createSupabaseServerClient();
   if (activityId) {
     const { data, error } = await supabase.from("activities").update(payload).eq("id", activityId).select("id").maybeSingle();
     if (error || !data) return invalid(previous, values, {}, "No fue posible actualizar la actividad. Verifica tus permisos e intenta nuevamente.");
@@ -157,3 +185,4 @@ export async function deleteActivity(activityId: string, formData: FormData) {
   if (error || !data) redirect(`/activities/${activityId}?error=delete`);
   revalidatePath("/activities"); redirect("/activities?deleted=1");
 }
+
