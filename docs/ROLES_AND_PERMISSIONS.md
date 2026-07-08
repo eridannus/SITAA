@@ -74,6 +74,7 @@ La selecci?n de campos obligatorios corresponde a acuerdos colegiados o instituc
 
 - Las actividades pueden guardarse como borrador (`draft`) o publicarse como programadas (`scheduled`).
 - Publicar una actividad bloquea la edición normal de datos base para responsables regulares.
+- Un responsable regular solo puede editar datos base mientras la actividad esté en borrador (`draft`) y no haya ocurrido.
 - Antes de confirmar la publicación, el servidor valida campos obligatorios, permisos, semestre, programa, fecha y hora.
 - Las actividades nuevas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
 - Las actividades en borrador no se muestran como actividades asignadas a alumnos durante el MVP.

@@ -17,6 +17,7 @@ import { ParticipantManager } from "./participants/participant-manager";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Detalle de actividad" };
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[] }> };
+const BASE_CORRECTION_ROLES = new Set(["program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
 
 function formValues(activity: Activity): ActivityFormValues {
   return {
@@ -69,8 +70,9 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     supabase.rpc("can_delete_activity", { target_activity_id: id }),
     supabase.rpc("activity_has_ended", { target_activity_id: id }),
   ]);
-  const canUpdateBaseData = canManageActivity && baseUpdatePermission.data === true;
-  const canDeleteActivityRecord = canManageActivity && deletePermission.data === true;
+  const hasBaseCorrectionRole = context.activeRoleAssignments.some((item) => BASE_CORRECTION_ROLES.has(item.role_code));
+  const canUpdateBaseData = baseUpdatePermission.data === true;
+  const canDeleteActivityRecord = deletePermission.data === true;
   const activityHasEnded = endedResult.data === true;
   const canManageParticipants = !studentOnly && normalCanEdit;
 
@@ -104,6 +106,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const locationDetail = activity.location_detail?.trim();
   const locationHeading = card?.locationTypeLabel?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.label?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.name?.trim() || "Ubicación";
   const isPublished = activity.status_code !== "draft";
+  const showAdministrativeCorrectionMode = canUpdateBaseData && hasBaseCorrectionRole && (activityHasEnded || isPublished);
   const baseDataLockMessage = activityHasEnded
     ? activity.service_type_code === "tutoring"
       ? "Esta actividad ya ocurri\u00f3. Los datos base est\u00e1n bloqueados. Si necesitas corregirlos, contacta al encargado de tutor\u00edas de tu programa."
@@ -120,7 +123,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     {updated && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Los cambios se guardaron correctamente.</div>}
 
     {canUpdateBaseData ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
-      {(activityHasEnded || isPublished) && <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Corrección administrativa de datos base habilitada.</div>}
+      {showAdministrativeCorrectionMode && <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Corrección administrativa de datos base habilitada.</div>}
       <ActivityForm options={options} access={access} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} statusCode={activity.status_code} />
     </div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <h2 className="break-words text-2xl font-bold text-slate-900">{activity.title}</h2>
