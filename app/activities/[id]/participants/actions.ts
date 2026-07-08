@@ -111,6 +111,10 @@ export async function searchParticipationProfiles(activityId: string, _previous:
 
 function addErrorMessage(error: { code?: string; message?: string; details?: string; hint?: string }) {
   const text = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
+  const normalizedText = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/otro programa academico/.test(normalizedText)) {
+    return "La persona seleccionada pertenece a otro programa académico.";
+  }
   if (error.code === "23505" || /duplicate|already|ya (está|esta)|registrad/.test(text)) {
     return "Esta persona ya está registrada en la actividad.";
   }
@@ -127,6 +131,7 @@ export async function addActivityParticipant(
 ): Promise<ParticipantMutationState> {
   const profileId = formData.get("profile_id");
   const roleCode = formData.get("participant_role_code");
+  const participantProgramId = formData.get("participant_primary_program_id");
   if (typeof profileId !== "string" || !profileId || typeof roleCode !== "string" || !roleCode) {
     return { error: "Selecciona un perfil registrado y un rol de participante." };
   }
@@ -134,13 +139,12 @@ export async function addActivityParticipant(
   const editor = await requireEditor(activityId);
   if (!editor) return { error: "No tienes permiso para agregar participantes a esta actividad." };
 
-  const { data: selectedProfile, error: profileError } = await editor.supabase
-    .from("profiles")
-    .select("primary_program_id")
-    .eq("id", profileId)
-    .maybeSingle();
-  if (profileError || !selectedProfile) return { error: "No fue posible verificar el programa académico de la persona." };
-  if (selectedProfile.primary_program_id !== editor.activity.program_id) {
+  if (
+    typeof participantProgramId === "string" &&
+    participantProgramId &&
+    editor.activity.program_id &&
+    participantProgramId !== editor.activity.program_id
+  ) {
     return { error: "La persona seleccionada pertenece a otro programa académico." };
   }
 

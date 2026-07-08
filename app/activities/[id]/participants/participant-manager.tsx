@@ -40,6 +40,7 @@ function AddParticipantForm({ activityId, result, roles }: {
   );
   return <form action={action} className="min-w-0 rounded-2xl border border-slate-200 p-5">
     <input type="hidden" name="profile_id" value={result.profile_id} />
+    <input type="hidden" name="participant_primary_program_id" value={result.primary_program_id ?? ""} />
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.55fr)_auto] md:items-end">
       <div className="min-w-0"><p className="break-words font-bold text-slate-900">{result.full_name}</p><p className="mt-1 break-all text-sm text-slate-600">{result.email}</p><p className="mt-2 break-words text-xs text-slate-500">{idLabels[result.institutional_id_type]}: {result.institutional_id_value} · {result.program_name}</p></div>
       <div className="min-w-0">
