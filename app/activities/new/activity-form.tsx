@@ -67,23 +67,32 @@ function Fields({ state, options, access, activePeriod, today, mode }: {
     <div className="sm:col-span-2"><label htmlFor="title" className="block text-sm font-semibold text-slate-700">Título</label><input id="title" name="title" required maxLength={200} {...common("title")} /><FieldError message={state.errors.title} /></div>
     <div className="sm:col-span-2"><label htmlFor="description" className="block text-sm font-semibold text-slate-700">Descripción (opcional)</label><textarea id="description" name="description" rows={4} maxLength={5000} {...common("description")} /><FieldError message={state.errors.description} /></div>
 
-    <div>
-      <label htmlFor="scope_type" className="block text-sm font-semibold text-slate-700">Alcance</label>
-      <select id="scope_type" name="scope_type" required {...common("scope_type")}>
-        <option value="">Selecciona un alcance</option>
-        <option value="program">Programa específico</option>
-        {access.canUseDivisionScope && <option value="division">Ambos programas</option>}
-      </select>
-      <FieldError message={state.errors.scope_type} />
-    </div>
-    {liveValues.scope_type === "program" ? <div>
-      <label htmlFor="program_id" className="block text-sm font-semibold text-slate-700">Programa académico</label>
-      <select id="program_id" name="program_id" required {...common("program_id")}>
-        <option value="">Selecciona un programa</option>
-        {access.allowedPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
-      </select>
-      <FieldError message={state.errors.program_id} />
-    </div> : <div className="rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-700"><p className="font-semibold">Cobertura</p><p className="mt-1">{liveValues.scope_type === "division" ? "Diseño Gráfico y Arquitectura." : "Selecciona el alcance de la actividad."}</p><FieldError message={state.errors.division_id} /></div>}
+    {!access.canUseDivisionScope && access.allowedPrograms.length === 1 ? <>
+      <input type="hidden" name="scope_type" value="program" />
+      <input type="hidden" name="program_id" value={access.allowedPrograms[0].id} />
+      <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
+        <p className="text-sm font-semibold text-slate-500">Programa académico</p>
+        <p className="mt-1 font-bold text-slate-900">{access.allowedPrograms[0].name}</p>
+      </div>
+    </> : <>
+      {access.canUseDivisionScope ? <div>
+        <label htmlFor="scope_type" className="block text-sm font-semibold text-slate-700">Alcance</label>
+        <select id="scope_type" name="scope_type" required {...common("scope_type")}>
+          <option value="">Selecciona un alcance</option>
+          <option value="program">Programa específico</option>
+          <option value="division">Ambos programas</option>
+        </select>
+        <FieldError message={state.errors.scope_type} />
+      </div> : <input type="hidden" name="scope_type" value="program" />}
+      {(!access.canUseDivisionScope || liveValues.scope_type === "program") ? <div>
+        <label htmlFor="program_id" className="block text-sm font-semibold text-slate-700">Programa académico</label>
+        <select id="program_id" name="program_id" required {...common("program_id")}>
+          <option value="">Selecciona un programa</option>
+          {access.allowedPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+        </select>
+        <FieldError message={state.errors.program_id} />
+      </div> : <div className="rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-700"><p className="font-semibold">Cobertura</p><p className="mt-1">{liveValues.scope_type === "division" ? "Diseño Gráfico y Arquitectura." : "Selecciona el alcance de la actividad."}</p><FieldError message={state.errors.division_id} /></div>}
+    </>}
 
     {catalogSelect("activity_type_code", "Tipo de actividad", "Selecciona un tipo", options.activityTypes)}
     {catalogSelect("service_type_code", "Tipo de servicio", "Selecciona un servicio", options.serviceTypes)}

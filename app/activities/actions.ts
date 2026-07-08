@@ -74,9 +74,6 @@ function validate(values: ActivityFormValues) {
 
 async function saveActivity(activityId: string | null, previous: ActivityFormState, formData: FormData): Promise<ActivityFormState> {
   const values = valuesFrom(formData);
-  const result = validate(values);
-  if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
-
   const context = await getAuthenticatedUserContext();
   if (!context) redirect("/login?error=sesion-requerida");
   if (context.error || !context.profile) return invalid(previous, values, {}, "Tu cuenta necesita un perfil institucional activo.");
@@ -87,6 +84,18 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   if (options.academicPeriods.length !== 1) return invalid(previous, values, { academic_period_id: "No hay un periodo académico activo y único." }, "No es posible guardar actividades hasta configurar un periodo académico activo.");
 
   const access = getActivityScopeAccess(context, options.programs, options.divisions);
+  if (!access.allowedPrograms.length && !access.canUseDivisionScope) {
+    return invalid(previous, values, { scope_type: "Tus asignaciones no permiten crear actividades." }, "No tienes permiso para crear o modificar actividades.");
+  }
+
+  if (!access.canUseDivisionScope) {
+    values.scope_type = "program";
+    if (access.allowedPrograms.length === 1) values.program_id = access.allowedPrograms[0].id;
+  }
+
+  const result = validate(values);
+  if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
+
   const selectedProgram = values.scope_type === "program" ? options.programs.find((item) => item.id === values.program_id) : null;
   const divisionId = values.scope_type === "program" ? selectedProgram?.division_id ?? null : access.divisionScopeId;
   if (!divisionId) {

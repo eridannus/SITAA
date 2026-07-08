@@ -3,6 +3,11 @@ import type { ActivityFormValues, ActivityScopeAccess } from "@/types/activities
 import type { AcademicProgram, Division, ServiceArea } from "@/types/sitaa";
 
 const PROGRAM_ROLES = new Set(["program_tutoring_lead", "program_advising_lead", "program_head"]);
+const CREATION_ROLES = new Set(["professor", "peer_tutor", "program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
+
+export function hasActivityCreationRole(context: AuthenticatedUserContext) {
+  return context.activeRoleAssignments.some((item) => CREATION_ROLES.has(item.role_code));
+}
 
 function supportsService(area: ServiceArea, serviceCode: string) {
   return area === "both" || area === serviceCode;

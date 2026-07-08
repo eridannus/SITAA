@@ -27,6 +27,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-013 | Fecha, hora y duración de actividades | Aceptada |
 | DEC-014 | Validación, edición y eliminación de actividades base | Aceptada |
 | DEC-015 | Alcance de actividades por programa o división | Aceptada |
+| DEC-016 | Selección de alcance consciente de permisos | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -149,6 +150,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** una actividad tiene alcance program o division. El alcance program referencia un programa y su división; el alcance division no referencia programa y representa «Ambos programas» para la División de Diseño y Edificación.
 
 **Consecuencias:** las opciones dependen de asignaciones activas, programa, división y área de servicio. La interfaz limita selecciones, la acción del servidor valida nuevamente y RLS sigue siendo el límite definitivo.
+
+**Estado:** Aceptada.
+
+
+## DEC-016 — Selección de alcance consciente de permisos
+
+**Decisión:** los selectores de alcance y programa solo se muestran cuando el usuario tiene más de una opción válida. Una combinación única se presenta como información de solo lectura y se impone nuevamente en el servidor.
+
+**Consecuencias:** profesores, tutores pares y responsables con un único programa no realizan selecciones redundantes. Alumnos sin rol operativo no ven la acción de alta; los roles divisionales y técnicos conservan las opciones amplias autorizadas.
 
 **Estado:** Aceptada.
 

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
+import { hasActivityCreationRole } from "@/lib/activities/activity-scope-permissions";
 import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ActivityListItem } from "@/types/activities";
 
 export const dynamic = "force-dynamic";
@@ -47,12 +48,11 @@ function ActivityCard({ activity }: { activity: ActivityListItem }) {
 }
 
 export default async function ActivitiesPage({ searchParams }: Props) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login?error=sesion-requerida");
-  const { data: profile, error: profileError } = await supabase.from("profiles").select("id").eq("id", user.id).maybeSingle();
-  if (profileError) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar las actividades</h1><p className="mt-4">Intenta nuevamente más tarde.</p></section>;
-  if (!profile) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Necesitas un perfil activo en SITAA</h1><p className="mt-4">Tu cuenta existe, pero aún no tiene un perfil institucional habilitado.</p></section>;
+  const context = await getAuthenticatedUserContext();
+  if (!context) redirect("/login?error=sesion-requerida");
+  if (context.error) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar las actividades</h1><p className="mt-4">Intenta nuevamente más tarde.</p></section>;
+  if (!context.profile) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Necesitas un perfil activo en SITAA</h1><p className="mt-4">Tu cuenta existe, pero aún no tiene un perfil institucional habilitado.</p></section>;
+  const canCreate = hasActivityCreationRole(context);
 
   let activities: ActivityListItem[];
   try { activities = await getVisibleActivities(); }
@@ -65,7 +65,7 @@ export default async function ActivitiesPage({ searchParams }: Props) {
     <main className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
       <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p><h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">Actividades</h1><p className="mt-4 max-w-2xl leading-7 text-slate-600">Consulta las actividades que tus permisos actuales te permiten ver.</p></div>
-        <Link href="/activities/new" className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-900">Nueva actividad</Link>
+        {canCreate && <Link href="/activities/new" className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-900">Nueva actividad</Link>}
       </div>
       {(created || deleted) && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{created ? "La actividad se creó correctamente." : "La actividad se eliminó correctamente."}</div>}
       {activities.length === 0 ? <div className="mt-10 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><h2 className="text-xl font-bold text-slate-900">Aún no hay actividades visibles</h2><p className="mt-3 text-slate-600">Crea una actividad o espera a que te asignen acceso a una existente.</p></div> : <div className="mt-10 grid gap-6 lg:grid-cols-2">{activities.map((activity) => <ActivityCard key={activity.id} activity={activity} />)}</div>}

@@ -24,7 +24,19 @@ export default async function NewActivityPage() {
   if (options.academicPeriods.length !== 1) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No es posible crear actividades</h1><p className="mt-4">Debe existir exactamente un periodo académico activo.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800">Volver a actividades</Link></section>;
 
   const access = getActivityScopeAccess(context, options.programs, options.divisions);
-  if (!access.allowedPrograms.length && !access.canUseDivisionScope) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No tienes un alcance habilitado</h1><p className="mt-4">Tus asignaciones actuales no permiten crear actividades para un programa o división.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800">Volver a actividades</Link></section>;
+  if (!access.allowedPrograms.length && !access.canUseDivisionScope) {
+    const roleCodes = new Set(context.activeRoleAssignments.map((item) => item.role_code));
+    const needsPrimaryProgram =
+      !context.profile.primary_program_id &&
+      (roleCodes.has("professor") || roleCodes.has("peer_tutor"));
+    return <section className="mx-auto max-w-4xl px-5 py-16">
+      <h1 className="text-3xl font-bold">{needsPrimaryProgram ? "Programa académico requerido" : "No tienes permiso para crear actividades"}</h1>
+      <p className="mt-4">{needsPrimaryProgram
+        ? "Tu perfil no tiene un programa académico principal. Debes asignarlo antes de crear actividades."
+        : "Tus asignaciones actuales no permiten crear actividades. Los usuarios con rol únicamente de alumno no tienen acceso a este registro."}</p>
+      <Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800">Volver a actividades</Link>
+    </section>;
+  }
 
   const singleProgram = access.allowedPrograms.length === 1 && !access.canUseDivisionScope;
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
