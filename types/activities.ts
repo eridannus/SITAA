@@ -79,6 +79,7 @@ export interface ActivityFormState {
   values: ActivityFormValues;
   errors: Partial<Record<ActivityFormField, string>>;
   message: string | null;
+  confirmPublish?: boolean;
 }
 
 export interface ActivityListItem extends Activity {

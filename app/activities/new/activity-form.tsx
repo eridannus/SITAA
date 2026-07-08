@@ -24,32 +24,43 @@ function displayDate(value: string) {
 function FieldError({ message }: { message?: string }) {
   return message ? <p className="mt-2 text-sm font-medium text-red-700">{message}</p> : null;
 }
-function SubmitButtons({ mode, statusCode }: { mode: "create" | "edit"; statusCode: string }) {
+function SubmitButtons({ mode, statusCode, confirmPublish, onCancelPublish }: { mode: "create" | "edit"; statusCode: string; confirmPublish: boolean; onCancelPublish: () => void }) {
   const { pending } = useFormStatus();
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const primaryClass = "rounded-full bg-emerald-800 px-7 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-200 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2";
   const secondaryClass = "rounded-full border border-slate-300 px-7 py-3 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2";
+  const warningClass = "rounded-full bg-amber-600 px-7 py-3 text-sm font-bold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-400 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-2";
+  const publishConfirmationMessage = "Una vez publicada, los datos base de la actividad quedar\u00e1n bloqueados para edici\u00f3n normal. Podr\u00e1s seguir gestionando participantes y asistencia.";
+
+  if (confirmPublish) {
+    return <div className="grid gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950 sm:col-span-2">
+      <div>
+        <p className="font-bold">Confirma la publicación</p>
+        <p className="mt-2 leading-6">{publishConfirmationMessage}</p>
+      </div>
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <button type="submit" name="activity_intent" value="publish" disabled={pending} onClick={() => setPendingAction("publish")} className={warningClass}>{pending && pendingAction === "publish" ? "Publicando..." : "Confirmar publicación"}</button>
+        <button type="button" disabled={pending} onClick={onCancelPublish} className={secondaryClass}>Cancelar</button>
+      </div>
+    </div>;
+  }
+
   if (mode === "create") {
     return <div className="flex flex-col gap-3 sm:flex-row">
-      <button type="submit" name="activity_intent" value="draft" disabled={pending} className={secondaryClass}>{pending ? "Guardando…" : "Guardar borrador"}</button>
-      <button type="submit" name="activity_intent" value="publish" disabled={pending} className={primaryClass}>{pending ? "Publicando…" : "Publicar actividad"}</button>
+      <button type="submit" name="activity_intent" value="draft" disabled={pending} onClick={() => setPendingAction("draft")} className={secondaryClass}>{pending && pendingAction === "draft" ? "Guardando..." : "Guardar borrador"}</button>
+      <button type="submit" name="activity_intent" value="validate_publish" disabled={pending} onClick={() => setPendingAction("validate_publish")} className={primaryClass}>{pending && pendingAction === "validate_publish" ? "Validando..." : "Publicar actividad"}</button>
     </div>;
   }
   return <div className="flex flex-col gap-3 sm:flex-row">
-    <button type="submit" name="activity_intent" value="save" disabled={pending} className={primaryClass}>{pending ? "Guardando…" : "Guardar cambios"}</button>
-    {statusCode === "draft" && <button type="submit" name="activity_intent" value="publish" disabled={pending} className={secondaryClass}>{pending ? "Publicando…" : "Publicar actividad"}</button>}
+    <button type="submit" name="activity_intent" value="save" disabled={pending} onClick={() => setPendingAction("save")} className={primaryClass}>{pending && pendingAction === "save" ? "Guardando..." : "Guardar cambios"}</button>
+    {statusCode === "draft" && <button type="submit" name="activity_intent" value="validate_publish" disabled={pending} onClick={() => setPendingAction("validate_publish")} className={secondaryClass}>{pending && pendingAction === "validate_publish" ? "Validando..." : "Publicar actividad"}</button>}
   </div>;
 }
 
 export function ActivityForm({ options, access, initialValues, today, mode = "create", activityId, statusCode = "draft" }: Props) {
   const action = mode === "edit" && activityId ? updateActivity.bind(null, activityId) : createActivity;
-  const [state, formAction] = useActionState<ActivityFormState, FormData>(action, { revision: 0, values: initialValues, errors: {}, message: null });
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-    if (submitter?.value === "publish" && !window.confirm("Una vez publicada, los datos base de la actividad quedarán bloqueados para edición normal. Podrás seguir gestionando participantes y asistencia.")) {
-      event.preventDefault();
-    }
-  };
-  return <form action={formAction} onSubmit={handleSubmit} className="grid gap-6 sm:grid-cols-2" noValidate>
+  const [state, formAction] = useActionState<ActivityFormState, FormData>(action, { revision: 0, values: initialValues, errors: {}, message: null, confirmPublish: false });
+  return <form action={formAction} className="grid gap-6 sm:grid-cols-2" noValidate>
     <Fields key={state.revision} state={state} options={options} access={access} today={today} mode={mode} statusCode={statusCode} />
   </form>;
 }
@@ -59,6 +70,7 @@ function Fields({ state, options, access, today, mode, statusCode }: {
   today: string; mode: "create" | "edit"; statusCode: string;
 }) {
   const [liveValues, setLiveValues] = useState(state.values);
+  const [showPublishConfirmation, setShowPublishConfirmation] = useState(Boolean(state.confirmPublish));
   const calculatedEnd = useMemo(
     () => calculatePresetEnd(liveValues.start_date, liveValues.start_time, liveValues.duration_mode as DurationMode),
     [liveValues.duration_mode, liveValues.start_date, liveValues.start_time],
@@ -90,7 +102,10 @@ function Fields({ state, options, access, today, mode, statusCode }: {
     }
     return { tone: "ok" as const, text: "Semestre: " + resolvedSemester.label };
   }, [liveValues.start_date, resolvedSemester]);
-  const set = (field: keyof ActivityFormValues, value: string) => setLiveValues((current) => ({ ...current, [field]: value }));
+  const set = (field: keyof ActivityFormValues, value: string) => {
+    setShowPublishConfirmation(false);
+    setLiveValues((current) => ({ ...current, [field]: value }));
+  };
   const inputClass = (field: keyof ActivityFormValues) => `mt-2 w-full rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${state.errors[field] ? "border-red-400 focus:border-red-600 focus:ring-red-100" : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"}`;
   const common = (field: keyof ActivityFormValues) => ({
     key: state.revision + ":" + field, defaultValue: state.values[field],
@@ -141,6 +156,6 @@ function Fields({ state, options, access, today, mode, statusCode }: {
       <div><label htmlFor="end_date" className="block text-sm font-semibold text-slate-700">Fecha de término</label><input id="end_date" name="end_date" type="date" required min={liveValues.start_date || today} {...common("end_date")} /><FieldError message={state.errors.end_date} /></div>
       <div><label htmlFor="end_time" className="block text-sm font-semibold text-slate-700">Hora de término</label><input id="end_time" name="end_time" type="time" required step={60} lang="es-MX" {...common("end_time")} /><div className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError message={state.errors.end_time} /></div>
     </> : <div className="sm:col-span-2 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-700"><span className="font-semibold">Término calculado: </span>{calculatedEnd ? `${displayDate(calculatedEnd.endDate)} a las ${calculatedEnd.endTime}` : "Indica fecha y hora de inicio para calcularlo."}</div>}
-    <div className="sm:col-span-2 pt-2"><SubmitButtons mode={mode} statusCode={statusCode} /></div>
+    <div className="sm:col-span-2 pt-2"><SubmitButtons mode={mode} statusCode={statusCode} confirmPublish={showPublishConfirmation} onCancelPublish={() => setShowPublishConfirmation(false)} /></div>
   </>;
 }

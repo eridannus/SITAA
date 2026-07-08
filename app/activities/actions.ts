@@ -46,7 +46,7 @@ function text(formData: FormData, field: keyof ActivityFormValues) {
 }
 function activityIntent(formData: FormData) {
   const value = formData.get("activity_intent");
-  return value === "draft" || value === "publish" ? value : "save";
+  return value === "draft" || value === "publish" || value === "validate_publish" ? value : "save";
 }
 
 function valuesFrom(formData: FormData): ActivityFormValues {
@@ -69,7 +69,7 @@ function valuesFrom(formData: FormData): ActivityFormValues {
   };
 }
 function invalid(previous: ActivityFormState, values: ActivityFormValues, errors: ActivityFormState["errors"], message = "Revisa los campos marcados antes de continuar."): ActivityFormState {
-  return { revision: previous.revision + 1, values, errors, message };
+  return { revision: previous.revision + 1, values, errors, message, confirmPublish: false };
 }
 function validate(values: ActivityFormValues, { enforceFutureStartDate }: { enforceFutureStartDate: boolean }) {
   const errors: Partial<Record<ActivityFormField, string>> = {};
@@ -190,6 +190,10 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     return invalid(previous, values, { academic_period_id: "No fue posible asignar el semestre." }, "No fue posible validar el semestre de la actividad.");
   }
   const academicPeriodId = semester.id;
+
+  if (intent === "validate_publish") {
+    return { revision: previous.revision + 1, values, errors: {}, message: null, confirmPublish: true };
+  }
 
   const nextStatusCode = intent === "publish" ? "scheduled" : (activityId ? existingActivity?.status_code ?? "draft" : "draft");
 

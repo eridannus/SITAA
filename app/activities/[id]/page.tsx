@@ -105,8 +105,12 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const locationHeading = card?.locationTypeLabel?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.label?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.name?.trim() || "Ubicación";
   const isPublished = activity.status_code !== "draft";
   const baseDataLockMessage = activityHasEnded
-    ? "Esta actividad ya ocurrió. Los datos base están bloqueados. Si necesitas corregirlos, contacta al responsable del programa de tutorías o asesorías correspondiente."
-    : "Esta actividad ya fue publicada. Los datos base están bloqueados; puedes actualizar participantes y asistencia.";
+    ? activity.service_type_code === "tutoring"
+      ? "Esta actividad ya ocurri\u00f3. Los datos base est\u00e1n bloqueados. Si necesitas corregirlos, contacta al encargado de tutor\u00edas de tu programa."
+      : activity.service_type_code === "advising"
+        ? "Esta actividad ya ocurri\u00f3. Los datos base est\u00e1n bloqueados. Si necesitas corregirlos, contacta al encargado de asesor\u00edas de tu programa."
+        : "Esta actividad ya ocurri\u00f3. Los datos base est\u00e1n bloqueados. Si necesitas corregirlos, contacta al responsable correspondiente."
+    : "Esta actividad ya fue publicada. Los datos base est\u00e1n bloqueados; puedes actualizar participantes y asistencia.";
 
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">

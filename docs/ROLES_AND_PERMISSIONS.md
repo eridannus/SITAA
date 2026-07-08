@@ -1,8 +1,8 @@
 # Roles y permisos
 
-Los permisos se aplicarán con RLS en Supabase. No existe un rol fijo en `profiles`: el acceso efectivo se calcula a partir de asignaciones activas, vigencia, alcance y área de servicio.
+Los permisos se aplicar?n con RLS en Supabase. No existe un rol fijo en `profiles`: el acceso efectivo se calcula a partir de asignaciones activas, vigencia, alcance y área de servicio.
 
-## Catálogo de roles
+## Cat?logo de roles
 
 | Clave | Nombre | Responsabilidad principal |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al ve
 
 - `student` y `worker` son tipos de persona; no sustituyen las asignaciones de rol.
 - El alumno se identifica con número de cuenta y puede recibir o perder `peer_tutor` sin modificar su identidad base.
-- El trabajador se identifica con número de trabajador y puede recibir `professor`, responsabilidades de coordinación, jefatura, secretaría técnica u otras asignaciones autorizadas.
+- El trabajador se identifica con número de trabajador y puede recibir `professor`, responsabilidades de coordinaci?n, jefatura, secretar?a técnica u otras asignaciones autorizadas.
 - El programa principal describe afiliación y no concede permisos por sí mismo.
 
 ## Editores de formularios
@@ -38,14 +38,14 @@ Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al ve
 - `program_head` interviene solo cuando el flujo institucional le asigna aprobación o supervisión; no decide por defecto el contenido académico.
 - `technical_admin` brinda soporte al constructor y al versionado, pero no decide campos académicos ni su obligatoriedad.
 
-La selección de campos obligatorios corresponde a acuerdos colegiados o institucionales. Publicar una nueva configuración crea una versión; no modifica formularios ya respondidos.
+La selecci?n de campos obligatorios corresponde a acuerdos colegiados o institucionales. Publicar una nueva configuración crea una versi?n; no modifica formularios ya respondidos.
 
 ## Reglas de acceso
 
 - Cada permiso permanece limitado por la asignación que lo concede; no se mezclan alcances entre asignaciones.
 - Las asignaciones históricas no conceden acceso actual.
 - El enlace divisional cubre tutorías y asesorías de **Diseño Gráfico** y **Arquitectura** dentro de su asignación.
-- `technical_secretary` solo ve nombre del evento, fecha, hora, lugar, responsable, asistencia estimada y requerimientos logísticos.
+- `technical_secretary` solo ve nombre del evento, fecha, hora, lugar, responsable, asistencia estimada y requerimientos log?sticos.
 - `technical_admin` no obtiene por su rol lectura de contenido académico sensible.
 - Los participantes y asistencias siempre referencian perfiles SITAA.
 - Solo quienes pueden editar una actividad pueden agregar o retirar participantes; la búsqueda usa perfiles registrados y roles de participante controlados.
@@ -54,40 +54,42 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - En el MVP, la búsqueda y el alta de participantes se limitan a perfiles cuyo `primary_program_id` coincide con el `program_id` de la actividad; la interfaz filtra y el servidor valida nuevamente.
 - Un alumno agregado como participante puede consultar la actividad conforme a RLS, sin recibir permisos de edición.
 - Los usuarios con únicamente el rol `student` ven resúmenes de sus actividades asignadas, incluyendo descripción y ubicación cuando existan; no ven el padrón completo de participantes ni controles administrativos.
-- Toda elevación, revocación o modificación de permisos debe quedar auditada.
+- Toda elevaci?n, revocaci?n o modificaci?n de permisos debe quedar auditada.
 - La interfaz no sustituye RLS.
 
 
-## Creación y edición de actividades
+## Creaci?n y edición de actividades
 
 - professor y peer_tutor operan únicamente en su programa académico principal y en el área de servicio de su asignación.
 - program_tutoring_lead opera tutorías en el programa asignado.
 - program_advising_lead opera asesorías en el programa asignado.
 - program_head opera actividades únicamente en el programa asignado.
-- division_tutoring_liaison puede elegir Diseño Gráfico o Arquitectura dentro de su división y área de servicio. «Ambos programas» queda reservado fuera del MVP.
+- division_tutoring_liaison puede elegir Diseño Gráfico o Arquitectura dentro de su división y área de servicio. ?Ambos programas? queda reservado fuera del MVP.
 - technical_admin puede crear actividades de prueba o soporte en Diseño Gráfico o Arquitectura durante el MVP; el alcance divisional queda reservado.
 - Las actividades divisionales heredadas no se muestran como flujo normal del MVP; solo el administrador técnico o el creador original pueden convertirlas o eliminarlas para limpieza operativa, sujeto a RLS.
 - La interfaz filtra opciones, la acción del servidor repite la validación y RLS conserva la autorización definitiva.
 - Cuando solo existe una combinación válida de alcance y programa, la interfaz la muestra como información de solo lectura; el servidor impone esa combinación e ignora valores manipulados.
 
-## Borrador, publicaci?n y bloqueo de datos base
+## Borrador, publicación y bloqueo de datos base
 
 - Las actividades pueden guardarse como borrador (`draft`) o publicarse como programadas (`scheduled`).
 - Publicar una actividad bloquea la edición normal de datos base para responsables regulares.
+- Antes de confirmar la publicación, el servidor valida campos obligatorios, permisos, semestre, programa, fecha y hora.
 - Las actividades nuevas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
 - Las actividades en borrador no se muestran como actividades asignadas a alumnos durante el MVP.
+- Si una actividad publicada o ya ocurrida queda bloqueada para un responsable regular, la interfaz muestra un mensaje dinámico de contacto: tutorías contacta al encargado de tutorías del programa, asesorías contacta al encargado de asesorías del programa y otros servicios contactan al responsable correspondiente.
 
 ## Bloqueo de datos base en actividades ocurridas
 
 - Las actividades nuevas no pueden crearse con fecha pasada.
-- Una actividad ya ocurrida tambi?n bloquea sus datos base para responsables regulares.
-- Participantes, asistencia y notas de asistencia permanecen editables despu?s de ocurrida la actividad para usuarios autorizados.
-- Las correcciones administrativas de datos base dependen de `can_update_activity_base`; la eliminaci?n depende de `can_delete_activity`.
+- Una actividad ya ocurrida también bloquea sus datos base para responsables regulares.
+- Participantes, asistencia y notas de asistencia permanecen editables después de ocurrida la actividad para usuarios autorizados.
+- Las correcciones administrativas de datos base dependen de `can_update_activity_base`; la eliminación depende de `can_delete_activity`.
 - Ocultar controles en la interfaz no sustituye RLS ni las funciones autorizadas de Supabase.
 
 ## Criterios para RLS
 
-Cada política comprobará identidad, asignación vigente, alcance, programa o división, área de servicio y operación permitida. Los reportes y exportaciones aplicarán las mismas restricciones que las vistas de origen.
+Cada política comprobar? identidad, asignación vigente, alcance, programa o división, área de servicio y operación permitida. Los reportes y exportaciones aplicar?n las mismas restricciones que las vistas de origen.
 
 ## Pendientes de definición
 

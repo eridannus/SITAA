@@ -12,6 +12,7 @@ type VisibleActivityCardRow = Partial<Activity> & {
   program_label?: string | null;
   academic_program_name?: string | null;
   academic_period_label?: string | null;
+  semester_label?: string | null;
   activity_type_label?: string | null;
   service_type_label?: string | null;
   attention_category_label?: string | null;
@@ -120,7 +121,7 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
       status_code: statusCode,
       created_at: row.created_at,
       updated_at: row.updated_at,
-      academicPeriodLabel: row.academic_period_label?.trim() || (row.academic_period_id ? label(periods.get(row.academic_period_id), row.academic_period_id) : null),
+      academicPeriodLabel: firstText(row.semester_label, row.academic_period_label) || (row.academic_period_id ? label(periods.get(row.academic_period_id), row.academic_period_id) : null),
       programName: programLabel || (scopeType === "division" ? "Ambos programas" : "Programa no disponible"),
       activityTypeLabel: row.activity_type_label?.trim() || label(activityTypes.get(activityTypeCode), activityTypeCode),
       serviceTypeLabel: row.service_type_label?.trim() || label(serviceTypes.get(serviceTypeCode), serviceTypeCode),

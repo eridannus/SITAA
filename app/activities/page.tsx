@@ -63,7 +63,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
   const description = activity.description?.trim();
   const locationDetail = activity.location_detail?.trim();
   const locationHeading = activity.locationTypeLabel?.trim() || "Ubicación";
-  const statusBadgeClass = activity.status_code === "draft" ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800";
+  const statusBadgeClass = activity.status_code === "draft" ? "border border-amber-300 bg-amber-100 text-amber-900" : "border border-emerald-300 bg-emerald-100 text-emerald-900";
 
   return (
     <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">

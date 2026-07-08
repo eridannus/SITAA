@@ -35,7 +35,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-021 | Pase de lista compacto | Aceptada |
 | DEC-022 | Asignación automática de semestre académico | Aceptada |
 
-## DEC-001 — Plataforma web y stack base
+## DEC-001 ? Plataforma web y stack base
 
 **Decisión:** usar Next.js con App Router, TypeScript y Tailwind CSS; desplegar en Vercel Free y mantener el código en GitHub.
 
@@ -43,7 +43,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-002 — Supabase como backend administrado
+## DEC-002 ? Supabase como backend administrado
 
 **Decisión:** usar Supabase Free para PostgreSQL, Auth y RLS.
 
@@ -51,7 +51,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-003 — Autorización mediante RLS
+## DEC-003 ? Autorización mediante RLS
 
 **Decisión:** RLS será el límite principal de autorización por identidad, asignación, vigencia, alcance y área de servicio.
 
@@ -59,7 +59,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-004 — Primera entrega limitada al MVP
+## DEC-004 ? Primera entrega limitada al MVP
 
 **Decisión:** el MVP incluye actividades, participantes registrados, asistencia, formularios dinámicos básicos y reportes CSV/PDF. Se excluyen integraciones avanzadas y evidencia documental externa.
 
@@ -67,7 +67,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-005 — Formularios dinámicos versionados
+## DEC-005 ? Formularios dinámicos versionados
 
 **Contexto:** los campos académicos y su obligatoriedad cambian por programa, servicio y acuerdos colegiados.
 
@@ -77,7 +77,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-006 — Roles mediante asignaciones múltiples y acotadas
+## DEC-006 ? Roles mediante asignaciones múltiples y acotadas
 
 **Decisión:** usar un catálogo de roles y asignaciones independientes con usuario, rol, vigencia, alcance y área de servicio. `profiles` no almacena un rol fijo.
 
@@ -85,7 +85,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-007 — Evidencia interna y participantes registrados
+## DEC-007 ? Evidencia interna y participantes registrados
 
 **Contexto:** gestionar archivos y enlaces de evidencia externa duplicaría procesos institucionales. Las listas de participación requieren identidades verificables.
 
@@ -95,7 +95,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-008 — Catálogos operativos controlados
+## DEC-008 ? Catálogos operativos controlados
 
 **Contexto:** actividades, formularios y reportes necesitan vocabularios estables para evitar variantes libres y resultados inconsistentes.
 
@@ -104,7 +104,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** la operación referencia códigos controlados y solo expone valores activos. La primera interfaz es de consulta; la edición y sus permisos se definirán posteriormente.
 
 **Estado:** Aceptada.
-## DEC-009 — Perfil de identidad estable
+## DEC-009 ? Perfil de identidad estable
 
 **Contexto:** el semestre y las responsabilidades institucionales cambian con el tiempo; almacenarlos como atributos actuales del perfil produciría datos ambiguos o sobrescritos.
 
@@ -113,28 +113,28 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** los flujos de registro de alumnos y trabajadores serán distintos. La asignación inicial de alumno puede automatizarse; los roles de trabajadores y profesores requieren autorización. Cambiar responsabilidades no modifica la identidad base.
 
 **Estado:** Aceptada.
-## DEC-010 — Listas de asistencia con identidad institucional
+## DEC-010 ? Listas de asistencia con identidad institucional
 
 **Decisión:** las listas de asistencia se generarán exclusivamente a partir de perfiles registrados en SITAA y mostrarán el identificador institucional que corresponda: número de cuenta para alumnos o número de trabajador para personal.
 
 **Consecuencias:** no se usarán nombres libres como participantes válidos. Los cambios de identidad se reflejan desde el perfil, mientras los roles permanecen separados en `role_assignments`.
 
 **Estado:** Aceptada.
-## DEC-011 — Programa académico obligatorio
+## DEC-011 ? Programa académico obligatorio
 
 **Decisión:** todo perfil registrado o actualizado debe tener `primary_program_id`. El programa se selecciona de `academic_programs` entre los valores disponibles. Solo perfiles bootstrap o de prueba pueden conservar temporalmente `null` mientras completan su configuración.
 
 **Consecuencias:** el formulario impide guardar sin programa y el dashboard advierte cuando falta. El programa es información de afiliación y no concede roles ni permisos por sí mismo.
 
 **Estado:** Aceptada.
-## DEC-012 — Actividades como núcleo operativo
+## DEC-012 ? Actividades como núcleo operativo
 
 **Decisión:** SITAA modela tutorías, asesorías, tutorías pares, actividades remediales y acompañamientos como `activities`, no únicamente como sesiones. Cada actividad referencia catálogos controlados, un programa, una persona responsable y quien la creó.
 
 **Consecuencias:** participantes, asistencia, QR, formularios y reportes se incorporarán posteriormente alrededor de la actividad. Las nuevas actividades requieren inicio y se crean con estado `scheduled`.
 
 **Estado:** Aceptada.
-## DEC-013 — Fecha, hora y duración de actividades
+## DEC-013 ? Fecha, hora y duración de actividades
 
 **Decisión:** toda actividad requiere fecha y hora de inicio en formato de 24 horas. La duración usa `one_hour`, `two_hours` o `custom`; las dos primeras calculan el término y la personalizada exige fecha y hora finales. El semestre se asigna automáticamente desde la fecha de inicio de la actividad mediante rangos oficiales.
 
@@ -142,25 +142,25 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-014 — Validación, edición y eliminación de actividades base
+## DEC-014 ? Validación, edición y eliminación de actividades base
 
 **Decisión:** todos los campos operativos de una actividad son obligatorios salvo description. Las fechas se muestran como DD/MM/YYYY y las horas en formato de 24 horas. El módulo base permite editar y eliminar actividades, siempre sujeto a autenticación, confirmación explícita para eliminar y políticas RLS.
 
-**Consecuencias:** creación y edición comparten validación y conservan los valores rechazados. El periodo se obtiene del único periodo activo; responsible_profile_id y created_by no cambian al editar. La opción «Ambos programas» queda pendiente: requerirá un modelo posterior de alcance de actividad para que division_tutoring_liaison pueda seleccionar Diseño Gráfico, Arquitectura o ambos sin debilitar permisos.
+**Consecuencias:** creación y edición comparten validación y conservan los valores rechazados. El periodo se obtiene del único periodo activo; responsible_profile_id y created_by no cambian al editar. La opción ?Ambos programas? queda pendiente: requerirá un modelo posterior de alcance de actividad para que division_tutoring_liaison pueda seleccionar Diseño Gráfico, Arquitectura o ambos sin debilitar permisos.
 
 **Estado:** Aceptada.
 
 
-## DEC-015 — Alcance de actividades por programa o división
+## DEC-015 ? Alcance de actividades por programa o división
 
-**Decisión:** una actividad tiene alcance program o division. El alcance program referencia un programa y su división; el alcance division no referencia programa y representa «Ambos programas» para la División de Diseño y Edificación.
+**Decisión:** una actividad tiene alcance program o division. El alcance program referencia un programa y su división; el alcance division no referencia programa y representa ?Ambos programas? para la División de Diseño y Edificación.
 
 **Consecuencias:** las opciones dependen de asignaciones activas, programa, división y área de servicio. La interfaz limita selecciones, la acción del servidor valida nuevamente y RLS sigue siendo el límite definitivo.
 
 **Estado:** Aceptada.
 
 
-## DEC-016 — Selección de alcance consciente de permisos
+## DEC-016 ? Selección de alcance consciente de permisos
 
 **Decisión:** los selectores de alcance y programa solo se muestran cuando el usuario tiene más de una opción válida. Una combinación única se presenta como información de solo lectura y se impone nuevamente en el servidor.
 
@@ -169,7 +169,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Estado:** Aceptada.
 
 
-## DEC-017 — Participantes registrados por actividad
+## DEC-017 ? Participantes registrados por actividad
 
 **Decisión:** cada participante de una actividad referencia un perfil SITAA y un rol del catálogo participant_roles. La búsqueda se realiza por nombre, correo o identificador institucional mediante la función autorizada de Supabase; no se admiten personas de texto libre ni duplicados por actividad.
 
@@ -178,33 +178,33 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Estado:** Aceptada.
 
 
-## DEC-018 — Alcance programático exclusivo durante el MVP
+## DEC-018 ? Alcance programático exclusivo durante el MVP
 
-**Decisión:** durante el MVP, toda actividad creada o editada pertenece a un único programa: Diseño Gráfico o Arquitectura. El alcance division permanece en el esquema como capacidad reservada, pero «Ambos programas» no se expone en la interfaz ni se acepta en las acciones operativas del MVP.
+**Decisión:** durante el MVP, toda actividad creada o editada pertenece a un único programa: Diseño Gráfico o Arquitectura. El alcance division permanece en el esquema como capacidad reservada, pero ?Ambos programas? no se expone en la interfaz ni se acepta en las acciones operativas del MVP.
 
 **Consecuencias:** division_tutoring_liaison y technical_admin eligen uno de los programas permitidos. La búsqueda y el alta de participantes exigen coincidencia entre el programa principal del perfil y el programa de la actividad.
 
 **Estado:** Aceptada.
 
 
-## DEC-019 — Privacidad del padrón de participantes
+## DEC-019 ? Privacidad del padrón de participantes
 
 **Decisión:** los alumnos con rol exclusivamente `student` consultan únicamente el resumen de las actividades donde participan, con descripción y ubicación cuando existan. El padrón completo de participantes se reserva para usuarios autorizados a gestionar la actividad.
 
-**Consecuencias:** la interfaz no invoca funciones de listado de participantes para alumnos y no muestra errores de permisos derivados de esa restricción. RLS y RPC mantienen la autorización definitiva; ser participante no concede visibilidad sobre otros participantes.
+**Consecuencias:** la interfaz no invoca funciones de listado de participantes para alumnos y no muestra errores de permisos derivados de esa restricci?n. RLS y RPC mantienen la autorización definitiva; ser participante no concede visibilidad sobre otros participantes.
 
 **Estado:** Aceptada.
-## DEC-020 — Registro, asistencia y códigos de acceso
+## DEC-020 ? Registro, asistencia y códigos de acceso
 
 **Decisión:** SITAA separa registro/invitación de participantes y confirmación de asistencia. La asistencia manual es el mecanismo base y obligatorio; QR, enlace directo y código corto de tres palabras podrán actualizar después los mismos campos de asistencia, pero la corrección manual por responsable o editor autorizado siempre debe existir.
 
-**Consecuencias:** el QR no será el único método de acceso. Los códigos de tres palabras serán breves, en minúsculas, con palabras en español, sin acentos, ñ ni caracteres especiales, fáciles de dictar y únicos entre códigos activos. El responsable podrá abrir o cerrar registro y abrir, cerrar o regenerar check-in; el check-in podrá usarse al inicio, durante o al final de la actividad.
+**Consecuencias:** el QR no será el único método de acceso. Los códigos de tres palabras serán breves, en minúsculas, con palabras en español, sin acentos, ? ni caracteres especiales, fáciles de dictar y únicos entre códigos activos. El responsable podrá abrir o cerrar registro y abrir, cerrar o regenerar check-in; el check-in podrá usarse al inicio, durante o al final de la actividad.
 
 **Seguridad por defecto:** el registro inicia cerrado y la asistencia se limita a participantes registrados. Registro abierto o check-in abierto podrán habilitarse después para tipos de actividad seleccionados. Los estados de asistencia serán `pending`, `attended`, `absent` y `justified`; las fuentes serán `manual`, `qr`, `code` y `system`.
 
 **Estado:** Aceptada.
 
-## DEC-021 — Pase de lista compacto
+## DEC-021 ? Pase de lista compacto
 
 **Decisión:** SITAA mantiene tarjetas detalladas de participantes, agrega una vista compacta de pase de lista para actividades con muchos participantes e incluye conteos rápidos de registrados, asistieron y faltaron.
 
@@ -212,40 +212,40 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
-## DEC-022 — Asignación automática de semestre académico
+## DEC-022 ? Asignación automática de semestre académico
 
 **Contexto:** SITAA requiere reportes semestrales consistentes, pero el semestre no debe ser elegido manualmente por usuarios operativos ni presentarse con lenguaje técnico confuso.
 
-**Decisión:** la interfaz mostrará la etiqueta **Semestre** y nunca “periodo calculado”. SITAA asignará el semestre automáticamente desde la fecha de inicio de la actividad, usando rangos oficiales mantenidos por usuarios técnicos o administrativos conforme a calendarios UNAM. El primer semestre calendario corresponde al semestre 2 del mismo año académico; el segundo semestre calendario corresponde al semestre 1 del año académico siguiente.
+**Decisión:** la interfaz mostrar? la etiqueta **Semestre** y nunca ?periodo calculado?. SITAA asignar? el semestre automáticamente desde la fecha de inicio de la actividad, usando rangos oficiales mantenidos por usuarios técnicos o administrativos conforme a calendarios UNAM. El primer semestre calendario corresponde al semestre 2 del mismo año académico; el segundo semestre calendario corresponde al semestre 1 del año académico siguiente.
 
-**Ejemplos:** febrero–mayo 2026 = 2026-2; agosto–noviembre 2026 = 2027-1; febrero–mayo 2027 = 2027-2; agosto–noviembre 2027 = 2028-1.
+**Ejemplos:** febrero?mayo 2026 = 2026-2; agosto?noviembre 2026 = 2027-1; febrero?mayo 2027 = 2027-2; agosto?noviembre 2027 = 2028-1.
 
 **Consecuencias:** los usuarios operativos no seleccionan ni editan el semestre. Actividades, reportes, estadísticas y exportaciones podrán filtrarse por semestre sin almacenar semestre actual en `profiles`.
 
 **Estado:** Aceptada.
 ## DEC-023 ? Bloqueo de datos base en actividades ocurridas
 
-**Contexto:** las actividades ya realizadas requieren correcciones de asistencia y participantes, pero no deben modificar libremente su planeaci?n base.
+**Contexto:** las actividades ya realizadas requieren correcciones de asistencia y participantes, pero no deben modificar libremente su planeación base.
 
-**Decisi?n:** las actividades nuevas no pueden crearse con fecha pasada. Una actividad ocurrida bloquea sus datos base para responsables regulares; participantes, asistencia y notas de asistencia permanecen editables para usuarios autorizados. Las correcciones administrativas de datos base y la eliminaci?n se determinan con funciones autorizadas de Supabase.
+**Decisión:** las actividades nuevas no pueden crearse con fecha pasada. Una actividad ocurrida bloquea sus datos base para responsables regulares; participantes, asistencia y notas de asistencia permanecen editables para usuarios autorizados. Las correcciones administrativas de datos base y la eliminación se determinan con funciones autorizadas de Supabase.
 
-**Consecuencias:** la interfaz muestra resumen de solo lectura cuando los datos base están bloqueados y conserva la gestión de asistencia. La base de datos mantiene la autorizaci?n definitiva mediante RLS y funciones como `activity_has_ended`, `can_update_activity_base` y `can_delete_activity`.
+**Consecuencias:** la interfaz muestra resumen de solo lectura cuando los datos base están bloqueados y conserva la gestión de asistencia. La base de datos mantiene la autorización definitiva mediante RLS y funciones como `activity_has_ended`, `can_update_activity_base` y `can_delete_activity`.
 
 **Estado:** Aceptada.
 
-## DEC-024 ? Flujo de borrador y publicaci?n de actividades
+## DEC-024 — Flujo de borrador y publicación de actividades
 
-**Contexto:** la planeaci?n de una actividad puede requerir guardarse antes de quedar lista para participantes y asistencia. Adem?s, publicar debe marcar un cambio claro de ciclo de vida.
+**Contexto:** la planeación de una actividad puede requerir guardarse antes de quedar lista para participantes y asistencia. Además, publicar debe marcar un cambio claro de ciclo de vida y evitar bloqueos accidentales.
 
-**Decisi?n:** las actividades pueden guardarse como borrador con `status_code = draft` o publicarse con `status_code = scheduled`. En la interfaz se muestran como **Borrador** y **Programada**. Publicar requiere confirmación porque bloquea la edición normal de datos base; participantes y asistencia siguen siendo gestionables por usuarios autorizados.
+**Decisión:** las actividades pueden guardarse como borrador con `status_code = draft` o publicarse con `status_code = scheduled`. En la interfaz se muestran como **Borrador** y **Programada**, con estilos visuales distintos: borrador usa un tono ámbar/advertencia y programada un tono verde/éxito. La publicación se valida primero; si faltan campos o la fecha/hora es inválida, se muestran errores por campo antes de pedir confirmación. Solo después de una validación correcta se muestra la confirmación de publicación.
 
-**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos. Al publicar, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Las actividades nuevas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
+**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos. Al confirmar la publicación, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Participantes y asistencia siguen siendo gestionables por usuarios autorizados. Las actividades nuevas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
 
 **Estado:** Aceptada.
 
 ## Plantilla para nuevas decisiones
 
-### DEC-XXX — Título
+### DEC-XXX ? Título
 
 **Contexto:** por qué se necesita decidir.
 
