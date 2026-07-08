@@ -14,12 +14,13 @@ Validar un flujo completo para un periodo académico: configuración, planeació
 - Asignación inicial de alumno automatizable; roles de trabajadores y profesores sujetos a autorización.
 - El semestre no forma parte del perfil y solo se captura en contexto de actividad o formularios si existe acuerdo institucional.
 - Asignaciones múltiples de rol con vigencia, alcance y área de servicio.
-- Catálogos mínimos: periodos, divisiones, programas, grupos, categorías y tipos de servicio.
+- Catálogos mínimos: semestres académicos con rangos oficiales, divisiones, programas, grupos, categorías y tipos de servicio.
 
 ### Actividades y participantes
 
 - Alta, edición, cancelación y cierre de actividades.
-- Datos estructurados de actividad: nombre, categoría, servicio, fecha, horario, modalidad, lugar o enlace, responsable, programa y notas autorizadas.
+- El semestre se asigna automáticamente desde la fecha de inicio; usuarios operativos no lo seleccionan ni editan manualmente.
+- Datos estructurados de actividad: nombre, categoría, servicio, fecha, horario, semestre asignado automáticamente, modalidad, lugar o enlace, responsable, programa y notas autorizadas.
 - Participantes vinculados a perfiles registrados en SITAA; no se admiten participantes externos de texto libre como flujo normal.
 - Registro/invitación de participantes separado del check-in de asistencia.
 - Registro de asistencia con validación de identidad, prevención de duplicados y corrección manual obligatoria.
@@ -37,7 +38,7 @@ Validar un flujo completo para un periodo académico: configuración, planeació
 
 - Paneles básicos según asignaciones de rol.
 - Tablas, resúmenes y gráficas.
-- Filtros por actividad o evento, fecha, profesor o responsable, programa, tipo de servicio, categoría y campos configurados cuando sea técnicamente posible.
+- Filtros por actividad o evento, semestre, fecha, profesor o responsable, programa, tipo de servicio, categoría y campos configurados cuando sea técnicamente posible.
 - Exportación CSV y generación de reportes PDF dentro del alcance autorizado.
 
 ## Fuera del MVP

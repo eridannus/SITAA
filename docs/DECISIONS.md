@@ -33,6 +33,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-019 | Privacidad del padrón de participantes | Aceptada |
 | DEC-020 | Registro, asistencia y códigos de acceso | Aceptada |
 | DEC-021 | Pase de lista compacto | Aceptada |
+| DEC-022 | Asignación automática de semestre académico | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -135,9 +136,9 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Estado:** Aceptada.
 ## DEC-013 — Fecha, hora y duración de actividades
 
-**Decisión:** toda actividad requiere fecha y hora de inicio en formato de 24 horas. La duración usa `one_hour`, `two_hours` o `custom`; las dos primeras calculan el término y la personalizada exige fecha y hora finales. El periodo académico se asigna automáticamente desde el único periodo activo.
+**Decisión:** toda actividad requiere fecha y hora de inicio en formato de 24 horas. La duración usa `one_hour`, `two_hours` o `custom`; las dos primeras calculan el término y la personalizada exige fecha y hora finales. El semestre se asigna automáticamente desde la fecha de inicio de la actividad mediante rangos oficiales.
 
-**Consecuencias:** `activities` conserva fecha y hora en campos separados y también completa `starts_at`/`ends_at` por compatibilidad. La validación usa la fecha actual de Ciudad de México y no permite inicios pasados ni términos anteriores al inicio.
+**Consecuencias:** `activities` conserva fecha y hora en campos separados y también completa `starts_at`/`ends_at` por compatibilidad. Los reportes y estadísticas podrán filtrar por semestre. La validación usa la fecha actual de Ciudad de México y no permite inicios pasados ni términos anteriores al inicio.
 
 **Estado:** Aceptada.
 
@@ -211,6 +212,17 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
+## DEC-022 — Asignación automática de semestre académico
+
+**Contexto:** SITAA requiere reportes semestrales consistentes, pero el semestre no debe ser elegido manualmente por usuarios operativos ni presentarse con lenguaje técnico confuso.
+
+**Decisión:** la interfaz mostrará la etiqueta **Semestre** y nunca “periodo calculado”. SITAA asignará el semestre automáticamente desde la fecha de inicio de la actividad, usando rangos oficiales mantenidos por usuarios técnicos o administrativos conforme a calendarios UNAM. El primer semestre calendario corresponde al semestre 2 del mismo año académico; el segundo semestre calendario corresponde al semestre 1 del año académico siguiente.
+
+**Ejemplos:** febrero–mayo 2026 = 2026-2; agosto–noviembre 2026 = 2027-1; febrero–mayo 2027 = 2027-2; agosto–noviembre 2027 = 2028-1.
+
+**Consecuencias:** los usuarios operativos no seleccionan ni editan el semestre. Actividades, reportes, estadísticas y exportaciones podrán filtrarse por semestre sin almacenar semestre actual en `profiles`.
+
+**Estado:** Aceptada.
 ## Plantilla para nuevas decisiones
 
 ### DEC-XXX — Título
