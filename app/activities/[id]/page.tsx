@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
@@ -88,7 +88,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const deleteError = param(query.error) === "delete";
   const participantStatus = param(query.participant);
   const responsibleName = card?.responsibleName || "Responsable no disponible";
-  const programName = card?.programName || (activity.scope_type === "division" ? "Alcance divisional reservado" : options.programs.find((item) => item.id === activity.program_id)?.name ?? "Programa no disponible");
+  const programName = card?.programName || (activity.scope_type === "division" ? "Ambos programas" : options.programs.find((item) => item.id === activity.program_id)?.name ?? "Programa no disponible");
 
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -118,3 +118,4 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     {canEdit && <section className="mt-10 rounded-3xl border border-red-200 bg-red-50 p-7 sm:p-10"><h2 className="text-xl font-bold text-red-950">Eliminar actividad</h2><p className="mt-3 text-red-800">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold text-red-800">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
   </main>;
 }
+
