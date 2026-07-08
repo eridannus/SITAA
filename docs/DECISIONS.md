@@ -26,6 +26,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-012 | Actividades como núcleo operativo | Aceptada |
 | DEC-013 | Fecha, hora y duración de actividades | Aceptada |
 | DEC-014 | Validación, edición y eliminación de actividades base | Aceptada |
+| DEC-015 | Alcance de actividades por programa o división | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -139,6 +140,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** todos los campos operativos de una actividad son obligatorios salvo description. Las fechas se muestran como DD/MM/YYYY y las horas en formato de 24 horas. El módulo base permite editar y eliminar actividades, siempre sujeto a autenticación, confirmación explícita para eliminar y políticas RLS.
 
 **Consecuencias:** creación y edición comparten validación y conservan los valores rechazados. El periodo se obtiene del único periodo activo; responsible_profile_id y created_by no cambian al editar. La opción «Ambos programas» queda pendiente: requerirá un modelo posterior de alcance de actividad para que division_tutoring_liaison pueda seleccionar Diseño Gráfico, Arquitectura o ambos sin debilitar permisos.
+
+**Estado:** Aceptada.
+
+
+## DEC-015 — Alcance de actividades por programa o división
+
+**Decisión:** una actividad tiene alcance program o division. El alcance program referencia un programa y su división; el alcance division no referencia programa y representa «Ambos programas» para la División de Diseño y Edificación.
+
+**Consecuencias:** las opciones dependen de asignaciones activas, programa, división y área de servicio. La interfaz limita selecciones, la acción del servidor valida nuevamente y RLS sigue siendo el límite definitivo.
 
 **Estado:** Aceptada.
 

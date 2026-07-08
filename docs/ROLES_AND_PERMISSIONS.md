@@ -51,6 +51,17 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - Toda elevación, revocación o modificación de permisos debe quedar auditada.
 - La interfaz no sustituye RLS.
 
+
+## Creación y edición de actividades
+
+- professor y peer_tutor operan únicamente en su programa académico principal y en el área de servicio de su asignación.
+- program_tutoring_lead opera tutorías en el programa asignado.
+- program_advising_lead opera asesorías en el programa asignado.
+- program_head opera actividades únicamente en el programa asignado.
+- division_tutoring_liaison puede elegir Diseño Gráfico, Arquitectura o «Ambos programas» dentro de su división y área de servicio.
+- technical_admin puede crear actividades en cualquier programa o en el alcance divisional para soporte y pruebas.
+- La interfaz filtra opciones, la acción del servidor repite la validación y RLS conserva la autorización definitiva.
+
 ## Criterios para RLS
 
 Cada política comprobará identidad, asignación vigente, alcance, programa o división, área de servicio y operación permitida. Los reportes y exportaciones aplicarán las mismas restricciones que las vistas de origen.

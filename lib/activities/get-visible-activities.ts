@@ -49,7 +49,11 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
       academicPeriodLabel: activity.academic_period_id
         ? getLabel(periods.get(activity.academic_period_id), activity.academic_period_id)
         : null,
-      programName: programs.get(activity.program_id)?.name ?? activity.program_id,
+      programName: activity.scope_type === "division"
+        ? "Ambos programas"
+        : activity.program_id
+          ? programs.get(activity.program_id)?.name ?? activity.program_id
+          : "Programa no asignado",
       activityTypeLabel: getLabel(
         activityTypes.get(activity.activity_type_code),
         activity.activity_type_code,

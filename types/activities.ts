@@ -1,22 +1,20 @@
 import type {
-  AcademicPeriod,
-  ActivityModality,
-  ActivityStatus,
-  ActivityType,
-  AttentionCategory,
-  LocationType,
-  ServiceType,
+  AcademicPeriod, ActivityModality, ActivityStatus, ActivityType,
+  AttentionCategory, LocationType, ServiceType,
 } from "@/types/catalogs";
-import type { AcademicProgram } from "@/types/sitaa";
+import type { AcademicProgram, Division } from "@/types/sitaa";
 
 export type DurationMode = "one_hour" | "two_hours" | "custom";
+export type ActivityScopeType = "program" | "division";
 
 export interface Activity {
   id: string;
   title: string;
   description: string | null;
   academic_period_id: string | null;
-  program_id: string;
+  scope_type: ActivityScopeType;
+  division_id: string;
+  program_id: string | null;
   activity_type_code: string;
   service_type_code: string;
   attention_category_code: string | null;
@@ -40,6 +38,7 @@ export interface Activity {
 export interface ActivityFormOptions {
   academicPeriods: AcademicPeriod[];
   programs: AcademicProgram[];
+  divisions: Division[];
   activityTypes: ActivityType[];
   serviceTypes: ServiceType[];
   attentionCategories: AttentionCategory[];
@@ -48,8 +47,15 @@ export interface ActivityFormOptions {
   locationTypes: LocationType[];
 }
 
+export interface ActivityScopeAccess {
+  allowedPrograms: AcademicProgram[];
+  canUseDivisionScope: boolean;
+  divisionScopeId: string | null;
+}
+
 export interface ActivityFormValues {
   title: string;
+  scope_type: string;
   description: string;
   program_id: string;
   activity_type_code: string;
@@ -65,8 +71,7 @@ export interface ActivityFormValues {
   end_time: string;
 }
 
-export type ActivityFormField = keyof ActivityFormValues | "academic_period_id";
-
+export type ActivityFormField = keyof ActivityFormValues | "academic_period_id" | "division_id";
 export interface ActivityFormState {
   revision: number;
   values: ActivityFormValues;
