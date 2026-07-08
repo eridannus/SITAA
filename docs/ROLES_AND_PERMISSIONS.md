@@ -70,6 +70,14 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - La interfaz filtra opciones, la acción del servidor repite la validación y RLS conserva la autorización definitiva.
 - Cuando solo existe una combinación válida de alcance y programa, la interfaz la muestra como información de solo lectura; el servidor impone esa combinación e ignora valores manipulados.
 
+## Bloqueo de datos base en actividades ocurridas
+
+- Las actividades nuevas no pueden crearse con fecha pasada.
+- Una actividad ya ocurrida bloquea sus datos base para responsables regulares.
+- Participantes, asistencia y notas de asistencia permanecen editables despu?s de ocurrida la actividad para usuarios autorizados.
+- Las correcciones administrativas de datos base dependen de `can_update_activity_base`; la eliminaci?n depende de `can_delete_activity`.
+- Ocultar controles en la interfaz no sustituye RLS ni las funciones autorizadas de Supabase.
+
 ## Criterios para RLS
 
 Cada política comprobará identidad, asignación vigente, alcance, programa o división, área de servicio y operación permitida. Los reportes y exportaciones aplicarán las mismas restricciones que las vistas de origen.

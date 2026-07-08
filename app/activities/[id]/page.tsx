@@ -62,7 +62,15 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const technicalAdmin = context.activeRoleAssignments.some((item) => item.role_code === "technical_admin");
   const legacyCleanup = activity.scope_type === "division" && (technicalAdmin || activity.created_by === context.user.id);
   const normalCanEdit = activity.scope_type === "program" && canManageActivityScope(context, values, options.programs, activity.division_id);
-  const canEdit = !studentOnly && (normalCanEdit || legacyCleanup);
+  const canManageActivity = !studentOnly && (normalCanEdit || legacyCleanup);
+  const [baseUpdatePermission, deletePermission, endedResult] = await Promise.all([
+    supabase.rpc("can_update_activity_base", { target_activity_id: id }),
+    supabase.rpc("can_delete_activity", { target_activity_id: id }),
+    supabase.rpc("activity_has_ended", { target_activity_id: id }),
+  ]);
+  const canUpdateBaseData = canManageActivity && baseUpdatePermission.data === true;
+  const canDeleteActivityRecord = canManageActivity && deletePermission.data === true;
+  const activityHasEnded = endedResult.data === true;
   const canManageParticipants = !studentOnly && normalCanEdit;
 
   let access = getActivityScopeAccess(context, options.programs, options.divisions);
@@ -97,12 +105,15 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
 
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0"><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Actividad</p><h1 className="mt-3 break-words text-3xl font-bold text-emerald-950 sm:text-4xl">{canEdit ? "Editar actividad" : activity.title}</h1></div>
+      <div className="min-w-0"><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Actividad</p><h1 className="mt-3 break-words text-3xl font-bold text-emerald-950 sm:text-4xl">{canUpdateBaseData ? "Editar actividad" : activity.title}</h1></div>
       <Link href="/activities" className="shrink-0 cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-sm font-bold transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link>
     </div>
     {updated && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Los cambios se guardaron correctamente.</div>}
 
-    {canEdit ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10"><ActivityForm options={options} access={access} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} /></div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
+    {canUpdateBaseData ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
+      {activityHasEnded && <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Correcci?n administrativa de actividad ya ocurrida.</div>}
+      <ActivityForm options={options} access={access} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} />
+    </div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <h2 className="break-words text-2xl font-bold text-slate-900">{activity.title}</h2>
       {activity.description && <p className="mt-4 break-words leading-7 text-slate-600">{activity.description}</p>}
       <dl className="mt-6 grid min-w-0 gap-4 text-sm sm:grid-cols-2">
@@ -114,14 +125,15 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
         <div className="min-w-0 sm:col-span-2"><dt className="break-words font-semibold text-slate-500">{locationHeading}</dt>{locationDetail ? (isHttpUrl(locationDetail) ? <dd className="mt-1 min-w-0 break-all text-slate-900"><a className="cursor-pointer text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2" href={locationDetail} target="_blank" rel="noopener noreferrer">{locationDetail}</a></dd> : <dd className="mt-1 min-w-0 break-words text-slate-900">{locationDetail}</dd>) : null}</div>
       </dl>
       {studentOnly && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">{card?.ownParticipantRoleLabel ? `Tu participación: ${card.ownParticipantRoleLabel}.` : "Estás registrado como participante en esta actividad."}</p>}
-      {!studentOnly && !canEdit && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
+      {canManageActivity && !canUpdateBaseData && <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">Esta actividad ya ocurri?. Los datos base est?n bloqueados; puedes actualizar participantes y asistencia.</p>}
+      {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
 
     {canManageParticipants && (participantsError
       ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>
       : <ParticipantManager activityId={id} participants={participants} roles={roles} canEdit status={participantStatus} />)}
 
-    {canEdit && <section className="mt-10 rounded-3xl border border-red-200 bg-red-50 p-7 sm:p-10"><h2 className="text-xl font-bold text-red-950">Eliminar actividad</h2><p className="mt-3 text-red-800">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold text-red-800">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
+    {canDeleteActivityRecord && <section className="mt-10 rounded-3xl border border-red-200 bg-red-50 p-7 sm:p-10"><h2 className="text-xl font-bold text-red-950">Eliminar actividad</h2><p className="mt-3 text-red-800">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold text-red-800">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
   </main>;
 }
 

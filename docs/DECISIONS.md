@@ -223,6 +223,16 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** los usuarios operativos no seleccionan ni editan el semestre. Actividades, reportes, estadísticas y exportaciones podrán filtrarse por semestre sin almacenar semestre actual en `profiles`.
 
 **Estado:** Aceptada.
+## DEC-023 ? Bloqueo de datos base en actividades ocurridas
+
+**Contexto:** las actividades ya realizadas requieren correcciones de asistencia y participantes, pero no deben modificar libremente su planeaci?n base.
+
+**Decisi?n:** las actividades nuevas no pueden crearse con fecha pasada. Una actividad ocurrida bloquea sus datos base para responsables regulares; participantes, asistencia y notas de asistencia permanecen editables para usuarios autorizados. Las correcciones administrativas de datos base y la eliminaci?n se determinan con funciones autorizadas de Supabase.
+
+**Consecuencias:** la interfaz muestra resumen de solo lectura cuando los datos base est?n bloqueados y conserva la gesti?n de asistencia. La base de datos mantiene la autorizaci?n definitiva mediante RLS y funciones como `activity_has_ended`, `can_update_activity_base` y `can_delete_activity`.
+
+**Estado:** Aceptada.
+
 ## Plantilla para nuevas decisiones
 
 ### DEC-XXX — Título

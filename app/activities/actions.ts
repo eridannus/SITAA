@@ -200,6 +200,10 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     ends_at: toMexicoCityTimestamp(result.endDate, result.endTime),
   };
   if (activityId) {
+    const { data: canUpdateBase, error: canUpdateBaseError } = await supabase.rpc("can_update_activity_base", { target_activity_id: activityId });
+    if (canUpdateBaseError || canUpdateBase !== true) {
+      return invalid(previous, values, {}, "Los datos base de esta actividad est?n bloqueados. Puedes actualizar participantes y asistencia.");
+    }
     const { data, error } = await supabase.from("activities").update(payload).eq("id", activityId).select("id").maybeSingle();
     if (error || !data) return invalid(previous, values, {}, "No fue posible actualizar la actividad. Verifica tus permisos e intenta nuevamente.");
     revalidatePath("/activities"); revalidatePath(`/activities/${activityId}`); redirect(`/activities/${activityId}?updated=1`);
@@ -216,6 +220,8 @@ export async function deleteActivity(activityId: string, formData: FormData) {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?error=sesion-requerida");
+  const { data: canDelete, error: canDeleteError } = await supabase.rpc("can_delete_activity", { target_activity_id: activityId });
+  if (canDeleteError || canDelete !== true) redirect(`/activities/${activityId}?error=delete`);
   const { data, error } = await supabase.from("activities").delete().eq("id", activityId).select("id").maybeSingle();
   if (error || !data) redirect(`/activities/${activityId}?error=delete`);
   revalidatePath("/activities"); redirect("/activities?deleted=1");
