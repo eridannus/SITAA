@@ -32,6 +32,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-018 | Alcance programático exclusivo durante el MVP | Aceptada |
 | DEC-019 | Privacidad del padrón de participantes | Aceptada |
 | DEC-020 | Registro, asistencia y códigos de acceso | Aceptada |
+| DEC-021 | Pase de lista compacto | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -199,6 +200,14 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** el QR no será el único método de acceso. Los códigos de tres palabras serán breves, en minúsculas, con palabras en español, sin acentos, ñ ni caracteres especiales, fáciles de dictar y únicos entre códigos activos. El responsable podrá abrir o cerrar registro y abrir, cerrar o regenerar check-in; el check-in podrá usarse al inicio, durante o al final de la actividad.
 
 **Seguridad por defecto:** el registro inicia cerrado y la asistencia se limita a participantes registrados. Registro abierto o check-in abierto podrán habilitarse después para tipos de actividad seleccionados. Los estados de asistencia serán `pending`, `attended`, `absent` y `justified`; las fuentes serán `manual`, `qr`, `code` y `system`.
+
+**Estado:** Aceptada.
+
+## DEC-021 — Pase de lista compacto
+
+**Decisión:** SITAA mantiene tarjetas detalladas de participantes y agrega una vista compacta de pase de lista para actividades con muchos participantes.
+
+**Consecuencias:** los editores autorizados pueden seleccionar participantes visibles y aplicar cambios masivos de asistencia. La vista compacta no reemplaza la edición individual; ambas actualizan los mismos campos de asistencia y respetan RLS.
 
 **Estado:** Aceptada.
 

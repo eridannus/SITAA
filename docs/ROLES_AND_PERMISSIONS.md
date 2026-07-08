@@ -49,7 +49,7 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - `technical_admin` no obtiene por su rol lectura de contenido académico sensible.
 - Los participantes y asistencias siempre referencian perfiles SITAA.
 - Solo quienes pueden editar una actividad pueden agregar o retirar participantes; la búsqueda usa perfiles registrados y roles de participante controlados.
-- La persona responsable, tutor, profesor o editor autorizado puede marcar y corregir asistencia manualmente para participantes registrados, incluyendo estado y notas.
+- La persona responsable, tutor, profesor o editor autorizado puede marcar y corregir asistencia manualmente para participantes registrados, incluyendo estado y notas, ya sea de forma individual o mediante pase de lista compacto.
 - La persona responsable puede abrir o cerrar el registro, y abrir, cerrar o regenerar el check-in de asistencia cuando esa función exista.
 - En el MVP, la búsqueda y el alta de participantes se limitan a perfiles cuyo `primary_program_id` coincide con el `program_id` de la actividad; la interfaz filtra y el servidor valida nuevamente.
 - Un alumno agregado como participante puede consultar la actividad conforme a RLS, sin recibir permisos de edición.

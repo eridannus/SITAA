@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -166,6 +166,37 @@ export async function updateParticipantAttendance(
   redirect(`/activities/${activityId}?participant=attendance-updated#participants`);
 }
 
+
+export async function updateParticipantsAttendanceBulk(
+  activityId: string,
+  _previous: ParticipantMutationState,
+  formData: FormData,
+): Promise<ParticipantMutationState> {
+  const participantIds = formData
+    .getAll("participant_ids")
+    .filter((value): value is string => typeof value === "string" && Boolean(value));
+  const status = formData.get("attendance_status");
+
+  if (!participantIds.length) return { error: "Selecciona al menos un participante." };
+  if (typeof status !== "string" || !attendanceStatuses.has(status as AttendanceStatus)) {
+    return { error: "Selecciona un estado de asistencia válido." };
+  }
+
+  const editor = await requireEditor(activityId);
+  if (!editor) return { error: "No tienes permiso para modificar la asistencia de esta actividad." };
+
+  const { error } = await editor.supabase.rpc("update_activity_participants_attendance_bulk", {
+    target_activity_id: activityId,
+    target_participant_ids: participantIds,
+    new_attendance_status: status,
+    new_attendance_notes: null,
+  });
+  if (error) return { error: attendanceErrorMessage(error) };
+
+  revalidatePath("/activities");
+  revalidatePath(`/activities/${activityId}`);
+  redirect(`/activities/${activityId}?participant=attendance-updated#participants`);
+}
 export async function removeActivityParticipant(activityId: string, participantId: string, formData: FormData) {
   if (formData.get("confirmation") !== "confirmed") redirect(`/activities/${activityId}?participant=remove-error#participants`);
   const editor = await requireEditor(activityId);

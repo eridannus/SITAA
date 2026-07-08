@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { addActivityParticipant, removeActivityParticipant, searchParticipationProfiles, updateParticipantAttendance } from "./actions";
+import { addActivityParticipant, removeActivityParticipant, searchParticipationProfiles, updateParticipantAttendance, updateParticipantsAttendanceBulk } from "./actions";
 import type { ActivityParticipantDisplay, AttendanceSource, AttendanceStatus, ParticipantMutationState, ParticipantSearchState, ParticipationProfileSearchResult } from "@/types/participants";
 import type { ParticipantRole } from "@/types/catalogs";
 
@@ -19,6 +19,12 @@ const attendanceSourceLabels: Record<AttendanceSource, string> = {
   qr: "QR",
   code: "Código",
 };
+const bulkActions: Array<{ status: AttendanceStatus; label: string }> = [
+  { status: "attended", label: "Marcar como Asistió" },
+  { status: "absent", label: "Marcar como No asistió" },
+  { status: "pending", label: "Marcar como Pendiente" },
+  { status: "justified", label: "Marcar como Justificada" },
+];
 
 function formatDateTime(value: string | null) {
   if (!value) return null;
@@ -46,6 +52,14 @@ function AttendanceButton() {
   const { pending } = useFormStatus();
   return <button type="submit" disabled={pending} aria-disabled={pending} className="rounded-full bg-emerald-800 px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-400 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">
     {pending ? "Guardando…" : "Guardar asistencia"}
+  </button>;
+}
+
+function BulkButton({ status, label, disabled }: { status: AttendanceStatus; label: string; disabled: boolean }) {
+  const { pending } = useFormStatus();
+  const isDisabled = pending || disabled;
+  return <button type="submit" name="attendance_status" value={status} disabled={isDisabled} aria-disabled={isDisabled} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+    {pending ? "Actualizando…" : label}
   </button>;
 }
 
@@ -116,6 +130,66 @@ function AddParticipantForm({ activityId, result, roles }: {
   </form>;
 }
 
+function AttendanceListView({ activityId, participants }: { activityId: string; participants: ActivityParticipantDisplay[] }) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [state, action] = useActionState<ParticipantMutationState, FormData>(
+    updateParticipantsAttendanceBulk.bind(null, activityId),
+    { error: null },
+  );
+  const selected = new Set(selectedIds);
+  const allSelected = participants.length > 0 && selectedIds.length === participants.length;
+
+  function toggleParticipant(id: string) {
+    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  return <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => setSelectedIds(participants.map((participant) => participant.id))} disabled={!participants.length || allSelected} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Seleccionar visibles</button>
+        <button type="button" onClick={() => setSelectedIds([])} disabled={!selectedIds.length} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Limpiar selección</button>
+        <p className="text-sm font-semibold text-slate-600">{selectedIds.length} seleccionado{selectedIds.length === 1 ? "" : "s"}</p>
+      </div>
+      {!selectedIds.length && <p className="text-sm text-slate-500">Selecciona al menos un participante.</p>}
+    </div>
+
+    <form action={action} className="mt-4">
+      {selectedIds.map((id) => <input key={id} type="hidden" name="participant_ids" value={id} />)}
+      <div className="flex flex-wrap gap-2">
+        {bulkActions.map((item) => <BulkButton key={item.status} status={item.status} label={item.label} disabled={!selectedIds.length} />)}
+      </div>
+      {state.error && <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{state.error}</p>}
+    </form>
+
+    <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="w-12 px-4 py-3"><span className="sr-only">Seleccionar</span></th>
+            <th className="px-4 py-3">Identificador</th>
+            <th className="px-4 py-3">Nombre completo</th>
+            <th className="px-4 py-3">Rol</th>
+            <th className="px-4 py-3">Asistencia</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {participants.map((participant) => (
+            <tr key={participant.id} className={selected.has(participant.id) ? "bg-emerald-50" : "bg-white"}>
+              <td className="px-4 py-3 align-top">
+                <input type="checkbox" checked={selected.has(participant.id)} onChange={() => toggleParticipant(participant.id)} aria-label={`Seleccionar a ${participant.full_name}`} className="h-4 w-4 cursor-pointer rounded border-slate-300 text-emerald-700 focus:ring-emerald-600" />
+              </td>
+              <td className="max-w-[10rem] px-4 py-3 align-top"><span className="block break-words font-semibold text-slate-900">{participant.institutional_id_value}</span><span className="block break-words text-xs text-slate-500">{idLabels[participant.institutional_id_type]}</span></td>
+              <td className="min-w-[14rem] max-w-[22rem] px-4 py-3 align-top"><span className="block break-words font-semibold text-slate-900">{participant.full_name}</span><span className="block break-all text-xs text-slate-500">{participant.email}</span></td>
+              <td className="max-w-[12rem] px-4 py-3 align-top break-words text-slate-700">{participant.participant_role_label}</td>
+              <td className="max-w-[10rem] px-4 py-3 align-top break-words font-semibold text-slate-900">{attendanceStatusLabels[participant.attendance_status ?? "pending"]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>;
+}
+
 export function ParticipantManager({ activityId, participants, roles, canEdit, status }: {
   activityId: string;
   participants: ActivityParticipantDisplay[];
@@ -123,6 +197,7 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
   canEdit: boolean;
   status?: string;
 }) {
+  const [viewMode, setViewMode] = useState<"detail" | "attendance">("detail");
   const [searchState, searchAction, searchPending] = useActionState<ParticipantSearchState, FormData>(
     searchParticipationProfiles.bind(null, activityId),
     { query: "", results: [], error: null },
@@ -143,7 +218,12 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
     <div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Registro institucional</p><h2 className="mt-2 text-2xl font-bold text-slate-900">Participantes</h2><p className="mt-3 text-slate-600">Solo pueden agregarse perfiles registrados en SITAA.</p></div>
     {status && statusMessages[status] && <div role={status.includes("error") || status.includes("forbidden") || status === "duplicate" || status === "invalid" ? "alert" : "status"} className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">{statusMessages[status]}</div>}
 
-    {participants.length ? <div className="mt-7 grid gap-4 md:grid-cols-2">{participants.map((participant) => {
+    {canEdit && participants.length > 0 && <div className="mt-7 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+      <button type="button" onClick={() => setViewMode("detail")} className={`cursor-pointer rounded-full px-4 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${viewMode === "detail" ? "bg-white text-emerald-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>Detalle</button>
+      <button type="button" onClick={() => setViewMode("attendance")} className={`cursor-pointer rounded-full px-4 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${viewMode === "attendance" ? "bg-white text-emerald-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>Pase de lista</button>
+    </div>}
+
+    {participants.length ? (viewMode === "attendance" && canEdit ? <AttendanceListView activityId={activityId} participants={participants} /> : <div className="mt-7 grid gap-4 md:grid-cols-2">{participants.map((participant) => {
       const updatedAt = formatDateTime(participant.attendance_updated_at);
       return <article key={participant.id} className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-5">
         <h3 className="break-words font-bold text-slate-900">{participant.full_name}</h3>
@@ -160,7 +240,7 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
         {canEdit && <AttendanceForm activityId={activityId} participant={participant} />}
         {canEdit && <div className="mt-4"><RemoveButton activityId={activityId} participantId={participant.id} /></div>}
       </article>;
-    })}</div> : <p className="mt-7 rounded-2xl bg-slate-50 p-5 text-slate-600">Aún no hay participantes registrados en esta actividad.</p>}
+    })}</div>) : <p className="mt-7 rounded-2xl bg-slate-50 p-5 text-slate-600">Aún no hay participantes registrados en esta actividad.</p>}
 
     {canEdit && <div className="mt-9 border-t border-slate-200 pt-8">
       <h3 className="text-lg font-bold text-slate-900">Agregar participante</h3>
