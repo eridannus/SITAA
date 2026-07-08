@@ -101,13 +101,13 @@ export async function addActivityParticipant(
 
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
-  redirect(`/activities/${activityId}?participant=added`);
+  redirect(`/activities/${activityId}?participant=added#participants`);
 }
 
 export async function removeActivityParticipant(activityId: string, participantId: string, formData: FormData) {
-  if (formData.get("confirmation") !== "confirmed") redirect(`/activities/${activityId}?participant=remove-error`);
+  if (formData.get("confirmation") !== "confirmed") redirect(`/activities/${activityId}?participant=remove-error#participants`);
   const editor = await requireEditor(activityId);
-  if (!editor) redirect(`/activities/${activityId}?participant=remove-forbidden`);
+  if (!editor) redirect(`/activities/${activityId}?participant=remove-forbidden#participants`);
 
   const { error } = await editor.supabase.rpc("remove_activity_participant", {
     target_participant_id: participantId,
@@ -115,10 +115,10 @@ export async function removeActivityParticipant(activityId: string, participantI
   if (error) {
     const text = [error.code, error.message, error.details].filter(Boolean).join(" ").toLowerCase();
     const code = /permission|not authorized|row-level|rls|permiso|autorizad/.test(text) ? "remove-forbidden" : "remove-error";
-    redirect(`/activities/${activityId}?participant=${code}`);
+    redirect(`/activities/${activityId}?participant=${code}#participants`);
   }
 
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
-  redirect(`/activities/${activityId}?participant=removed`);
+  redirect(`/activities/${activityId}?participant=removed#participants`);
 }
