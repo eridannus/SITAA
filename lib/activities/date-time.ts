@@ -21,15 +21,27 @@ export function isValidTime(value: string) {
   return timePattern.test(value);
 }
 
-export function getMexicoCityToday() {
+function getMexicoCityParts() {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Mexico_City",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
   }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+export function getMexicoCityToday() {
+  const values = getMexicoCityParts();
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function getMexicoCityCurrentTime() {
+  const values = getMexicoCityParts();
+  return `${values.hour}:${values.minute}`;
 }
 
 export function addHoursToLocalDateTime(dateValue: string, timeValue: string, hours: number) {

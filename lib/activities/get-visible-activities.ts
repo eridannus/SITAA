@@ -40,6 +40,12 @@ function firstText(...values: Array<string | null | undefined>) {
   return values.map((value) => value?.trim()).find((value): value is string => Boolean(value)) ?? null;
 }
 
+function statusLabelFor(statusCode: string, fallback: string) {
+  if (statusCode === "draft") return "Borrador";
+  if (statusCode === "scheduled") return "Programada";
+  return fallback;
+}
+
 export async function getVisibleActivities(): Promise<ActivityListItem[]> {
   const supabase = await createSupabaseServerClient();
   const [{ data, error }, options] = await Promise.all([
@@ -120,7 +126,7 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
       serviceTypeLabel: row.service_type_label?.trim() || label(serviceTypes.get(serviceTypeCode), serviceTypeCode),
       attentionCategoryLabel: row.attention_category_label?.trim() || (categoryCode ? label(categories.get(categoryCode), categoryCode) : null),
       modalityLabel: row.modality_label?.trim() || label(modalities.get(modalityCode), modalityCode),
-      statusLabel: row.status_label?.trim() || label(statuses.get(statusCode), statusCode),
+      statusLabel: statusLabelFor(statusCode, row.status_label?.trim() || label(statuses.get(statusCode), statusCode)),
       locationTypeLabel: row.location_type_label?.trim() || (locationCode ? label(locations.get(locationCode), locationCode) : null),
       responsibleName: row.responsible_full_name?.trim() || row.responsible_name?.trim() || "Responsable no disponible",
       canEdit: row.viewer_can_edit === true || row.can_edit === true,

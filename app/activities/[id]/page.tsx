@@ -59,6 +59,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const card = cardsResult.cards.find((item) => item.id === id);
   const values = formValues(activity);
   const studentOnly = isStudentOnlyUser(context);
+  if (studentOnly && activity.status_code === "draft") return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex cursor-pointer font-bold text-emerald-800 transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link></main>;
   const technicalAdmin = context.activeRoleAssignments.some((item) => item.role_code === "technical_admin");
   const legacyCleanup = activity.scope_type === "division" && (technicalAdmin || activity.created_by === context.user.id);
   const normalCanEdit = activity.scope_type === "program" && canManageActivityScope(context, values, options.programs, activity.division_id);
@@ -102,6 +103,10 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const programName = card?.programName || (activity.scope_type === "division" ? "Ambos programas" : options.programs.find((item) => item.id === activity.program_id)?.name ?? "Programa no disponible");
   const locationDetail = activity.location_detail?.trim();
   const locationHeading = card?.locationTypeLabel?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.label?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.name?.trim() || "Ubicación";
+  const isPublished = activity.status_code !== "draft";
+  const baseDataLockMessage = activityHasEnded
+    ? "Esta actividad ya ocurrió. Los datos base están bloqueados. Si necesitas corregirlos, contacta al responsable del programa de tutorías o asesorías correspondiente."
+    : "Esta actividad ya fue publicada. Los datos base están bloqueados; puedes actualizar participantes y asistencia.";
 
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -111,8 +116,8 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     {updated && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Los cambios se guardaron correctamente.</div>}
 
     {canUpdateBaseData ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
-      {activityHasEnded && <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Correcci?n administrativa de actividad ya ocurrida.</div>}
-      <ActivityForm options={options} access={access} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} />
+      {(activityHasEnded || isPublished) && <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Corrección administrativa de datos base habilitada.</div>}
+      <ActivityForm options={options} access={access} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} statusCode={activity.status_code} />
     </div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <h2 className="break-words text-2xl font-bold text-slate-900">{activity.title}</h2>
       {activity.description && <p className="mt-4 break-words leading-7 text-slate-600">{activity.description}</p>}
@@ -125,7 +130,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
         <div className="min-w-0 sm:col-span-2"><dt className="break-words font-semibold text-slate-500">{locationHeading}</dt>{locationDetail ? (isHttpUrl(locationDetail) ? <dd className="mt-1 min-w-0 break-all text-slate-900"><a className="cursor-pointer text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2" href={locationDetail} target="_blank" rel="noopener noreferrer">{locationDetail}</a></dd> : <dd className="mt-1 min-w-0 break-words text-slate-900">{locationDetail}</dd>) : null}</div>
       </dl>
       {studentOnly && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">{card?.ownParticipantRoleLabel ? `Tu participación: ${card.ownParticipantRoleLabel}.` : "Estás registrado como participante en esta actividad."}</p>}
-      {canManageActivity && !canUpdateBaseData && <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">Esta actividad ya ocurri?. Los datos base est?n bloqueados; puedes actualizar participantes y asistencia.</p>}
+      {canManageActivity && !canUpdateBaseData && <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{baseDataLockMessage}</p>}
       {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
 

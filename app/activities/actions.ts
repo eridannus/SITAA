@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { canManageActivityScope, getActivityScopeAccess } from "@/lib/activities/activity-scope-permissions";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
-import { calculatePresetEnd, getMexicoCityToday, isValidDate, isValidTime, toMexicoCityTimestamp } from "@/lib/activities/date-time";
+import { calculatePresetEnd, getMexicoCityCurrentTime, getMexicoCityToday, isValidDate, isValidTime, toMexicoCityTimestamp } from "@/lib/activities/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ActivityFormField, ActivityFormState, ActivityFormValues, DurationMode } from "@/types/activities";
 
@@ -44,6 +44,11 @@ function text(formData: FormData, field: keyof ActivityFormValues) {
   const value = formData.get(field);
   return typeof value === "string" ? value.trim() : "";
 }
+function activityIntent(formData: FormData) {
+  const value = formData.get("activity_intent");
+  return value === "draft" || value === "publish" ? value : "save";
+}
+
 function valuesFrom(formData: FormData): ActivityFormValues {
   return {
     title: text(formData, "title").replace(/\s+/g, " "),
@@ -83,7 +88,14 @@ function validate(values: ActivityFormValues, { enforceFutureStartDate }: { enfo
   if (!isValidDate(values.start_date)) errors.start_date = "Indica una fecha de inicio válida.";
   if (!isValidTime(values.start_time)) errors.start_time = "Indica una hora válida en formato de 24 horas.";
   if (!durationModes.has(values.duration_mode as DurationMode)) errors.duration_mode = "Selecciona una duración.";
-  if (enforceFutureStartDate && isValidDate(values.start_date) && values.start_date < getMexicoCityToday()) errors.start_date = "La fecha de inicio no puede ser anterior a hoy.";
+  if (enforceFutureStartDate && isValidDate(values.start_date)) {
+    const today = getMexicoCityToday();
+    if (values.start_date < today) {
+      errors.start_date = "La fecha de inicio no puede ser anterior a hoy.";
+    } else if (values.start_date === today && isValidTime(values.start_time) && values.start_time <= getMexicoCityCurrentTime()) {
+      errors.start_time = "La hora de inicio debe ser posterior a la hora actual de Ciudad de México.";
+    }
+  }
 
   let endDate = values.end_date;
   let endTime = values.end_time;
@@ -104,6 +116,7 @@ function validate(values: ActivityFormValues, { enforceFutureStartDate }: { enfo
 
 async function saveActivity(activityId: string | null, previous: ActivityFormState, formData: FormData): Promise<ActivityFormState> {
   const values = valuesFrom(formData);
+  const intent = activityIntent(formData);
   const context = await getAuthenticatedUserContext();
   if (!context) redirect("/login?error=sesion-requerida");
   if (context.error || !context.profile) return invalid(previous, values, {}, "Tu cuenta necesita un perfil institucional activo.");
@@ -116,7 +129,7 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   const existingResult = activityId
     ? await supabase
         .from("activities")
-        .select("id, scope_type, division_id, created_by")
+        .select("id, scope_type, division_id, created_by, status_code")
         .eq("id", activityId)
         .maybeSingle()
     : { data: null, error: null };
@@ -178,7 +191,10 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   }
   const academicPeriodId = semester.id;
 
+  const nextStatusCode = intent === "publish" ? "scheduled" : (activityId ? existingActivity?.status_code ?? "draft" : "draft");
+
   const payload = {
+    status_code: nextStatusCode,
     title: values.title,
     description: values.description || null,
     academic_period_id: academicPeriodId,
@@ -202,13 +218,13 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   if (activityId) {
     const { data: canUpdateBase, error: canUpdateBaseError } = await supabase.rpc("can_update_activity_base", { target_activity_id: activityId });
     if (canUpdateBaseError || canUpdateBase !== true) {
-      return invalid(previous, values, {}, "Los datos base de esta actividad est?n bloqueados. Puedes actualizar participantes y asistencia.");
+      return invalid(previous, values, {}, "Los datos base de esta actividad están bloqueados. Puedes actualizar participantes y asistencia.");
     }
     const { data, error } = await supabase.from("activities").update(payload).eq("id", activityId).select("id").maybeSingle();
     if (error || !data) return invalid(previous, values, {}, "No fue posible actualizar la actividad. Verifica tus permisos e intenta nuevamente.");
     revalidatePath("/activities"); revalidatePath(`/activities/${activityId}`); redirect(`/activities/${activityId}?updated=1`);
   }
-  const { error } = await supabase.from("activities").insert({ ...payload, responsible_profile_id: context.profile.id, created_by: context.user.id, status_code: "scheduled" });
+  const { error } = await supabase.from("activities").insert({ ...payload, responsible_profile_id: context.profile.id, created_by: context.user.id });
   if (error) return invalid(previous, values, {}, "No fue posible crear la actividad. Verifica tus permisos e intenta nuevamente.");
   revalidatePath("/activities"); redirect("/activities?created=1");
 }

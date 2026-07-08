@@ -7,6 +7,7 @@ import type { AttendanceSource, AttendanceStatus } from "@/types/participants";
 
 export type DurationMode = "one_hour" | "two_hours" | "custom";
 export type ActivityScopeType = "program" | "division";
+export type ActivityFormMode = "create" | "edit";
 
 export interface Activity {
   id: string;

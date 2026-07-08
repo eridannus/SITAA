@@ -53,6 +53,7 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 - `duration_mode` admite `one_hour`, `two_hours` y `custom`.
 - Las duraciones de una y dos horas calculan automáticamente `end_date` y `end_time`; la personalizada exige ambos campos.
 - `starts_at` y `ends_at` se mantienen como campos de compatibilidad derivados de fecha y hora separadas.
+- `status_code` usa `draft` para actividades en borrador y `scheduled` para actividades publicadas/programadas.
 
 
 ### Reglas de semestre académico
@@ -71,6 +72,7 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 
 - Todos los campos operativos de la actividad son obligatorios salvo description.
 - Las fechas se presentan como DD/MM/YYYY y las horas en formato de 24 horas.
+- `draft` identifica una actividad en borrador; `scheduled` identifica una actividad publicada/programada.
 - Alta y actualización asignan el semestre desde la fecha de inicio; no se puede seleccionar manualmente.
 - La edición conserva responsible_profile_id y created_by; lectura, actualización y eliminación dependen de RLS.
 

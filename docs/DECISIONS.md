@@ -229,7 +229,17 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisi?n:** las actividades nuevas no pueden crearse con fecha pasada. Una actividad ocurrida bloquea sus datos base para responsables regulares; participantes, asistencia y notas de asistencia permanecen editables para usuarios autorizados. Las correcciones administrativas de datos base y la eliminaci?n se determinan con funciones autorizadas de Supabase.
 
-**Consecuencias:** la interfaz muestra resumen de solo lectura cuando los datos base est?n bloqueados y conserva la gesti?n de asistencia. La base de datos mantiene la autorizaci?n definitiva mediante RLS y funciones como `activity_has_ended`, `can_update_activity_base` y `can_delete_activity`.
+**Consecuencias:** la interfaz muestra resumen de solo lectura cuando los datos base están bloqueados y conserva la gestión de asistencia. La base de datos mantiene la autorizaci?n definitiva mediante RLS y funciones como `activity_has_ended`, `can_update_activity_base` y `can_delete_activity`.
+
+**Estado:** Aceptada.
+
+## DEC-024 ? Flujo de borrador y publicaci?n de actividades
+
+**Contexto:** la planeaci?n de una actividad puede requerir guardarse antes de quedar lista para participantes y asistencia. Adem?s, publicar debe marcar un cambio claro de ciclo de vida.
+
+**Decisi?n:** las actividades pueden guardarse como borrador con `status_code = draft` o publicarse con `status_code = scheduled`. En la interfaz se muestran como **Borrador** y **Programada**. Publicar requiere confirmación porque bloquea la edición normal de datos base; participantes y asistencia siguen siendo gestionables por usuarios autorizados.
+
+**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos. Al publicar, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Las actividades nuevas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
 
 **Estado:** Aceptada.
 

@@ -63,6 +63,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
   const description = activity.description?.trim();
   const locationDetail = activity.location_detail?.trim();
   const locationHeading = activity.locationTypeLabel?.trim() || "Ubicación";
+  const statusBadgeClass = activity.status_code === "draft" ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800";
 
   return (
     <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">
@@ -72,7 +73,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
           <h2 className="mt-2 break-words text-xl font-bold text-slate-900">{activity.title}</h2>
           {description ? <p className="mt-3 break-words leading-7 text-slate-600">{description}</p> : null}
         </div>
-        <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">{activity.statusLabel}</span>
+        <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass}`}>{activity.statusLabel}</span>
       </div>
 
       <dl className="mt-6 grid min-w-0 gap-4 border-t border-slate-100 pt-6 text-sm sm:grid-cols-2">
@@ -155,7 +156,7 @@ export default async function ActivitiesPage({ searchParams }: Props) {
       getActivityFormOptions(),
     ]);
     const technicalAdmin = context.activeRoleAssignments.some((item) => item.role_code === "technical_admin");
-    activities = visibleActivities.map((activity) => ({
+    activities = visibleActivities.filter((activity) => !studentOnly || activity.status_code !== "draft").map((activity) => ({
       ...activity,
       canEdit: activity.canEdit || (
         !studentOnly &&

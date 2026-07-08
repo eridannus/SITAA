@@ -14,6 +14,7 @@ interface Props {
   today: string;
   mode?: "create" | "edit";
   activityId?: string;
+  statusCode?: string;
 }
 function label(item: CatalogRow) { return item.label?.trim() || item.name?.trim() || item.code; }
 function displayDate(value: string) {
@@ -23,24 +24,39 @@ function displayDate(value: string) {
 function FieldError({ message }: { message?: string }) {
   return message ? <p className="mt-2 text-sm font-medium text-red-700">{message}</p> : null;
 }
-function SubmitButton({ mode }: { mode: "create" | "edit" }) {
+function SubmitButtons({ mode, statusCode }: { mode: "create" | "edit"; statusCode: string }) {
   const { pending } = useFormStatus();
-  return <button type="submit" disabled={pending} className="rounded-full bg-emerald-800 px-7 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-200 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
-    {pending ? (mode === "edit" ? "Guardando…" : "Creando…") : (mode === "edit" ? "Guardar cambios" : "Crear actividad")}
-  </button>;
+  const primaryClass = "rounded-full bg-emerald-800 px-7 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-200 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2";
+  const secondaryClass = "rounded-full border border-slate-300 px-7 py-3 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2";
+  if (mode === "create") {
+    return <div className="flex flex-col gap-3 sm:flex-row">
+      <button type="submit" name="activity_intent" value="draft" disabled={pending} className={secondaryClass}>{pending ? "Guardando…" : "Guardar borrador"}</button>
+      <button type="submit" name="activity_intent" value="publish" disabled={pending} className={primaryClass}>{pending ? "Publicando…" : "Publicar actividad"}</button>
+    </div>;
+  }
+  return <div className="flex flex-col gap-3 sm:flex-row">
+    <button type="submit" name="activity_intent" value="save" disabled={pending} className={primaryClass}>{pending ? "Guardando…" : "Guardar cambios"}</button>
+    {statusCode === "draft" && <button type="submit" name="activity_intent" value="publish" disabled={pending} className={secondaryClass}>{pending ? "Publicando…" : "Publicar actividad"}</button>}
+  </div>;
 }
 
-export function ActivityForm({ options, access, initialValues, today, mode = "create", activityId }: Props) {
+export function ActivityForm({ options, access, initialValues, today, mode = "create", activityId, statusCode = "draft" }: Props) {
   const action = mode === "edit" && activityId ? updateActivity.bind(null, activityId) : createActivity;
   const [state, formAction] = useActionState<ActivityFormState, FormData>(action, { revision: 0, values: initialValues, errors: {}, message: null });
-  return <form action={formAction} className="grid gap-6 sm:grid-cols-2" noValidate>
-    <Fields key={state.revision} state={state} options={options} access={access} today={today} mode={mode} />
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (submitter?.value === "publish" && !window.confirm("Una vez publicada, los datos base de la actividad quedarán bloqueados para edición normal. Podrás seguir gestionando participantes y asistencia.")) {
+      event.preventDefault();
+    }
+  };
+  return <form action={formAction} onSubmit={handleSubmit} className="grid gap-6 sm:grid-cols-2" noValidate>
+    <Fields key={state.revision} state={state} options={options} access={access} today={today} mode={mode} statusCode={statusCode} />
   </form>;
 }
 
-function Fields({ state, options, access, today, mode }: {
+function Fields({ state, options, access, today, mode, statusCode }: {
   state: ActivityFormState; options: ActivityFormOptions; access: ActivityScopeAccess;
-  today: string; mode: "create" | "edit";
+  today: string; mode: "create" | "edit"; statusCode: string;
 }) {
   const [liveValues, setLiveValues] = useState(state.values);
   const calculatedEnd = useMemo(
@@ -125,6 +141,6 @@ function Fields({ state, options, access, today, mode }: {
       <div><label htmlFor="end_date" className="block text-sm font-semibold text-slate-700">Fecha de término</label><input id="end_date" name="end_date" type="date" required min={liveValues.start_date || today} {...common("end_date")} /><FieldError message={state.errors.end_date} /></div>
       <div><label htmlFor="end_time" className="block text-sm font-semibold text-slate-700">Hora de término</label><input id="end_time" name="end_time" type="time" required step={60} lang="es-MX" {...common("end_time")} /><div className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError message={state.errors.end_time} /></div>
     </> : <div className="sm:col-span-2 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-700"><span className="font-semibold">Término calculado: </span>{calculatedEnd ? `${displayDate(calculatedEnd.endDate)} a las ${calculatedEnd.endTime}` : "Indica fecha y hora de inicio para calcularlo."}</div>}
-    <div className="sm:col-span-2 pt-2"><SubmitButton mode={mode} /></div>
+    <div className="sm:col-span-2 pt-2"><SubmitButtons mode={mode} statusCode={statusCode} /></div>
   </>;
 }
