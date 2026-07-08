@@ -42,7 +42,7 @@ function ActivityCard({ activity }: { activity: ActivityListItem }) {
         <div><dt className="font-semibold text-slate-500">Servicio y modalidad</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.serviceTypeLabel} · {activity.modalityLabel}</dd></div>
         <div><dt className="font-semibold text-slate-500">Responsable</dt><dd className="mt-1 min-w-0 break-words text-slate-900">{activity.responsibleName}</dd></div>
       </dl>
-      <Link href={`/activities/${activity.id}`} className="mt-6 inline-flex text-sm font-bold text-emerald-800 hover:text-emerald-950">Ver y editar →</Link>
+      <Link href={`/activities/${activity.id}`} className="mt-6 inline-flex text-sm font-bold text-emerald-800 hover:text-emerald-950 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Ver y editar →</Link>
     </article>
   );
 }
@@ -65,7 +65,7 @@ export default async function ActivitiesPage({ searchParams }: Props) {
     <main className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
       <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p><h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">Actividades</h1><p className="mt-4 max-w-2xl leading-7 text-slate-600">Consulta las actividades que tus permisos actuales te permiten ver.</p></div>
-        {canCreate && <Link href="/activities/new" className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-900">Nueva actividad</Link>}
+        {canCreate && <Link href="/activities/new" className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Nueva actividad</Link>}
       </div>
       {(created || deleted) && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{created ? "La actividad se creó correctamente." : "La actividad se eliminó correctamente."}</div>}
       {activities.length === 0 ? <div className="mt-10 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><h2 className="text-xl font-bold text-slate-900">Aún no hay actividades visibles</h2><p className="mt-3 text-slate-600">{canCreate ? "Crea una actividad o espera a que te asignen acceso a una existente." : "Aún no tienes actividades asignadas. Cuando seas agregado como participante, aparecerán aquí."}</p></div> : <div className="mt-10 grid gap-6 lg:grid-cols-2">{activities.map((activity) => <ActivityCard key={activity.id} activity={activity} />)}</div>}

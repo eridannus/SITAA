@@ -172,10 +172,10 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
             </p>
           </div>
           <div className="sm:col-span-2 flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
-            <button type="submit" disabled={programsUnavailable || programsEmpty} className="rounded-full bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200">
+            <button type="submit" disabled={programsUnavailable || programsEmpty} className="rounded-full bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
               Guardar cambios
             </button>
-            <a href="/dashboard" className="rounded-full border border-slate-300 px-6 py-3 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800">
+            <a href="/dashboard" className="rounded-full border border-slate-300 px-6 py-3 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
               Volver al panel
             </a>
           </div>

@@ -41,7 +41,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   if (!context) redirect("/login?error=sesion-requerida");
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.from("activities").select("*").eq("id", id).maybeSingle();
-  if (error || !data) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800">Volver a actividades</Link></main>;
+  if (error || !data) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link></main>;
 
   const activity = data as Activity;
   let options: ActivityFormOptions;
@@ -64,7 +64,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0"><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Actividad</p><h1 className="mt-3 break-words text-3xl font-bold text-emerald-950 sm:text-4xl">{canEdit ? "Editar actividad" : activity.title}</h1></div>
-      <Link href="/activities" className="shrink-0 rounded-full border border-slate-300 px-6 py-3 text-sm font-bold">Volver a actividades</Link>
+      <Link href="/activities" className="shrink-0 rounded-full border border-slate-300 px-6 py-3 text-sm font-bold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link>
     </div>
     {updated && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Los cambios se guardaron correctamente.</div>}
 

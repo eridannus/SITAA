@@ -10,7 +10,7 @@ const idLabels = { student_account: "Número de cuenta", worker_number: "Número
 
 function AddButton() {
   const { pending } = useFormStatus();
-  return <button type="submit" disabled={pending} aria-disabled={pending} className="rounded-full border border-emerald-700 px-5 py-3 text-sm font-bold text-emerald-800 disabled:cursor-wait disabled:border-slate-300 disabled:text-slate-500">
+  return <button type="submit" disabled={pending} aria-disabled={pending} className="rounded-full border border-emerald-700 px-5 py-3 text-sm font-bold text-emerald-800 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-500 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">
     {pending ? "Agregando…" : "Agregar"}
   </button>;
 }
@@ -25,7 +25,7 @@ function RemoveButton({ activityId, participantId }: { activityId: string; parti
 }
 function RemoveSubmitButton() {
   const { pending } = useFormStatus();
-  return <button type="submit" disabled={pending} className="text-sm font-bold text-red-700 disabled:cursor-wait disabled:text-slate-400 hover:text-red-900">{pending ? "Eliminando…" : "Retirar participante"}</button>;
+  return <button type="submit" disabled={pending} className="text-sm font-bold text-red-700 disabled:cursor-not-allowed disabled:text-slate-400 hover:text-red-900 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2">{pending ? "Eliminando…" : "Retirar participante"}</button>;
 }
 
 function AddParticipantForm({ activityId, result, roles }: {
@@ -97,7 +97,7 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
       <form action={searchAction} className="mt-4 flex flex-col gap-3 sm:flex-row">
         <label htmlFor="search_text" className="sr-only">Buscar perfil</label>
         <input id="search_text" name="search_text" defaultValue={searchState.query} required placeholder="Nombre, correo o identificador institucional" className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
-        <button type="submit" disabled={searchPending} aria-disabled={searchPending} className="rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white disabled:cursor-wait disabled:bg-slate-400">{searchPending ? "Buscando…" : "Buscar"}</button>
+        <button type="submit" disabled={searchPending} aria-disabled={searchPending} className="rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-400 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">{searchPending ? "Buscando…" : "Buscar"}</button>
       </form>
       {searchState.error && <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{searchState.error}</p>}
       {searchState.results.length > 0 && <div className="mt-6 grid gap-4">{searchState.results.map((result) => <AddParticipantForm key={result.profile_id} activityId={activityId} result={result} roles={roles} />)}</div>}

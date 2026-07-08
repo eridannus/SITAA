@@ -21,7 +21,7 @@ export default async function NewActivityPage() {
   try { options = await getActivityFormOptions(); }
   catch { return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar el formulario</h1><p className="mt-4">Los catálogos operativos no están disponibles.</p></section>; }
 
-  if (options.academicPeriods.length !== 1) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No es posible crear actividades</h1><p className="mt-4">Debe existir exactamente un periodo académico activo.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800">Volver a actividades</Link></section>;
+  if (options.academicPeriods.length !== 1) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No es posible crear actividades</h1><p className="mt-4">Debe existir exactamente un periodo académico activo.</p><Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link></section>;
 
   const access = getActivityScopeAccess(context, options.programs, options.divisions);
   if (!access.allowedPrograms.length && !access.canUseDivisionScope) {
@@ -34,13 +34,13 @@ export default async function NewActivityPage() {
       <p className="mt-4">{needsPrimaryProgram
         ? "Tu perfil no tiene un programa académico principal. Debes asignarlo antes de crear actividades."
         : "Tus asignaciones actuales no permiten crear actividades. Los usuarios con rol únicamente de alumno no tienen acceso a este registro."}</p>
-      <Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800">Volver a actividades</Link>
+      <Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link>
     </section>;
   }
 
   const singleProgram = access.allowedPrograms.length === 1 && !access.canUseDivisionScope;
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p><h1 className="mt-3 text-3xl font-bold text-emerald-950 sm:text-4xl">Nueva actividad</h1><p className="mt-4 text-slate-600">Registra la información base de la actividad.</p></div><Link href="/activities" className="rounded-full border border-slate-300 px-6 py-3 text-sm font-bold">Volver a actividades</Link></div>
+    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p><h1 className="mt-3 text-3xl font-bold text-emerald-950 sm:text-4xl">Nueva actividad</h1><p className="mt-4 text-slate-600">Registra la información base de la actividad.</p></div><Link href="/activities" className="rounded-full border border-slate-300 px-6 py-3 text-sm font-bold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link></div>
     <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <ActivityForm options={options} access={access} activePeriod={options.academicPeriods[0]} today={getMexicoCityToday()} initialValues={{
         title: "", scope_type: singleProgram ? "program" : "", description: "",

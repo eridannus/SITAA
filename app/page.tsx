@@ -37,13 +37,13 @@ export default function Home() {
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <a
                 href="#capacidades"
-                className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white shadow-lg shadow-emerald-900/15 transition hover:bg-emerald-900"
+                className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white shadow-lg shadow-emerald-900/15 transition hover:bg-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
               >
                 Conocer el sistema
               </a>
               <Link
                 href="/health"
-                className="rounded-full border border-slate-300 bg-white px-6 py-3 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800"
+                className="rounded-full border border-slate-300 bg-white px-6 py-3 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
               >
                 Verificar servicio
               </Link>

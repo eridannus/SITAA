@@ -26,7 +26,7 @@ function FieldError({ message }: { message?: string }) {
 }
 function SubmitButton({ mode }: { mode: "create" | "edit" }) {
   const { pending } = useFormStatus();
-  return <button type="submit" disabled={pending} className="rounded-full bg-emerald-800 px-7 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-wait disabled:bg-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-200">
+  return <button type="submit" disabled={pending} className="rounded-full bg-emerald-800 px-7 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-200 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
     {pending ? (mode === "edit" ? "Guardando…" : "Creando…") : (mode === "edit" ? "Guardar cambios" : "Crear actividad")}
   </button>;
 }
