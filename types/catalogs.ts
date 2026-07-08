@@ -13,6 +13,8 @@ export interface CatalogRow {
 export interface AcademicPeriod extends CatalogRow {
   start_date?: string | null;
   end_date?: string | null;
+  starts_on?: string | null;
+  ends_on?: string | null;
 }
 
 export type ActivityType = CatalogRow;

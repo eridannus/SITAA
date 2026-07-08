@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { createActivity, updateActivity } from "@/app/activities/actions";
+import { createActivity, resolveAcademicSemester, updateActivity } from "@/app/activities/actions";
 import { calculatePresetEnd } from "@/lib/activities/date-time";
 import type { ActivityFormOptions, ActivityFormState, ActivityFormValues, ActivityScopeAccess, DurationMode } from "@/types/activities";
 import type { CatalogRow } from "@/types/catalogs";
@@ -47,16 +47,33 @@ function Fields({ state, options, access, today, mode }: {
     () => calculatePresetEnd(liveValues.start_date, liveValues.start_time, liveValues.duration_mode as DurationMode),
     [liveValues.duration_mode, liveValues.start_date, liveValues.start_time],
   );
+  const [resolvedSemester, setResolvedSemester] = useState<{
+    date: string;
+    label: string | null;
+    error: boolean;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (liveValues.start_date) {
+      resolveAcademicSemester(liveValues.start_date).then((result) => {
+        if (cancelled) return;
+        setResolvedSemester({ date: liveValues.start_date, label: result.label, error: result.error });
+      });
+    }
+    return () => { cancelled = true; };
+  }, [liveValues.start_date]);
   const semesterInfo = useMemo(() => {
     if (!liveValues.start_date) {
       return { tone: "neutral" as const, text: "Selecciona una fecha de inicio para asignar el semestre." };
     }
-    const semester = options.academicPeriods.find((period) =>
-      period.start_date && period.end_date && liveValues.start_date >= period.start_date && liveValues.start_date <= period.end_date,
-    );
-    if (semester) return { tone: "ok" as const, text: "Semestre: " + label(semester) };
-    return { tone: "warning" as const, text: "No hay semestre registrado para esta fecha." };
-  }, [liveValues.start_date, options.academicPeriods]);
+    if (!resolvedSemester || resolvedSemester.date !== liveValues.start_date) {
+      return { tone: "neutral" as const, text: "Consultando semestre..." };
+    }
+    if (resolvedSemester.error || !resolvedSemester.label) {
+      return { tone: "warning" as const, text: "No hay semestre registrado para esta fecha." };
+    }
+    return { tone: "ok" as const, text: "Semestre: " + resolvedSemester.label };
+  }, [liveValues.start_date, resolvedSemester]);
   const set = (field: keyof ActivityFormValues, value: string) => setLiveValues((current) => ({ ...current, [field]: value }));
   const inputClass = (field: keyof ActivityFormValues) => `mt-2 w-full rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${state.errors[field] ? "border-red-400 focus:border-red-600 focus:ring-red-100" : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"}`;
   const common = (field: keyof ActivityFormValues) => ({

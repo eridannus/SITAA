@@ -10,6 +10,36 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ActivityFormField, ActivityFormState, ActivityFormValues, DurationMode } from "@/types/activities";
 
 const durationModes = new Set<DurationMode>(["one_hour", "two_hours", "custom"]);
+
+type AcademicPeriodRpcResult = string | {
+  id?: string | null;
+  code?: string | null;
+  label?: string | null;
+  name?: string | null;
+} | null;
+
+function normalizeAcademicPeriodResult(data: unknown) {
+  const rows = Array.isArray(data) ? data : (data ? [data] : []);
+  const first = rows[0] as AcademicPeriodRpcResult | undefined;
+  if (!first) return { id: null, label: null };
+  if (typeof first === "string") return { id: first, label: first };
+  const id = first.id?.trim() || null;
+  const label = first.label?.trim() || first.name?.trim() || first.code?.trim() || id;
+  return { id, label };
+}
+
+async function getAcademicPeriodForDate(targetDate: string) {
+  if (!isValidDate(targetDate)) return { id: null, label: null, error: true };
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_academic_period_for_date", { target_date: targetDate });
+  if (error) return { id: null, label: null, error: true };
+  return { ...normalizeAcademicPeriodResult(data), error: false };
+}
+
+export async function resolveAcademicSemester(targetDate: string) {
+  const result = await getAcademicPeriodForDate(targetDate);
+  return { label: result.label, error: result.error };
+}
 function text(formData: FormData, field: keyof ActivityFormValues) {
   const value = formData.get(field);
   return typeof value === "string" ? value.trim() : "";
@@ -142,14 +172,11 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opción seleccionada ya no está disponible.";
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
-  const { data: semesterData, error: semesterError } = await supabase.rpc("get_academic_period_for_date", { target_date: values.start_date });
-  if (semesterError) {
+  const semester = await getAcademicPeriodForDate(values.start_date);
+  if (semester.error) {
     return invalid(previous, values, { academic_period_id: "No fue posible asignar el semestre." }, "No fue posible validar el semestre de la actividad.");
   }
-  const semesterRows = Array.isArray(semesterData) ? semesterData : (semesterData ? [semesterData] : []);
-  const academicPeriodId = typeof semesterData === "string"
-    ? semesterData
-    : (semesterRows[0] as { id?: string } | undefined)?.id ?? null;
+  const academicPeriodId = semester.id;
 
   const payload = {
     title: values.title,
