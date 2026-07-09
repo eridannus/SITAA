@@ -224,17 +224,19 @@ function checkinWindowMessage(state: ActivityAttendanceCheckinState | null, toke
   }
   if (state.windowStatus === "available") return "La asistencia ya puede abrirse.";
   if (state.windowStatus === "reopen_available") return "La actividad ya terminó. Puedes reabrir asistencia por 15 minutos.";
+  if (["expired", "closed", "ended", "deadline_passed"].includes(state.windowStatus ?? "")) return "El periodo para registrar asistencia ya terminó.";
   if (state.windowStatus === "open") return "La asistencia está abierta.";
 
   return null;
 }
 
-export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, checkinState, status, detail }: {
+export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, checkinState, attendanceDeadlinePassed, status, detail }: {
   activityId: string;
   token: ActivityCheckinToken | null;
   directLink: string | null;
   qrDataUri: string | null;
   checkinState: ActivityAttendanceCheckinState | null;
+  attendanceDeadlinePassed?: boolean;
   status?: string;
   detail?: string;
 }) {
@@ -245,6 +247,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
     "open-forbidden": "No tienes permiso para abrir asistencia en esta actividad.",
     "open-draft": "No puedes abrir asistencia en una actividad en borrador.",
     "open-error": "No fue posible abrir la asistencia.",
+    "open-expired": "El periodo para registrar asistencia ya terminó.",
     "fetch-error": "No fue posible consultar el estado de asistencia.",
     "close-forbidden": "No tienes permiso para cerrar asistencia en esta actividad.",
     "close-draft": "No puedes cerrar asistencia en una actividad en borrador.",
@@ -252,14 +255,15 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
     "regenerate-forbidden": "No tienes permiso para regenerar asistencia en esta actividad.",
     "regenerate-draft": "No puedes regenerar asistencia en una actividad en borrador.",
     "regenerate-error": "No fue posible regenerar el código.",
+    "regenerate-expired": "El periodo para registrar asistencia ya terminó.",
   };
   const isError = status?.includes("error") || status?.includes("forbidden") || status?.includes("draft") || false;
   const messageClass = isError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800";
-  const canOpenNow = !token && checkinState?.canOpenNow === true;
+  const canOpenNow = !attendanceDeadlinePassed && !token && checkinState?.canOpenNow === true;
   const isReopen = checkinState?.windowStatus === "reopen_available";
   const openButtonLabel = isReopen ? "Reabrir asistencia por 15 minutos" : "Abrir asistencia";
   const openPendingLabel = isReopen ? "Reabriendo..." : "Abriendo...";
-  const windowMessage = checkinWindowMessage(checkinState, token);
+  const windowMessage = attendanceDeadlinePassed ? "El periodo para registrar asistencia ya terminó." : checkinWindowMessage(checkinState, token);
   const formattedOpensAt = formatMexicoCityDateTime(checkinState?.opensAt);
   const activeExpiresAt = checkinState?.activeExpiresAt ?? token?.expires_at ?? null;
   const formattedExpiresAt = formatMexicoCityDateTime(activeExpiresAt);

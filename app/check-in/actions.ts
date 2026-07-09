@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { finalizeExpiredAttendance } from "@/lib/attendance/finalize-expired-attendance";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { checkinMessageFromResult } from "@/lib/check-in/check-in-result";
 import type { CheckinActionState } from "@/types/check-in";
@@ -34,6 +35,7 @@ export async function submitCheckinCode(_previous: CheckinActionState, formData:
 
   if (!user) return { status: "error", message: "Inicia sesión y vuelve a intentar el registro de asistencia." };
 
+  await finalizeExpiredAttendance();
   const { data, error } = await supabase.rpc("check_in_activity", { checkin_input: checkinInput });
   const result = checkinMessageFromResult(data, error);
   revalidatePath("/activities");

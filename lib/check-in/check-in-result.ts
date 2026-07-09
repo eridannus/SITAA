@@ -26,6 +26,24 @@ function stringOrNull(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function checkinErrorMessage(error: MaybeError) {
+  const raw = normalize([error.code, error.message, error.details, error.hint].filter(Boolean).join(" "));
+
+  if (/periodo.*registrar.*asistencia.*termin|attendance.*period|deadline|expired|expir/.test(raw)) {
+    return "El periodo para registrar asistencia ya terminó.";
+  }
+
+  if (/codigo.*no existe|code.*closed|codigo.*cerrad|token.*invalid|codigo.*invalid/.test(raw)) {
+    return "El código de asistencia no existe, ya fue cerrado o expiró.";
+  }
+
+  if (/no.*participante|not.*participant/.test(raw)) {
+    return "No estás registrado como participante en esta actividad. Si crees que deberías aparecer en la lista, contacta al responsable de la actividad.";
+  }
+
+  return GENERIC_CHECKIN_ERROR;
+}
+
 function classifyMessage(message: string): CheckinActionState["status"] {
   const raw = normalize(message);
 
@@ -39,7 +57,8 @@ function classifyMessage(message: string): CheckinActionState["status"] {
 
 export function checkinMessageFromResult(data: unknown, error?: MaybeError | null): CheckinActionState {
   if (error) {
-    return { status: "error", message: GENERIC_CHECKIN_ERROR };
+    const message = checkinErrorMessage(error);
+    return { status: message === GENERIC_CHECKIN_ERROR ? "error" : "invalid", message };
   }
 
   const row = firstRow(data);

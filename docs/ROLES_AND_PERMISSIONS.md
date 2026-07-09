@@ -99,3 +99,7 @@ Cada política comprobará identidad, asignación vigente, alcance, programa o d
 - Flujo colegiado para aprobar campos obligatorios y publicar versiones.
 - Nivel de detalle y umbrales de agregación para jefaturas.
 
+
+## Expiración de asistencia
+
+Quince minutos después del término de la actividad, SITAA marca como `absent` las asistencias pendientes al cargar pantallas operativas o al intentar registrar asistencia. El QR, enlace y código dejan de aceptar registros después de ese vencimiento. La corrección posterior sólo puede realizarse mediante controles manuales autorizados.

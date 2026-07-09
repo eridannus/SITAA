@@ -40,6 +40,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-026 | Check-in de asistencia por QR, enlace y código | Aceptada |
 | DEC-027 | Etiqueta compartida para QR y enlace directo | Aceptada |
 | DEC-028 | Ventanas de tiempo para check-in de asistencia | Aceptada |
+| DEC-029 | Expiración automática de asistencia pendiente | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -298,3 +299,11 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Propuesta, Aceptada o Sustituida por DEC-XXX.
 
+
+## DEC-029 — Expiración automática de asistencia pendiente
+
+**Decisión:** quince minutos después de la hora de término de una actividad, SITAA finaliza de forma perezosa la asistencia pendiente y la marca como `absent` cuando se cargan actividades o se intenta registrar asistencia.
+
+**Consecuencias:** el botón estudiantil "Registrar asistencia" sólo aparece mientras la asistencia propia está en `pending`. Los estados `attended`, `absent` y `justified` no pueden modificarse mediante check-in QR, enlace o código. Una vez vencido el periodo, los accesos de QR/código dejan de mostrarse y `check_in_activity` informa que el periodo terminó. La corrección posterior queda en el flujo manual autorizado.
+
+**Estado:** Aceptada.

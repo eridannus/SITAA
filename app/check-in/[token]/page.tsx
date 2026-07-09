@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
+import { finalizeExpiredAttendance } from "@/lib/attendance/finalize-expired-attendance";
 import { checkinMessageFromResult } from "@/lib/check-in/check-in-result";
 import { loginPathWithNext } from "@/lib/navigation/safe-next-path";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -13,6 +14,7 @@ type Props = { params: Promise<{ token: string }> };
 export default async function TokenCheckinPage({ params }: Props) {
   const { token } = await params;
   const currentPath = "/check-in/" + encodeURIComponent(token);
+  await finalizeExpiredAttendance();
   const context = await getAuthenticatedUserContext();
 
   if (!context) {

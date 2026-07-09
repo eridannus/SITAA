@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { loginPathWithNext } from "@/lib/navigation/safe-next-path";
+import { finalizeExpiredAttendance } from "@/lib/attendance/finalize-expired-attendance";
 import { CheckinCodeForm } from "./check-in-code-form";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export default async function CheckinPage({ searchParams }: Props) {
   const query = await searchParams;
   const fromActivities = param(query.from) === "activities";
   const currentPath = fromActivities ? "/check-in?from=activities" : "/check-in";
+  await finalizeExpiredAttendance();
   const context = await getAuthenticatedUserContext();
 
   if (!context) {

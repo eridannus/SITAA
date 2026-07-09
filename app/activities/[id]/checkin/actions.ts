@@ -20,6 +20,7 @@ function actionStatus(action: "open" | "close" | "regenerate", error: RpcError) 
   const raw = normalize([error.code, error.message, error.details, error.hint].filter(Boolean).join(" "));
   if (error.code === "42501" || /permission|not authorized|row-level|rls|permiso|autorizad/.test(raw)) return action + "-forbidden";
   if (/draft|borrador/.test(raw)) return action + "-draft";
+  if (/periodo.*registrar.*asistencia.*termin|deadline|expired|expir/.test(raw)) return action + "-expired";
   return action + "-error";
 }
 

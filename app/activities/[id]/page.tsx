@@ -6,9 +6,10 @@ import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-c
 import { canManageActivityScope, getActivityScopeAccess, isStudentOnlyUser } from "@/lib/activities/activity-scope-permissions";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { getActivityParticipants } from "@/lib/activities/get-activity-participants";
-import { getActiveActivityAttendanceCheckin, getActivityAttendanceCheckinState } from "@/lib/activities/get-attendance-checkin";
+import { getActiveActivityAttendanceCheckin, getActivityAttendanceCheckinState, getActivityAttendanceDeadline } from "@/lib/activities/get-attendance-checkin";
 import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
 import { getMexicoCityToday } from "@/lib/activities/date-time";
+import { finalizeExpiredAttendance } from "@/lib/attendance/finalize-expired-attendance";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { qrSvgDataUri } from "@/lib/qr/qr-code";
 import type { Activity, ActivityFormOptions, ActivityFormValues } from "@/types/activities";
@@ -66,6 +67,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const context = await getAuthenticatedUserContext();
   if (!context) redirect("/login?error=sesion-requerida");
 
+  await finalizeExpiredAttendance();
   const supabase = await createSupabaseServerClient();
   const [{ data, error }, cardsResult] = await Promise.all([
     supabase.from("activities").select("*").eq("id", id).maybeSingle(),
@@ -145,11 +147,12 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       : "Los datos base están bloqueados. Si necesitas corregirlos, contacta al responsable correspondiente.";
   const baseDataLockMessage = `${activityHasEnded ? "Esta actividad ya ocurrió." : "Esta actividad ya fue publicada."} ${contactMessage} Puedes actualizar participantes y asistencia cuando corresponda.`;
 
-  const [activeCheckinResult, checkinStateResult] = canManageParticipants
-    ? await Promise.all([getActiveActivityAttendanceCheckin(id), getActivityAttendanceCheckinState(id)])
-    : [{ token: null, error: null }, { state: null, error: null }];
+  const [activeCheckinResult, checkinStateResult, checkinDeadlineResult] = canManageParticipants
+    ? await Promise.all([getActiveActivityAttendanceCheckin(id), getActivityAttendanceCheckinState(id), getActivityAttendanceDeadline(id)])
+    : [{ token: null, error: null }, { state: null, error: null }, { deadline: null, hasPassed: false }];
   const activeCheckinState = checkinStateResult.state;
-  const activeCheckin = activeCheckinState?.windowStatus === "open" ? activeCheckinResult.token : null;
+  const attendanceDeadlinePassed = checkinDeadlineResult.hasPassed;
+  const activeCheckin = !attendanceDeadlinePassed && activeCheckinState?.windowStatus === "open" ? activeCheckinResult.token : null;
   const directCheckinLink = activeCheckin ? (await requestOrigin()) + "/check-in/" + encodeURIComponent(activeCheckin.secret_token) : null;
   const displayedCheckinStatus = activeCheckinResult.error || checkinStateResult.error ? "fetch-error" : checkinStatus;
   const displayedCheckinDetail = activeCheckinResult.error ?? checkinStateResult.error ?? checkinDetail;
@@ -193,7 +196,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
 
-    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} checkinState={activeCheckinState} status={displayedCheckinStatus} detail={displayedCheckinDetail} />}
+    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} checkinState={activeCheckinState} attendanceDeadlinePassed={attendanceDeadlinePassed} status={displayedCheckinStatus} detail={displayedCheckinDetail} />}
 
     {canManageParticipants && (participantsError
       ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>

@@ -88,6 +88,26 @@ export function normalizeCheckinState(data: unknown): ActivityAttendanceCheckinS
   };
 }
 
+function firstDeadlineValue(data: unknown) {
+  const row = firstRow<Record<string, unknown>>(data);
+  if (!row) return null;
+  return textOrNull(row.deadline) ?? textOrNull(row.attendance_deadline) ?? textOrNull(row.activity_attendance_deadline) ?? textOrNull(row.expires_at) ?? textOrNull(row.value);
+}
+
+export async function getActivityAttendanceDeadline(activityId: string): Promise<{ deadline: string | null; hasPassed: boolean }> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("activity_attendance_deadline", {
+    target_activity_id: activityId,
+  });
+  if (error) return { deadline: null, hasPassed: false };
+
+  const deadline = typeof data === "string" ? textOrNull(data) : firstDeadlineValue(data);
+  const deadlineDate = deadline ? new Date(deadline) : null;
+  const hasPassed = Boolean(deadlineDate && !Number.isNaN(deadlineDate.getTime()) && deadlineDate.getTime() <= Date.now());
+
+  return { deadline, hasPassed };
+}
+
 export async function getActiveActivityAttendanceCheckin(activityId: string): Promise<{ token: ActivityCheckinToken | null; error: string | null }> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("get_active_activity_attendance_checkin", {

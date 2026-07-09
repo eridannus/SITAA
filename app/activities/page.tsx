@@ -1,10 +1,11 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { canManageActivityScope, hasActivityCreationRole, isStudentOnlyUser } from "@/lib/activities/activity-scope-permissions";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
+import { finalizeExpiredAttendance } from "@/lib/attendance/finalize-expired-attendance";
 import type { ActivityFormValues, ActivityListItem } from "@/types/activities";
 
 export const dynamic = "force-dynamic";
@@ -165,7 +166,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
             </p>
             {activity.viewerAttendanceStatus ? <p className="text-sm font-semibold text-slate-700">Asistencia: {attendanceStatusLabels[activity.viewerAttendanceStatus]}</p> : null}
           </div>
-          {activity.isParticipant && activity.viewerAttendanceStatus !== "attended" ? (
+          {activity.isParticipant && activity.viewerAttendanceStatus === "pending" ? (
             <Link href="/check-in?from=activities" className="inline-flex w-full cursor-pointer items-center justify-center rounded-full bg-emerald-800 px-6 py-4 text-center text-sm font-bold text-white transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 sm:ml-auto sm:w-auto">
               Registrar asistencia
             </Link>
@@ -185,6 +186,7 @@ export default async function ActivitiesPage({ searchParams }: Props) {
   if (!context) redirect("/login?error=sesion-requerida");
   if (context.error) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar las actividades</h1><p className="mt-4">Intenta nuevamente más tarde.</p></section>;
   if (!context.profile) return <section className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Necesitas un perfil activo en SITAA</h1><p className="mt-4">Tu cuenta existe, pero aún no tiene un perfil institucional habilitado.</p></section>;
+  await finalizeExpiredAttendance();
   const canCreate = hasActivityCreationRole(context);
   const studentOnly = isStudentOnlyUser(context);
 
