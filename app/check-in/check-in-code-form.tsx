@@ -89,6 +89,73 @@ function decodeQrFromCanvas(video: HTMLVideoElement, canvas: HTMLCanvasElement) 
   return jsQR(imageData.data, width, height)?.data?.trim() ?? null;
 }
 
+function waitForLoadedMetadata(video: HTMLVideoElement) {
+  if (video.readyState >= 1) return Promise.resolve();
+
+  return new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("video-metadata-timeout"));
+    }, 3500);
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      video.removeEventListener("error", handleError);
+    };
+    const handleLoadedMetadata = () => {
+      cleanup();
+      resolve();
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error("video-metadata-error"));
+    };
+
+    video.addEventListener("loadedmetadata", handleLoadedMetadata, { once: true });
+    video.addEventListener("error", handleError, { once: true });
+  });
+}
+
+function waitForVideoDimensions(video: HTMLVideoElement) {
+  return new Promise<void>((resolve, reject) => {
+    const startedAt = performance.now();
+
+    const check = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        resolve();
+        return;
+      }
+
+      if (performance.now() - startedAt > 3500) {
+        reject(new Error("video-dimensions-timeout"));
+        return;
+      }
+
+      window.requestAnimationFrame(check);
+    };
+
+    check();
+  });
+}
+
+function waitForNextAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+async function requestCameraStream(getUserMedia: MediaDevices["getUserMedia"]) {
+  try {
+    return await getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+  } catch {
+    return getUserMedia({ video: true });
+  }
+}
+
+function hasActiveVideoTrack(stream: MediaStream) {
+  return stream.getVideoTracks().some((track) => track.enabled && track.readyState === "live");
+}
+
 function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -103,6 +170,11 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
     setScanning(false);
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
   }
 
   useEffect(() => {
@@ -122,36 +194,57 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
     setMessage("Apunta la cámara al código QR de asistencia.");
 
     try {
-      const stream = await getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+      const stream = await requestCameraStream(getUserMedia);
+
+      if (!hasActiveVideoTrack(stream)) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error("inactive-video-track");
+      }
+
       streamRef.current = stream;
       scanningRef.current = true;
       setScanning(true);
+      await waitForNextAnimationFrame();
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      const video = videoRef.current;
+      if (!video) throw new Error("missing-video-element");
+
+      video.autoplay = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.disablePictureInPicture = true;
+      video.srcObject = stream;
+      await waitForLoadedMetadata(video);
+      await video.play();
+      await waitForVideoDimensions(video);
 
       const detector = BarcodeDetector ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
+      let detectorFailed = false;
 
       const scanFrame = async () => {
         if (!scanningRef.current || !videoRef.current) return;
 
-        try {
-          const rawValue = detector
-            ? (await detector.detect(videoRef.current))[0]?.rawValue?.trim() ?? null
-            : canvasRef.current
-              ? decodeQrFromCanvas(videoRef.current, canvasRef.current)
-              : null;
+        let rawValue: string | null = null;
 
-          if (rawValue) {
-            stopCamera();
-            onScanned(rawValue);
-            return;
+        if (detector && !detectorFailed) {
+          try {
+            rawValue = (await detector.detect(videoRef.current))[0]?.rawValue?.trim() ?? null;
+          } catch {
+            detectorFailed = true;
           }
+        }
+
+        try {
+          rawValue = rawValue ?? (canvasRef.current ? decodeQrFromCanvas(videoRef.current, canvasRef.current) : null);
         } catch {
           stopCamera();
           setMessage("No fue posible leer el QR. Ingresa el código manualmente.");
+          return;
+        }
+
+        if (rawValue) {
+          stopCamera();
+          onScanned(rawValue);
           return;
         }
 
@@ -159,9 +252,12 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
       };
 
       window.requestAnimationFrame(scanFrame);
-    } catch {
+    } catch (error) {
       stopCamera();
-      setMessage("No se pudo acceder a la cámara. Ingresa el código manualmente.");
+      const message = error instanceof Error && ["video-metadata-timeout", "video-dimensions-timeout", "missing-video-element", "inactive-video-track"].includes(error.message)
+        ? "No fue posible iniciar la vista previa de la cámara. Puedes usar la cámara del teléfono para escanear el QR o escribir el código de tres palabras."
+        : "No se pudo acceder a la cámara. Ingresa el código manualmente.";
+      setMessage(message);
     }
   }
 
@@ -170,16 +266,15 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
   return <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <h2 className="text-xl font-bold text-slate-900">Escanear QR</h2>
     <p className="mt-3 text-sm text-slate-600">Usa esta opción sólo si tienes el QR de asistencia. La cámara se solicitará hasta que pulses el botón.</p>
+    <p className="mt-2 text-sm text-slate-600">También puedes escanear el QR con la cámara del teléfono o escribir el código manualmente.</p>
     <div className="mt-5 flex flex-wrap gap-3">
       <button type="button" onClick={startScanning} disabled={scanning} className="cursor-pointer rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
         {scanning ? "Escaneando..." : "Escanear QR"}
       </button>
       {scanning ? <button type="button" onClick={stopCamera} className="cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-sm font-bold text-slate-800 transition hover:border-slate-500 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Cancelar</button> : null}
     </div>
-    {scanning ? <>
-      <video ref={videoRef} muted playsInline className="mt-5 aspect-video w-full rounded-2xl bg-slate-950 object-cover" />
-      <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
-    </> : null}
+    <video ref={videoRef} autoPlay muted playsInline disablePictureInPicture className={scanning ? "mt-5 aspect-video w-full rounded-2xl bg-slate-950 object-cover" : "pointer-events-none absolute h-px w-px opacity-0"} />
+    <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
     {message ? <p role={message.startsWith("Apunta") ? "status" : "alert"} className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{message}</p> : null}
   </div>;
 }
