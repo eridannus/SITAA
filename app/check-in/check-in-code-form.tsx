@@ -1,5 +1,6 @@
 "use client";
 
+import jsQR from "jsqr";
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useFormStatus } from "react-dom";
@@ -20,7 +21,7 @@ function SubmitButton() {
 
 function validateCode(value: string) {
   const parts = value.trim().split(/[\s-]+/).filter(Boolean);
-    const hasOnlyAllowedCharacters = /^[A-Za-z??????????????\s-]+$/.test(value.trim());
+    const hasOnlyAllowedCharacters = /^[A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00dc\u00d1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1\s-]+$/.test(value.trim());
 
   if (!value.trim()) return "Escribe el código de asistencia.";
   if (!hasOnlyAllowedCharacters) return "Usa sólo letras, guiones o espacios.";
@@ -39,7 +40,12 @@ function subscribeToScannerSupport() {
 }
 
 function getScannerSupportSnapshot() {
-  return Boolean(getBarcodeDetectorConstructor() && navigator.mediaDevices?.getUserMedia);
+  return Boolean(
+    typeof window !== "undefined" &&
+    window.isSecureContext &&
+    navigator.mediaDevices?.getUserMedia &&
+    (getBarcodeDetectorConstructor() || jsQR),
+  );
 }
 
 function getScannerSupportServerSnapshot() {
@@ -65,8 +71,25 @@ function extractTokenFromInternalPath(value: string) {
   return decodeURIComponent(path.replace("/check-in/", ""));
 }
 
+function decodeQrFromCanvas(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+
+  if (!width || !height) return null;
+
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+
+  context.drawImage(video, 0, 0, width, height);
+  const imageData = context.getImageData(0, 0, width, height);
+  return jsQR(imageData.data, width, height)?.data?.trim() ?? null;
+}
+
 function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanningRef = useRef(false);
   const supported = useSyncExternalStore(subscribeToScannerSupport, getScannerSupportSnapshot, getScannerSupportServerSnapshot);
@@ -85,17 +108,13 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
   }, []);
 
   async function startScanning() {
+    if (!supported || !navigator.mediaDevices?.getUserMedia) return;
+
     const BarcodeDetector = getBarcodeDetectorConstructor();
-
-    if (!BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
-      setMessage("Este navegador no permite escanear QR desde la página. Ingresa el código manualmente.");
-      return;
-    }
-
-    setMessage(null);
+    setMessage("Apunta la cámara al código QR de asistencia.");
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
       streamRef.current = stream;
       scanningRef.current = true;
       setScanning(true);
@@ -105,14 +124,17 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
         await videoRef.current.play();
       }
 
-      const detector = new BarcodeDetector({ formats: ["qr_code"] });
+      const detector = BarcodeDetector ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
 
       const scanFrame = async () => {
         if (!scanningRef.current || !videoRef.current) return;
 
         try {
-          const results = await detector.detect(videoRef.current);
-          const rawValue = results[0]?.rawValue?.trim();
+          const rawValue = detector
+            ? (await detector.detect(videoRef.current))[0]?.rawValue?.trim() ?? null
+            : canvasRef.current
+              ? decodeQrFromCanvas(videoRef.current, canvasRef.current)
+              : null;
 
           if (rawValue) {
             stopCamera();
@@ -135,18 +157,22 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
     }
   }
 
+  if (!supported) return null;
+
   return <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <h2 className="text-xl font-bold text-slate-900">Escanear QR</h2>
     <p className="mt-3 text-sm text-slate-600">Usa esta opción sólo si tienes el QR de asistencia. La cámara se solicitará hasta que pulses el botón.</p>
-    {supported === false ? <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-700">Este navegador no permite escanear QR desde la página. Ingresa el código manualmente.</p> : null}
-    {supported ? <div className="mt-5 flex flex-wrap gap-3">
-      <button type="button" onClick={startScanning} disabled={scanning} className="cursor-pointer rounded-full border border-emerald-700 px-6 py-3 text-sm font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-500 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+    <div className="mt-5 flex flex-wrap gap-3">
+      <button type="button" onClick={startScanning} disabled={scanning} className="cursor-pointer rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
         {scanning ? "Escaneando..." : "Escanear QR"}
       </button>
       {scanning ? <button type="button" onClick={stopCamera} className="cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-sm font-bold text-slate-800 transition hover:border-slate-500 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Cancelar</button> : null}
-    </div> : null}
-    {scanning ? <video ref={videoRef} muted playsInline className="mt-5 aspect-video w-full rounded-2xl bg-slate-950 object-cover" /> : null}
-    {message ? <p role="alert" className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{message}</p> : null}
+    </div>
+    {scanning ? <>
+      <video ref={videoRef} muted playsInline className="mt-5 aspect-video w-full rounded-2xl bg-slate-950 object-cover" />
+      <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
+    </> : null}
+    {message ? <p role={message.startsWith("Apunta") ? "status" : "alert"} className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{message}</p> : null}
   </div>;
 }
 
