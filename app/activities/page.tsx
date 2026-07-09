@@ -158,11 +158,18 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
       </dl>
 
       {studentOnly ? (
-        <div className="mt-auto flex flex-col gap-3 pt-6 sm:flex-row sm:items-center">
-          <p className="inline-flex w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-            Actividad asignada
-          </p>
-          {activity.viewerAttendanceStatus ? <p className="text-sm font-semibold text-slate-700">Asistencia: {attendanceStatusLabels[activity.viewerAttendanceStatus]}</p> : null}
+        <div className="mt-auto flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-3">
+            <p className="inline-flex w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+              Actividad asignada
+            </p>
+            {activity.viewerAttendanceStatus ? <p className="text-sm font-semibold text-slate-700">Asistencia: {attendanceStatusLabels[activity.viewerAttendanceStatus]}</p> : null}
+          </div>
+          {activity.isParticipant && activity.viewerAttendanceStatus !== "attended" ? (
+            <Link href="/check-in?from=activities" className="inline-flex w-full cursor-pointer items-center justify-center rounded-full bg-emerald-800 px-6 py-4 text-center text-sm font-bold text-white transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 sm:ml-auto sm:w-auto">
+              Registrar asistencia
+            </Link>
+          ) : null}
         </div>
       ) : (
         <Link href={`/activities/${activity.id}`} className="mt-auto inline-flex cursor-pointer pt-6 text-sm font-bold text-emerald-800 hover:text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">

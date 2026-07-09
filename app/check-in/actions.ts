@@ -20,18 +20,21 @@ function isValidThreeWordCode(value: string) {
 }
 
 export async function submitCheckinCode(_previous: CheckinActionState, formData: FormData): Promise<CheckinActionState> {
-  const rawCode = formData.get("checkin_code");
-  const code = typeof rawCode === "string" ? normalizeCode(rawCode) : "";
+  const source = formData.get("input_source");
+  const rawInput = formData.get("checkin_input") ?? formData.get("checkin_code");
+  const rawValue = typeof rawInput === "string" ? rawInput.trim() : "";
+  const scannerInput = source === "scanner";
+  const checkinInput = scannerInput ? rawValue : normalizeCode(rawValue);
 
-  if (!code) return { status: "invalid", message: "Escribe el código de asistencia." };
-  if (!isValidThreeWordCode(code)) return { status: "invalid", message: "Escribe un código de tres palabras, usando sólo letras, guiones o espacios." };
+  if (!checkinInput) return { status: "invalid", message: "Escribe el código de asistencia." };
+  if (!scannerInput && !isValidThreeWordCode(checkinInput)) return { status: "invalid", message: "Escribe un código de tres palabras, usando sólo letras, guiones o espacios." };
 
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) return { status: "error", message: "Inicia sesión y vuelve a intentar el registro de asistencia." };
 
-  const { data, error } = await supabase.rpc("check_in_activity", { checkin_input: code });
+  const { data, error } = await supabase.rpc("check_in_activity", { checkin_input: checkinInput });
   const result = checkinMessageFromResult(data, error);
   revalidatePath("/activities");
   return result;
