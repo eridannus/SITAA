@@ -8,9 +8,19 @@ import { getActivityFormOptions } from "@/lib/activities/get-activity-form-optio
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Activity, ActivityFormValues } from "@/types/activities";
 import type { AttendanceStatus, ParticipantMutationState, ParticipantSearchState, ParticipationProfileSearchResult } from "@/types/participants";
-import type { InstitutionalIdType } from "@/types/sitaa";
+import type { InstitutionalIdType, PersonType } from "@/types/sitaa";
 
 const attendanceStatuses = new Set<AttendanceStatus>(["pending", "attended", "absent", "justified"]);
+const personTypes = new Set<PersonType>(["student", "worker"]);
+const institutionalIdTypes = new Set<InstitutionalIdType>(["student_account", "worker_number"]);
+
+function normalizePersonType(value: unknown): PersonType | null {
+  return typeof value === "string" && personTypes.has(value as PersonType) ? value as PersonType : null;
+}
+
+function normalizeInstitutionalIdType(value: unknown): InstitutionalIdType | null {
+  return typeof value === "string" && institutionalIdTypes.has(value as InstitutionalIdType) ? value as InstitutionalIdType : null;
+}
 
 function activityValues(activity: Activity): ActivityFormValues {
   return {
@@ -40,8 +50,8 @@ async function requireEditor(activityId: string) {
 
 type SearchRow = {
   profile_id?: string; id?: string; full_name?: string | null; email?: string | null;
-  person_type?: "student" | "worker" | null;
-  institutional_id_type?: InstitutionalIdType | null; institutional_id_value?: string | null;
+  person_type?: string | null;
+  institutional_id_type?: string | null; institutional_id_value?: string | null;
   primary_program_id?: string | null; program_id?: string | null;
   program_name?: string | null; academic_program_name?: string | null;
 };
@@ -80,8 +90,8 @@ export async function searchParticipationProfiles(activityId: string, _previous:
     profile_id: row.profile_id ?? row.id ?? "",
     full_name: row.full_name?.trim() || "Perfil sin nombre",
     email: row.email?.trim() || "Correo no disponible",
-    person_type: row.person_type === "worker" ? "worker" : "student",
-    institutional_id_type: row.institutional_id_type ?? "student_account",
+    person_type: normalizePersonType(row.person_type) ?? "student",
+    institutional_id_type: normalizeInstitutionalIdType(row.institutional_id_type) ?? "student_account",
     institutional_id_value: row.institutional_id_value?.trim() || "No disponible",
     primary_program_id: row.primary_program_id ?? null,
     program_name: row.program_name?.trim() || (row.primary_program_id ? programMap.get(row.primary_program_id) ?? "Programa no disponible" : "Programa no asignado"),
