@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { checkinMessageFromResult } from "@/lib/check-in/check-in-result";
 import { loginPathWithNext } from "@/lib/navigation/safe-next-path";
@@ -27,7 +26,6 @@ export default async function TokenCheckinPage({ params }: Props) {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("check_in_activity", { checkin_input: token });
   const result = checkinMessageFromResult(data, error);
-  revalidatePath("/activities");
   const isError = result.status === "error";
   const isWarning = result.status === "invalid" || result.status === "not-participant";
   const messageClass = isError
