@@ -16,7 +16,7 @@ const attendanceStatusLabels: Record<AttendanceStatus, string> = {
 const attendanceSourceLabels: Record<AttendanceSource, string> = {
   system: "Sistema",
   manual: "Manual",
-  qr: "QR",
+  qr: "QR o enlace",
   code: "Código",
 };
 

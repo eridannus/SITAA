@@ -216,7 +216,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** SITAA requiere reportes semestrales consistentes, pero el semestre no debe ser elegido manualmente por usuarios operativos ni presentarse con lenguaje técnico confuso.
 
-**Decisión:** la interfaz mostrará la etiqueta **Semestre** y nunca ?periodo calculado?. SITAA asignará el semestre automáticamente desde la fecha de inicio de la actividad, usando rangos oficiales mantenidos por usuarios técnicos o administrativos conforme a calendarios UNAM. El primer semestre calendario corresponde al semestre 2 del mismo año académico; el segundo semestre calendario corresponde al semestre 1 del año académico siguiente.
+**Decisión:** la interfaz mostrará la etiqueta **Semestre** y nunca “periodo calculado”. SITAA asignará el semestre automáticamente desde la fecha de inicio de la actividad, usando rangos oficiales mantenidos por usuarios técnicos o administrativos conforme a calendarios UNAM. El primer semestre calendario corresponde al semestre 2 del mismo año académico; el segundo semestre calendario corresponde al semestre 1 del año académico siguiente.
 
 **Ejemplos:** febrero–mayo 2026 = 2026-2; agosto–noviembre 2026 = 2027-1; febrero–mayo 2027 = 2027-2; agosto–noviembre 2027 = 2028-1.
 
@@ -256,6 +256,16 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** SITAA permite confirmar asistencia de participantes ya registrados mediante QR, enlace directo con token secreto o código corto de tres palabras. Estos mecanismos no registran ni invitan participantes; sólo actualizan la asistencia de perfiles ya vinculados a la actividad.
 
 **Consecuencias:** el responsable o editor autorizado abre, cierra o regenera el acceso de asistencia. Regenerar invalida el código anterior. La asistencia manual sigue siendo obligatoria como mecanismo de corrección y todos los métodos actualizan los mismos campos de `activity_participants`.
+
+**Estado:** Aceptada.
+
+## DEC-027 — Etiqueta compartida para QR y enlace directo
+
+**Contexto:** la fuente de asistencia `qr` se usa cuando un participante confirma asistencia mediante el token seguro, ya sea escaneando el QR o abriendo el enlace directo.
+
+**Decisión:** mantener el valor de base de datos `qr` sin agregar nuevas fuentes, pero mostrarlo en la interfaz como **QR o enlace**.
+
+**Consecuencias:** la interfaz describe mejor el comportamiento real sin cambiar enums, RPCs ni analítica de origen. Si más adelante se requiere distinguir QR de enlace directo, se definirá una decisión y modelo específico.
 
 **Estado:** Aceptada.
 
