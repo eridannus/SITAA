@@ -14,13 +14,18 @@ function SubmitButton() {
 
 export function CheckinCodeForm() {
   const [state, action] = useActionState<CheckinActionState, FormData>(submitCheckinCode, { status: "idle", message: null });
-  const isError = state.status === "error" || state.status === "invalid" || state.status === "not-participant";
-  const messageClass = isError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800";
+  const isError = state.status === "error";
+  const isWarning = state.status === "invalid" || state.status === "not-participant";
+  const messageClass = isError
+    ? "border-red-200 bg-red-50 text-red-800"
+    : isWarning
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : "border-emerald-200 bg-emerald-50 text-emerald-800";
   return <form action={action} className="mt-8 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <label htmlFor="checkin_code" className="block text-sm font-semibold text-slate-700">Código de asistencia</label>
     <input id="checkin_code" name="checkin_code" required placeholder="palabra palabra palabra" className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
     <p className="mt-3 text-sm text-slate-600">Escribe el código de tres palabras que te proporcionó el responsable.</p>
-    {state.message ? <div role={isError ? "alert" : "status"} className={"mt-5 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>{state.message}</div> : null}
+    {state.message ? <div role={isError || isWarning ? "alert" : "status"} className={"mt-5 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>{state.message}</div> : null}
     <div className="mt-6"><SubmitButton /></div>
   </form>;
 }
