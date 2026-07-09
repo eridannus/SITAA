@@ -20,7 +20,7 @@ function SubmitButton() {
 
 function validateCode(value: string) {
   const parts = value.trim().split(/[\s-]+/).filter(Boolean);
-  const hasOnlyAllowedCharacters = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s-]+$/.test(value.trim());
+    const hasOnlyAllowedCharacters = /^[A-Za-z??????????????\s-]+$/.test(value.trim());
 
   if (!value.trim()) return "Escribe el código de asistencia.";
   if (!hasOnlyAllowedCharacters) return "Usa sólo letras, guiones o espacios.";
@@ -88,7 +88,6 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
     const BarcodeDetector = getBarcodeDetectorConstructor();
 
     if (!BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
-      setSupported(false);
       setMessage("Este navegador no permite escanear QR desde la página. Ingresa el código manualmente.");
       return;
     }
