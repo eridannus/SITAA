@@ -15,7 +15,7 @@ export async function submitCheckinCode(_previous: CheckinActionState, formData:
   if (!code) return { status: "invalid", message: "Escribe el código de asistencia." };
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { status: "error", message: "Inicia sesi?n y vuelve a intentar el registro de asistencia." };
+  if (!user) return { status: "error", message: "Inicia sesión y vuelve a intentar el registro de asistencia." };
   const { data, error } = await supabase.rpc("check_in_activity", { checkin_input: code });
   const result = checkinMessageFromResult(data, error);
   revalidatePath("/activities");

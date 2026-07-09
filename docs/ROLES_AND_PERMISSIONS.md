@@ -1,8 +1,8 @@
 # Roles y permisos
 
-Los permisos se aplicar?n con RLS en Supabase. No existe un rol fijo en `profiles`: el acceso efectivo se calcula a partir de asignaciones activas, vigencia, alcance y área de servicio.
+Los permisos se aplicarán con RLS en Supabase. No existe un rol fijo en `profiles`: el acceso efectivo se calcula a partir de asignaciones activas, vigencia, alcance y área de servicio.
 
-## Cat?logo de roles
+## Catálogo de roles
 
 | Clave | Nombre | Responsabilidad principal |
 | --- | --- | --- |
@@ -45,16 +45,16 @@ La selecci?n de campos obligatorios corresponde a acuerdos colegiados o instituc
 - Cada permiso permanece limitado por la asignación que lo concede; no se mezclan alcances entre asignaciones.
 - Las asignaciones históricas no conceden acceso actual.
 - El enlace divisional cubre tutorías y asesorías de **Diseño Gráfico** y **Arquitectura** dentro de su asignación.
-- `technical_secretary` solo ve nombre del evento, fecha, hora, lugar, responsable, asistencia estimada y requerimientos log?sticos.
+- `technical_secretary` solo ve nombre del evento, fecha, hora, lugar, responsable, asistencia estimada y requerimientos logísticos.
 - `technical_admin` no obtiene por su rol lectura de contenido académico sensible.
 - Los participantes y asistencias siempre referencian perfiles SITAA.
-- Solo quienes pueden editar una actividad pueden agregar o retirar participantes; la búsqueda usa perfiles registrados y roles de participante controlados.
+- Sólo quienes pueden editar una actividad pueden agregar o retirar participantes; la búsqueda usa perfiles registrados y roles de participante controlados.
 - La persona responsable, tutor, profesor o editor autorizado puede marcar y corregir asistencia manualmente para participantes registrados, incluyendo estado y notas, ya sea de forma individual o mediante pase de lista compacto.
 - La persona responsable puede abrir, cerrar o regenerar el check-in de asistencia por QR, enlace directo o código de tres palabras para participantes ya registrados. Esta función confirma asistencia; no abre registro ni invitación de participantes.
 - En el MVP, la búsqueda y el alta de participantes se limitan a perfiles cuyo `primary_program_id` coincide con el `program_id` de la actividad; la interfaz filtra y el servidor valida nuevamente.
 - Un alumno agregado como participante puede consultar la actividad conforme a RLS, sin recibir permisos de edición. Puede confirmar su propia asistencia mediante QR, enlace directo o código cuando la asistencia esté abierta.
 - Los usuarios con únicamente el rol `student` ven resúmenes de sus actividades asignadas, incluyendo descripción y ubicación cuando existan; no ven el padrón completo de participantes ni controles administrativos.
-- Toda elevaci?n, revocaci?n o modificaci?n de permisos debe quedar auditada.
+- Toda elevación, revocación o modificación de permisos debe quedar auditada.
 - La interfaz no sustituye RLS.
 
 
@@ -64,7 +64,7 @@ La selecci?n de campos obligatorios corresponde a acuerdos colegiados o instituc
 - program_tutoring_lead opera tutorías en el programa asignado.
 - program_advising_lead opera asesorías en el programa asignado.
 - program_head opera actividades únicamente en el programa asignado.
-- division_tutoring_liaison puede elegir Diseño Gráfico o Arquitectura dentro de su división y área de servicio. ?Ambos programas? queda reservado fuera del MVP.
+- division_tutoring_liaison puede elegir Diseño Gráfico o Arquitectura dentro de su división y área de servicio. «Ambos programas» queda reservado fuera del MVP.
 - technical_admin puede crear actividades de prueba o soporte en Diseño Gráfico o Arquitectura durante el MVP; el alcance divisional queda reservado.
 - Las actividades divisionales heredadas no se muestran como flujo normal del MVP; solo el administrador técnico o el creador original pueden convertirlas o eliminarlas para limpieza operativa, sujeto a RLS.
 - La interfaz filtra opciones, la acción del servidor repite la validación y RLS conserva la autorización definitiva.
@@ -90,7 +90,7 @@ La selecci?n de campos obligatorios corresponde a acuerdos colegiados o instituc
 
 ## Criterios para RLS
 
-Cada política comprobar? identidad, asignación vigente, alcance, programa o división, área de servicio y operación permitida. Los reportes y exportaciones aplicar?n las mismas restricciones que las vistas de origen.
+Cada política comprobará identidad, asignación vigente, alcance, programa o división, área de servicio y operación permitida. Los reportes y exportaciones aplicarán las mismas restricciones que las vistas de origen.
 
 ## Pendientes de definición
 

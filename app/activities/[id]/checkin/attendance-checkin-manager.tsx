@@ -32,35 +32,45 @@ function CopyButton({ value, label, copiedLabel }: { value: string; label: strin
   </button>;
 }
 
-export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, status }: {
+export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, status, detail }: {
   activityId: string;
   token: ActivityCheckinToken | null;
   directLink: string | null;
   qrDataUri: string | null;
   status?: string;
+  detail?: string;
 }) {
   const messages: Record<string, string> = {
     opened: "Asistencia abierta correctamente.",
     closed: "Asistencia cerrada correctamente.",
     regenerated: "Código regenerado correctamente.",
+    "open-forbidden": "No tienes permiso para abrir asistencia en esta actividad.",
+    "open-draft": "No puedes abrir asistencia en una actividad en borrador.",
     "open-error": "No fue posible abrir la asistencia.",
+    "close-forbidden": "No tienes permiso para cerrar asistencia en esta actividad.",
+    "close-draft": "No puedes cerrar asistencia en una actividad en borrador.",
     "close-error": "No fue posible cerrar la asistencia.",
+    "regenerate-forbidden": "No tienes permiso para regenerar asistencia en esta actividad.",
+    "regenerate-draft": "No puedes regenerar asistencia en una actividad en borrador.",
     "regenerate-error": "No fue posible regenerar el código.",
   };
-  const isError = status?.includes("error") ?? false;
+  const isError = status?.includes("error") || status?.includes("forbidden") || status?.includes("draft") || false;
   const messageClass = isError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800";
 
   return <section id="attendance-checkin" className="mt-10 scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Confirmaci?n de asistencia</p>
+        <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Confirmación de asistencia</p>
         <h2 className="mt-2 text-2xl font-bold text-slate-900">Asistencia por QR y código</h2>
-        <p className="mt-3 max-w-2xl text-slate-600">Solo los participantes ya registrados pueden confirmar asistencia con estos accesos.</p>
+        <p className="mt-3 max-w-2xl text-slate-600">Sólo los participantes ya registrados pueden confirmar asistencia con estos accesos.</p>
       </div>
       {!token && <form action={openAttendanceCheckin.bind(null, activityId)}><SubmitButton idle="Abrir asistencia" pending="Abriendo..." /></form>}
     </div>
 
-    {status && messages[status] ? <div role={isError ? "alert" : "status"} className={"mt-6 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>{messages[status]}</div> : null}
+    {status && messages[status] ? <div role={isError ? "alert" : "status"} className={"mt-6 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>
+      <p>{messages[status]}</p>
+      {isError && detail ? <p className="mt-2 break-words text-xs font-medium opacity-85">Detalle: {detail}</p> : null}
+    </div> : null}
 
     {token && directLink ? <div className="mt-7 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">

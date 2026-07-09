@@ -36,7 +36,7 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 - La edición propia se limita a nombres, apellidos, tipo de persona, identificador institucional y programa principal; no incluye roles ni estado de activación.
 - Guardar o completar un perfil requiere seleccionar un programa académico disponible.
 
-Los catálogos operativos se consultan por `code` y muestran `label` o `name`. Solo los valores con `is_active = true` se presentan en la operación normal. Son datos controlados previos a la implementación de actividades; el visor actual es de solo lectura.
+Los catálogos operativos se consultan por `code` y muestran `label` o `name`. Sólo los valores con `is_active = true` se presentan en la operación normal. Son datos controlados previos a la implementación de actividades; el visor actual es de solo lectura.
 
 ### Alcance de actividades
 
@@ -109,7 +109,7 @@ Todos los participantes deben referenciar `profiles`. No se modela un participan
 
 Los tipos de campo podrán incluir, de manera controlada, texto corto/largo, número, fecha, opción única, opciones múltiples, escala y otros tipos aprobados. Los editores eligen campos, orden y obligatoriedad.
 
-SITAA no codifica campos académicos universalmente obligatorios. Solo se exigen campos técnicos indispensables para integridad, como IDs, marcas de tiempo, `created_by`, `activity_id` y `form_version_id`.
+SITAA no codifica campos académicos universalmente obligatorios. Sólo se exigen campos técnicos indispensables para integridad, como IDs, marcas de tiempo, `created_by`, `activity_id` y `form_version_id`.
 
 Una versión publicada no se modifica. Las nuevas decisiones académicas generan otra versión y las respuestas anteriores conservan su referencia original.
 
@@ -150,7 +150,7 @@ Las tablas `activities` y `activity_participants` están implementadas con alta,
 
 - El QR codifica el enlace directo con `secret_token`.
 - El código de tres palabras es corto, en minúsculas, sin acentos, ñ ni caracteres especiales, y único entre códigos activos.
-- Abrir, cerrar o regenerar asistencia no registra participantes nuevos; solo permite confirmar asistencia de participantes existentes.
+- Abrir, cerrar o regenerar asistencia no registra participantes nuevos; sólo permite confirmar asistencia de participantes existentes.
 - Cerrar o regenerar invalida accesos anteriores conforme a las funciones autorizadas de Supabase.
 
 ### Campos de asistencia implementados en participantes

@@ -20,7 +20,7 @@ import { ParticipantManager } from "./participants/participant-manager";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Detalle de actividad" };
-type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[]; checkin?: string | string[] }> };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[]; checkin?: string | string[]; checkin_detail?: string | string[] }> };
 const BASE_CORRECTION_ROLES = new Set(["program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
 const durationLabels = { one_hour: "1 hora", two_hours: "2 horas", custom: "Personalizada" } as const;
 
@@ -121,6 +121,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const deleteError = param(query.error) === "delete";
   const participantStatus = param(query.participant);
   const checkinStatus = param(query.checkin);
+  const checkinDetail = param(query.checkin_detail);
   const responsibleName = card?.responsibleName || "Responsable no disponible";
   const programName = card?.programName || (activity.scope_type === "division" ? "Ambos programas" : options.programs.find((item) => item.id === activity.program_id)?.name ?? "Programa no disponible");
   const locationDetail = activity.location_detail?.trim();
@@ -184,7 +185,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
 
-    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} status={checkinStatus} />}
+    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} status={checkinStatus} detail={checkinDetail} />}
 
     {canManageParticipants && (participantsError
       ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>

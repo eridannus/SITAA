@@ -31,3 +31,5 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 ## Estado inicial
 
 No crear código de aplicación, inicializar Next.js ni instalar dependencias hasta que se aprueben el alcance del MVP y las decisiones abiertas registradas en la documentación.
+
+- Usar "sólo" con tilde cuando significa "solamente"; usar "solo" sin tilde únicamente cuando significa "sin compañía".
