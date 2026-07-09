@@ -24,6 +24,8 @@ function displayDate(value: string) {
 function FieldError({ message }: { message?: string }) {
   return message ? <p className="mt-2 text-sm font-medium text-red-700">{message}</p> : null;
 }
+const ONLINE_MODALITY_CODE = "online";
+const ONLINE_LOCATION_TYPE_CODE = "online_space";
 function SubmitButtons({ mode, statusCode, confirmPublish, onCancelPublish }: { mode: "create" | "edit"; statusCode: string; confirmPublish: boolean; onCancelPublish: () => void }) {
   const { pending } = useFormStatus();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -106,6 +108,19 @@ function Fields({ state, options, access, today, mode, statusCode }: {
     setShowPublishConfirmation(false);
     setLiveValues((current) => ({ ...current, [field]: value }));
   };
+  const handleModalityChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value;
+    setShowPublishConfirmation(false);
+    setLiveValues((current) => ({
+      ...current,
+      modality_code: value,
+      location_type_code: value === ONLINE_MODALITY_CODE ? ONLINE_LOCATION_TYPE_CODE : current.location_type_code === ONLINE_LOCATION_TYPE_CODE ? "" : current.location_type_code,
+    }));
+  };
+  const isOnlineModality = liveValues.modality_code === ONLINE_MODALITY_CODE;
+  const onlineLocationType = options.locationTypes.find((item) => item.code === ONLINE_LOCATION_TYPE_CODE);
+  const onlineLocationLabel = onlineLocationType ? label(onlineLocationType) : "En línea";
+  const nonOnlineLocationTypes = options.locationTypes.filter((item) => item.code !== ONLINE_LOCATION_TYPE_CODE);
   const inputClass = (field: keyof ActivityFormValues) => `mt-2 w-full rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${state.errors[field] ? "border-red-400 focus:border-red-600 focus:ring-red-100" : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"}`;
   const common = (field: keyof ActivityFormValues) => ({
     key: state.revision + ":" + field, defaultValue: state.values[field],
@@ -146,9 +161,28 @@ function Fields({ state, options, access, today, mode, statusCode }: {
     {catalogSelect("activity_type_code", "Tipo de actividad", "Selecciona un tipo", options.activityTypes)}
     {catalogSelect("service_type_code", "Tipo de servicio", "Selecciona un servicio", options.serviceTypes)}
     {catalogSelect("attention_category_code", "Categoría de atención", "Selecciona una categoría", options.attentionCategories)}
-    {catalogSelect("modality_code", "Modalidad", "Selecciona una modalidad", options.modalities)}
-    {catalogSelect("location_type_code", "Tipo de ubicación", "Selecciona un tipo de ubicación", options.locationTypes)}
-    <div><label htmlFor="location_detail" className="block text-sm font-semibold text-slate-700">Detalle de ubicación</label><input id="location_detail" name="location_detail" required maxLength={500} placeholder="Aula, edificio o enlace" {...common("location_detail")} /><FieldError message={state.errors.location_detail} /></div>
+    <div>
+      <label htmlFor="modality_code" className="block text-sm font-semibold text-slate-700">Modalidad</label>
+      <select id="modality_code" name="modality_code" required key={state.revision + ":modality_code"} defaultValue={state.values.modality_code} onChange={handleModalityChange} aria-invalid={Boolean(state.errors.modality_code)} className={inputClass("modality_code")}>
+        <option value="">Selecciona una modalidad</option>
+        {options.modalities.map((item) => <option key={item.id} value={item.code}>{label(item)}</option>)}
+      </select>
+      <FieldError message={state.errors.modality_code} />
+    </div>
+    {isOnlineModality ? <div>
+      <input type="hidden" name="location_type_code" value={ONLINE_LOCATION_TYPE_CODE} />
+      <p className="block text-sm font-semibold text-slate-700">Tipo de ubicación</p>
+      <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-semibold text-slate-900">{onlineLocationLabel}</p>
+      <FieldError message={state.errors.location_type_code} />
+    </div> : <div>
+      <label htmlFor="location_type_code" className="block text-sm font-semibold text-slate-700">Tipo de ubicación</label>
+      <select id="location_type_code" name="location_type_code" required {...common("location_type_code")}>
+        <option value="">Selecciona un tipo de ubicación</option>
+        {nonOnlineLocationTypes.map((item) => <option key={item.id} value={item.code}>{label(item)}</option>)}
+      </select>
+      <FieldError message={state.errors.location_type_code} />
+    </div>}
+    <div><label htmlFor="location_detail" className="block text-sm font-semibold text-slate-700">Detalle de ubicación</label><input id="location_detail" name="location_detail" required maxLength={500} placeholder="Aula, edificio, enlace o datos de acceso" {...common("location_detail")} /><FieldError message={state.errors.location_detail} /></div>
     <div><label htmlFor="start_date" className="block text-sm font-semibold text-slate-700">Fecha de inicio</label><input id="start_date" name="start_date" type="date" required min={mode === "create" ? today : undefined} {...common("start_date")} /><FieldError message={state.errors.start_date} /></div>
     <div><label htmlFor="start_time" className="block text-sm font-semibold text-slate-700">Hora de inicio</label><input id="start_time" name="start_time" type="time" required step={60} lang="es-MX" {...common("start_time")} /><div className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError message={state.errors.start_time} /></div>
     <div className="sm:col-span-2"><label htmlFor="duration_mode" className="block text-sm font-semibold text-slate-700">Duración</label><select id="duration_mode" name="duration_mode" required {...common("duration_mode")}><option value="one_hour">1 hora</option><option value="two_hours">2 horas</option><option value="custom">Personalizada</option></select><FieldError message={state.errors.duration_mode} /></div>

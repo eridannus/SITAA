@@ -54,6 +54,7 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 - Las duraciones de una y dos horas calculan automáticamente `end_date` y `end_time`; la personalizada exige ambos campos.
 - `starts_at` y `ends_at` se mantienen como campos de compatibilidad derivados de fecha y hora separadas.
 - `status_code` usa `draft` para actividades en borrador y `scheduled` para actividades publicadas/programadas.
+- En borradores (`draft`), `activity_type_code`, `service_type_code` y `modality_code` pueden permanecer `null`; publicar exige completarlos junto con los demás campos operativos.
 
 
 ### Reglas de semestre académico

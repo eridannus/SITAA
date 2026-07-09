@@ -191,7 +191,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** los alumnos con rol exclusivamente `student` consultan únicamente el resumen de las actividades donde participan, con descripción y ubicación cuando existan. El padrón completo de participantes se reserva para usuarios autorizados a gestionar la actividad.
 
-**Consecuencias:** la interfaz no invoca funciones de listado de participantes para alumnos y no muestra errores de permisos derivados de esa restricci?n. RLS y RPC mantienen la autorización definitiva; ser participante no concede visibilidad sobre otros participantes.
+**Consecuencias:** la interfaz no invoca funciones de listado de participantes para alumnos y no muestra errores de permisos derivados de esa restricción. RLS y RPC mantienen la autorización definitiva; ser participante no concede visibilidad sobre otros participantes.
 
 **Estado:** Aceptada.
 ## DEC-020 ? Registro, asistencia y códigos de acceso
@@ -237,9 +237,9 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** la planeación de una actividad puede requerir guardarse antes de quedar lista para participantes y asistencia. Además, publicar debe marcar un cambio claro de ciclo de vida y evitar bloqueos accidentales.
 
-**Decisión:** las actividades pueden guardarse como borrador con `status_code = draft` o publicarse con `status_code = scheduled`. En la interfaz se muestran como **Borrador** y **Programada**, con estilos visuales distintos: borrador usa un tono ámbar/advertencia y programada un tono verde/éxito. La publicación se valida primero; si faltan campos o la fecha/hora es inválida, se muestran errores por campo antes de pedir confirmación. Solo después de una validación correcta se muestra la confirmación de publicación.
+**Decisión:** las actividades pueden guardarse como borrador con `status_code = draft` o publicarse con `status_code = scheduled`. Guardar borrador solo exige título y programa; los demás campos operativos pueden quedar incompletos. Publicar exige todos los campos operativos, valida fecha y hora, y solo después de pasar validación muestra la confirmación de publicación. En la interfaz **Borrador** y **Programada** usan estilos visuales distintos.
 
-**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos. Los responsables regulares solo editan datos base mientras la actividad sea un borrador no ocurrido. Al confirmar la publicación, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Participantes y asistencia siguen siendo gestionables por usuarios autorizados. Las actividades nuevas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
+**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos. Los responsables regulares solo editan datos base mientras la actividad sea un borrador no ocurrido. Al confirmar la publicación, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Participantes y asistencia siguen siendo gestionables por usuarios autorizados. Las actividades nuevas publicadas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
 
 **Estado:** Aceptada.
 

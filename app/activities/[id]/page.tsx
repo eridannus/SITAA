@@ -18,6 +18,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Detalle de actividad" };
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[] }> };
 const BASE_CORRECTION_ROLES = new Set(["program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
+const durationLabels = { one_hour: "1 hora", two_hours: "2 horas", custom: "Personalizada" } as const;
 
 function formValues(activity: Activity): ActivityFormValues {
   return {
@@ -38,6 +39,11 @@ function date(value: string | null) {
 }
 function isHttpUrl(value: string) {
   return value.startsWith("http://") || value.startsWith("https://");
+}
+function catalogLabel<T extends { code: string; label?: string | null; name?: string | null }>(items: T[], code: string | null | undefined) {
+  if (!code) return null;
+  const item = items.find((entry) => entry.code === code);
+  return item?.label?.trim() || item?.name?.trim() || code;
 }
 
 export default async function ActivityDetailPage({ params, searchParams }: Props) {
@@ -105,15 +111,22 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const programName = card?.programName || (activity.scope_type === "division" ? "Ambos programas" : options.programs.find((item) => item.id === activity.program_id)?.name ?? "Programa no disponible");
   const locationDetail = activity.location_detail?.trim();
   const locationHeading = card?.locationTypeLabel?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.label?.trim() || options.locationTypes.find((item) => item.code === activity.location_type_code)?.name?.trim() || "Ubicación";
+  const statusLabel = card?.statusLabel || catalogLabel(options.statuses, activity.status_code) || activity.status_code || "No especificado";
+  const activityTypeLabel = card?.activityTypeLabel || catalogLabel(options.activityTypes, activity.activity_type_code);
+  const serviceTypeLabel = card?.serviceTypeLabel || catalogLabel(options.serviceTypes, activity.service_type_code);
+  const attentionCategoryLabel = card?.attentionCategoryLabel || catalogLabel(options.attentionCategories, activity.attention_category_code);
+  const modalityLabel = card?.modalityLabel || catalogLabel(options.modalities, activity.modality_code);
+  const showMissingPlaceholder = !studentOnly;
+  const valueOrPlaceholder = (value: string | null | undefined) => value?.trim() || (showMissingPlaceholder ? "No especificado" : "");
+  const durationLabel = activity.duration_mode ? durationLabels[activity.duration_mode] : null;
   const isPublished = activity.status_code !== "draft";
   const showAdministrativeCorrectionMode = canUpdateBaseData && hasBaseCorrectionRole && (activityHasEnded || isPublished);
-  const baseDataLockMessage = activityHasEnded
-    ? activity.service_type_code === "tutoring"
-      ? "Esta actividad ya ocurri\u00f3. Los datos base est\u00e1n bloqueados. Si necesitas corregirlos, contacta al encargado de tutor\u00edas de tu programa."
-      : activity.service_type_code === "advising"
-        ? "Esta actividad ya ocurri\u00f3. Los datos base est\u00e1n bloqueados. Si necesitas corregirlos, contacta al encargado de asesor\u00edas de tu programa."
-        : "Esta actividad ya ocurri\u00f3. Los datos base est\u00e1n bloqueados. Si necesitas corregirlos, contacta al responsable correspondiente."
-    : "Esta actividad ya fue publicada. Los datos base est\u00e1n bloqueados; puedes actualizar participantes y asistencia.";
+  const contactMessage = activity.service_type_code === "tutoring"
+    ? "Los datos base están bloqueados. Si necesitas corregirlos, contacta al encargado de tutorías de tu programa."
+    : activity.service_type_code === "advising"
+      ? "Los datos base están bloqueados. Si necesitas corregirlos, contacta al encargado de asesorías de tu programa."
+      : "Los datos base están bloqueados. Si necesitas corregirlos, contacta al responsable correspondiente.";
+  const baseDataLockMessage = `${activityHasEnded ? "Esta actividad ya ocurrió." : "Esta actividad ya fue publicada."} ${contactMessage} Puedes actualizar participantes y asistencia cuando corresponda.`;
 
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -129,12 +142,20 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       <h2 className="break-words text-2xl font-bold text-slate-900">{activity.title}</h2>
       {activity.description && <p className="mt-4 break-words leading-7 text-slate-600">{activity.description}</p>}
       <dl className="mt-6 grid min-w-0 gap-4 text-sm sm:grid-cols-2">
-        <div className="min-w-0"><dt className="font-semibold text-slate-500">Fecha</dt><dd className="break-words text-slate-900">{date(activity.start_date)}</dd></div>
-        <div className="min-w-0"><dt className="font-semibold text-slate-500">Horario</dt><dd className="break-words text-slate-900">{activity.start_time?.slice(0,5) ?? "--:--"}–{activity.end_time?.slice(0,5) ?? "--:--"}</dd></div>
-        {!studentOnly && <div className="min-w-0"><dt className="font-semibold text-slate-500">Semestre</dt><dd className="break-words text-slate-900">{card?.academicPeriodLabel ?? "Sin semestre asignado"}</dd></div>}
-        <div className="min-w-0"><dt className="font-semibold text-slate-500">Programa</dt><dd className="break-words text-slate-900">{programName}</dd></div>
-        <div className="min-w-0"><dt className="font-semibold text-slate-500">Responsable</dt><dd className="break-words text-slate-900">{responsibleName}</dd></div>
-        <div className="min-w-0 sm:col-span-2"><dt className="break-words font-semibold text-slate-500">{locationHeading}</dt>{locationDetail ? (isHttpUrl(locationDetail) ? <dd className="mt-1 min-w-0 break-all text-slate-900"><a className="cursor-pointer text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2" href={locationDetail} target="_blank" rel="noopener noreferrer">{locationDetail}</a></dd> : <dd className="mt-1 min-w-0 break-words text-slate-900">{locationDetail}</dd>) : null}</div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Estado</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(statusLabel)}</dd></div>
+        {!studentOnly && <div className="min-w-0"><dt className="font-semibold text-slate-500">Semestre</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(card?.academicPeriodLabel)}</dd></div>}
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Programa</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(programName)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Tipo de actividad</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(activityTypeLabel)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Tipo de servicio</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(serviceTypeLabel)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Categoría de atención</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(attentionCategoryLabel)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Modalidad</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(modalityLabel)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Tipo de ubicación</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(locationHeading)}</dd></div>
+        <div className="min-w-0 sm:col-span-2"><dt className="break-words font-semibold text-slate-500">Detalle de ubicación</dt>{locationDetail ? (isHttpUrl(locationDetail) ? <dd className="mt-1 min-w-0 break-all text-slate-900"><a className="cursor-pointer text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2" href={locationDetail} target="_blank" rel="noopener noreferrer">{locationDetail}</a></dd> : <dd className="mt-1 min-w-0 break-words text-slate-900">{locationDetail}</dd>) : <dd className="mt-1 min-w-0 break-words text-slate-900">{valueOrPlaceholder(null)}</dd>}</div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Fecha</dt><dd className="break-words text-slate-900">{activity.start_date ? date(activity.start_date) : valueOrPlaceholder(null)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Hora de inicio</dt><dd className="break-words text-slate-900">{activity.start_time?.slice(0,5) ?? valueOrPlaceholder(null)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Hora de término</dt><dd className="break-words text-slate-900">{activity.end_time?.slice(0,5) ?? valueOrPlaceholder(null)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Duración</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(durationLabel)}</dd></div>
+        <div className="min-w-0"><dt className="font-semibold text-slate-500">Responsable</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(responsibleName)}</dd></div>
       </dl>
       {studentOnly && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">{card?.ownParticipantRoleLabel ? `Tu participación: ${card.ownParticipantRoleLabel}.` : "Estás registrado como participante en esta actividad."}</p>}
       {canManageActivity && !canUpdateBaseData && <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{baseDataLockMessage}</p>}

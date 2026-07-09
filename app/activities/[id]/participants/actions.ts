@@ -15,9 +15,9 @@ const attendanceStatuses = new Set<AttendanceStatus>(["pending", "attended", "ab
 function activityValues(activity: Activity): ActivityFormValues {
   return {
     title: activity.title, scope_type: activity.scope_type, description: activity.description ?? "",
-    program_id: activity.program_id ?? "", activity_type_code: activity.activity_type_code,
-    service_type_code: activity.service_type_code, attention_category_code: activity.attention_category_code ?? "",
-    modality_code: activity.modality_code, location_type_code: activity.location_type_code ?? "",
+    program_id: activity.program_id ?? "", activity_type_code: activity.activity_type_code ?? "",
+    service_type_code: activity.service_type_code ?? "", attention_category_code: activity.attention_category_code ?? "",
+    modality_code: activity.modality_code ?? "", location_type_code: activity.location_type_code ?? "",
     location_detail: activity.location_detail ?? "", start_date: activity.start_date ?? "",
     start_time: activity.start_time ?? "", duration_mode: activity.duration_mode ?? "custom",
     end_date: activity.end_date ?? "", end_time: activity.end_time ?? "",

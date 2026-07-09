@@ -17,10 +17,10 @@ export interface Activity {
   scope_type: ActivityScopeType;
   division_id: string;
   program_id: string | null;
-  activity_type_code: string;
-  service_type_code: string;
+  activity_type_code: string | null;
+  service_type_code: string | null;
   attention_category_code: string | null;
-  modality_code: string;
+  modality_code: string | null;
   location_type_code: string | null;
   location_detail: string | null;
   start_date: string | null;

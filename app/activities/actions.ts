@@ -10,6 +10,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ActivityFormField, ActivityFormState, ActivityFormValues, DurationMode } from "@/types/activities";
 
 const durationModes = new Set<DurationMode>(["one_hour", "two_hours", "custom"]);
+const ONLINE_MODALITY_CODE = "online";
+const ONLINE_LOCATION_TYPE_CODE = "online_space";
 
 type AcademicPeriodRpcResult = string | {
   id?: string | null;
@@ -71,24 +73,30 @@ function valuesFrom(formData: FormData): ActivityFormValues {
 function invalid(previous: ActivityFormState, values: ActivityFormValues, errors: ActivityFormState["errors"], message = "Revisa los campos marcados antes de continuar."): ActivityFormState {
   return { revision: previous.revision + 1, values, errors, message, confirmPublish: false };
 }
-function validate(values: ActivityFormValues, { enforceFutureStartDate }: { enforceFutureStartDate: boolean }) {
+function validate(values: ActivityFormValues, { enforceFutureStartDate, requireOperationalFields }: { enforceFutureStartDate: boolean; requireOperationalFields: boolean }) {
   const errors: Partial<Record<ActivityFormField, string>> = {};
   if (!values.title) errors.title = "Escribe el título de la actividad.";
   else if (values.title.length > 200) errors.title = "El título no puede exceder 200 caracteres.";
   if (values.description.length > 5000) errors.description = "La descripción no puede exceder 5000 caracteres.";
   if (values.scope_type !== "program" && values.scope_type !== "division") errors.scope_type = "Selecciona el alcance de la actividad.";
   if (values.scope_type === "program" && !values.program_id) errors.program_id = "Selecciona un programa académico.";
-  if (!values.activity_type_code) errors.activity_type_code = "Selecciona un tipo de actividad.";
-  if (!values.service_type_code) errors.service_type_code = "Selecciona un tipo de servicio.";
-  if (!values.attention_category_code) errors.attention_category_code = "Selecciona una categoría de atención.";
-  if (!values.modality_code) errors.modality_code = "Selecciona una modalidad.";
-  if (!values.location_type_code) errors.location_type_code = "Selecciona un tipo de ubicación.";
-  if (!values.location_detail) errors.location_detail = "Indica el lugar, aula o enlace de la actividad.";
-  else if (values.location_detail.length > 500) errors.location_detail = "El detalle no puede exceder 500 caracteres.";
-  if (!isValidDate(values.start_date)) errors.start_date = "Indica una fecha de inicio válida.";
-  if (!isValidTime(values.start_time)) errors.start_time = "Indica una hora válida en formato de 24 horas.";
-  if (!durationModes.has(values.duration_mode as DurationMode)) errors.duration_mode = "Selecciona una duración.";
-  if (enforceFutureStartDate && isValidDate(values.start_date)) {
+
+  if (values.modality_code === ONLINE_MODALITY_CODE) values.location_type_code = ONLINE_LOCATION_TYPE_CODE;
+  else if (values.location_type_code === ONLINE_LOCATION_TYPE_CODE) values.location_type_code = "";
+
+  if (requireOperationalFields) {
+    if (!values.activity_type_code) errors.activity_type_code = "Selecciona un tipo de actividad.";
+    if (!values.service_type_code) errors.service_type_code = "Selecciona un tipo de servicio.";
+    if (!values.attention_category_code) errors.attention_category_code = "Selecciona una categoría de atención.";
+    if (!values.modality_code) errors.modality_code = "Selecciona una modalidad.";
+    if (!values.location_type_code) errors.location_type_code = "Selecciona un tipo de ubicación.";
+    if (!values.location_detail) errors.location_detail = "Indica el lugar, aula, enlace o detalle de acceso de la actividad.";
+    if (!isValidDate(values.start_date)) errors.start_date = "Indica una fecha de inicio válida.";
+    if (!isValidTime(values.start_time)) errors.start_time = "Indica una hora válida en formato de 24 horas.";
+    if (!durationModes.has(values.duration_mode as DurationMode)) errors.duration_mode = "Selecciona una duración.";
+  }
+  if (values.location_detail.length > 500) errors.location_detail = "El detalle no puede exceder 500 caracteres.";
+  if (requireOperationalFields && enforceFutureStartDate && isValidDate(values.start_date)) {
     const today = getMexicoCityToday();
     if (values.start_date < today) {
       errors.start_date = "La fecha de inicio no puede ser anterior a hoy.";
@@ -100,9 +108,12 @@ function validate(values: ActivityFormValues, { enforceFutureStartDate }: { enfo
   let endDate = values.end_date;
   let endTime = values.end_time;
   const durationMode = values.duration_mode as DurationMode;
+  if (!requireOperationalFields && !durationModes.has(durationMode)) {
+    return { errors, endDate: "", endTime: "", durationMode: null };
+  }
   if (durationMode === "custom") {
-    if (!isValidDate(endDate)) errors.end_date = "Indica una fecha de término válida.";
-    if (!isValidTime(endTime)) errors.end_time = "Indica una hora válida en formato de 24 horas.";
+    if (requireOperationalFields && !isValidDate(endDate)) errors.end_date = "Indica una fecha de término válida.";
+    if (requireOperationalFields && !isValidTime(endTime)) errors.end_time = "Indica una hora válida en formato de 24 horas.";
     if (isValidDate(values.start_date) && isValidDate(endDate)) {
       if (endDate < values.start_date) errors.end_date = "La fecha de término no puede ser anterior al inicio.";
       else if (endDate === values.start_date && isValidTime(values.start_time) && isValidTime(endTime) && endTime <= values.start_time) errors.end_time = "La hora de término debe ser posterior a la hora de inicio.";
@@ -162,7 +173,10 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   values.scope_type = "program";
   if (access.allowedPrograms.length === 1) values.program_id = access.allowedPrograms[0].id;
 
-  const result = validate(values, { enforceFutureStartDate: !activityId });
+  const willPublish = intent === "publish" || intent === "validate_publish";
+  const willRemainDraft = !willPublish && (activityId ? existingActivity?.status_code === "draft" : true);
+  const requireOperationalFields = !willRemainDraft;
+  const result = validate(values, { enforceFutureStartDate: !activityId, requireOperationalFields });
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
   const selectedProgram = options.programs.find((item) => item.id === values.program_id);
@@ -170,22 +184,26 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   if (!divisionId) {
     return invalid(previous, values, { program_id: "Selecciona un programa académico válido." }, "Revisa el programa seleccionado.");
   }
-  if (!legacyCleanup && !canManageActivityScope(context, values, options.programs, divisionId)) {
+  if (!legacyCleanup && requireOperationalFields && !canManageActivityScope(context, values, options.programs, divisionId)) {
     return invalid(previous, values, { scope_type: "Tus asignaciones no permiten este alcance y tipo de servicio." }, "No tienes permiso para guardar la actividad con esta combinación.");
   }
+  if (!legacyCleanup && !requireOperationalFields && !access.allowedPrograms.some((program) => program.id === values.program_id)) {
+    return invalid(previous, values, { program_id: "Tus asignaciones no permiten este programa." }, "No tienes permiso para guardar el borrador en este programa.");
+  }
 
-  const checks: Array<[ActivityFormField, boolean]> = [
-    ["activity_type_code", options.activityTypes.some((item) => item.code === values.activity_type_code)],
-    ["service_type_code", options.serviceTypes.some((item) => item.code === values.service_type_code)],
-    ["attention_category_code", options.attentionCategories.some((item) => item.code === values.attention_category_code)],
-    ["modality_code", options.modalities.some((item) => item.code === values.modality_code)],
-    ["location_type_code", options.locationTypes.some((item) => item.code === values.location_type_code)],
-  ];
-  checks.push(["program_id", Boolean(selectedProgram)]);
-  for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opción seleccionada ya no está disponible.";
+  const checks: Array<[ActivityFormField, boolean]> = [["program_id", Boolean(selectedProgram)]];
+  if (values.activity_type_code || requireOperationalFields) checks.push(["activity_type_code", options.activityTypes.some((item) => item.code === values.activity_type_code)]);
+  if (values.service_type_code || requireOperationalFields) checks.push(["service_type_code", options.serviceTypes.some((item) => item.code === values.service_type_code)]);
+  if (values.attention_category_code || requireOperationalFields) checks.push(["attention_category_code", options.attentionCategories.some((item) => item.code === values.attention_category_code)]);
+  if (values.modality_code || requireOperationalFields) checks.push(["modality_code", options.modalities.some((item) => item.code === values.modality_code)]);
+  if (values.location_type_code || requireOperationalFields) checks.push(["location_type_code", options.locationTypes.some((item) => item.code === values.location_type_code)]);
+  for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opción seleccionada ya no est? disponible.";
+  if (values.modality_code !== ONLINE_MODALITY_CODE && values.location_type_code === ONLINE_LOCATION_TYPE_CODE) {
+    result.errors.location_type_code = "Selecciona un tipo de ubicación presencial o híbrido.";
+  }
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
-  const semester = await getAcademicPeriodForDate(values.start_date);
+  const semester = values.start_date ? await getAcademicPeriodForDate(values.start_date) : { id: null, label: null, error: false };
   if (semester.error) {
     return invalid(previous, values, { academic_period_id: "No fue posible asignar el semestre." }, "No fue posible validar el semestre de la actividad.");
   }
@@ -205,19 +223,19 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     scope_type: "program",
     division_id: divisionId,
     program_id: values.program_id,
-    activity_type_code: values.activity_type_code,
-    service_type_code: values.service_type_code,
-    attention_category_code: values.attention_category_code,
-    modality_code: values.modality_code,
-    location_type_code: values.location_type_code,
-    location_detail: values.location_detail,
-    start_date: values.start_date,
-    start_time: values.start_time,
-    end_date: result.endDate,
-    end_time: result.endTime,
+    activity_type_code: values.activity_type_code || null,
+    service_type_code: values.service_type_code || null,
+    attention_category_code: values.attention_category_code || null,
+    modality_code: values.modality_code || null,
+    location_type_code: values.location_type_code || null,
+    location_detail: values.location_detail || null,
+    start_date: values.start_date || null,
+    start_time: values.start_time || null,
+    end_date: result.endDate || null,
+    end_time: result.endTime || null,
     duration_mode: result.durationMode,
-    starts_at: toMexicoCityTimestamp(values.start_date, values.start_time),
-    ends_at: toMexicoCityTimestamp(result.endDate, result.endTime),
+    starts_at: isValidDate(values.start_date) && isValidTime(values.start_time) ? toMexicoCityTimestamp(values.start_date, values.start_time) : null,
+    ends_at: isValidDate(result.endDate) && isValidTime(result.endTime) ? toMexicoCityTimestamp(result.endDate, result.endTime) : null,
   };
   if (activityId) {
     const { data: canUpdateBase, error: canUpdateBaseError } = await supabase.rpc("can_update_activity_base", { target_activity_id: activityId });
