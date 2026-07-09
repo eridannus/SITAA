@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { safeNextPath } from "@/lib/navigation/safe-next-path";
 import { login } from "./actions";
 
 export const metadata: Metadata = {
@@ -11,17 +12,18 @@ const errorMessages: Record<string, string> = {
   credenciales:
     "No fue posible iniciar sesión. Verifica tu correo y contraseña.",
   "datos-incompletos": "Escribe tu correo y contraseña para continuar.",
-  "sesion-requerida": "Inicia sesión para acceder al panel.",
+  "sesion-requerida": "Inicia sesión para continuar.",
 };
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string | string[] }>;
+  searchParams: Promise<{ error?: string | string[]; next?: string | string[] }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const errorCode = Array.isArray(params.error) ? params.error[0] : params.error;
   const errorMessage = errorCode ? errorMessages[errorCode] : undefined;
+  const nextPath = safeNextPath(params.next);
 
   return (
     <section className="mx-auto grid min-h-[70vh] max-w-6xl place-items-center px-5 py-16 sm:px-8">
@@ -54,6 +56,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           )}
 
           <form action={login} className="mt-7 space-y-5">
+            {nextPath && <input type="hidden" name="next" value={nextPath} />}
             <div>
               <label htmlFor="email" className="block text-sm font-semibold text-slate-700">
                 Correo electrónico

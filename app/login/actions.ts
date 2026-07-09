@@ -2,20 +2,30 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { safeNextPath } from "@/lib/navigation/safe-next-path";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+function loginErrorPath(error: string, nextPath: string | null) {
+  const params = new URLSearchParams({ error });
+
+  if (nextPath) params.set("next", nextPath);
+
+  return "/login?" + params.toString();
+}
 
 export async function login(formData: FormData) {
   const email = formData.get("email");
   const password = formData.get("password");
+  const nextPath = safeNextPath(formData.get("next"));
 
   if (typeof email !== "string" || typeof password !== "string") {
-    redirect("/login?error=datos-incompletos");
+    redirect(loginErrorPath("datos-incompletos", nextPath));
   }
 
   const normalizedEmail = email.trim();
 
   if (!normalizedEmail || !password) {
-    redirect("/login?error=datos-incompletos");
+    redirect(loginErrorPath("datos-incompletos", nextPath));
   }
 
   let supabase;
@@ -23,7 +33,7 @@ export async function login(formData: FormData) {
   try {
     supabase = await createSupabaseServerClient();
   } catch {
-    redirect("/login?error=configuracion");
+    redirect(loginErrorPath("configuracion", nextPath));
   }
 
   const { error } = await supabase.auth.signInWithPassword({
@@ -32,9 +42,9 @@ export async function login(formData: FormData) {
   });
 
   if (error) {
-    redirect("/login?error=credenciales");
+    redirect(loginErrorPath("credenciales", nextPath));
   }
 
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+  redirect(nextPath ?? "/dashboard");
 }
