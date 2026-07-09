@@ -58,11 +58,18 @@ function isHttpUrl(value: string) {
   return value.startsWith("http://") || value.startsWith("https://");
 }
 
+function normalizedLabel(value: string | null | undefined) {
+  return value?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() ?? "";
+}
+
 function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; studentOnly: boolean }) {
   const when = schedule(activity);
   const description = activity.description?.trim();
   const locationDetail = activity.location_detail?.trim();
-  const locationHeading = activity.locationTypeLabel?.trim() || "Ubicación";
+  const rawLocationHeading = activity.locationTypeLabel?.trim() || "Ubicación";
+  const repeatsOnlineLabel = normalizedLabel(activity.modalityLabel) === "en linea" && normalizedLabel(rawLocationHeading) === "en linea";
+  const locationHeading = repeatsOnlineLabel ? "Acceso" : rawLocationHeading;
+  const shouldRenderLocation = Boolean(locationDetail || (!repeatsOnlineLabel && activity.locationTypeLabel));
   const statusBadgeClass = activity.status_code === "draft" ? "border border-amber-300 bg-amber-100 text-amber-900" : "border border-emerald-300 bg-emerald-100 text-emerald-900";
 
   return (
@@ -107,7 +114,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
           <dt className="font-semibold text-slate-500">Responsable</dt>
           <dd className="mt-1 min-w-0 break-words text-slate-900">{activity.responsibleName}</dd>
         </div>
-        {(activity.locationTypeLabel || locationDetail) ? (
+        {shouldRenderLocation ? (
           <div className="min-w-0 sm:col-span-2">
             <dt className="break-words font-semibold text-slate-500">{locationHeading}</dt>
             {locationDetail ? (
@@ -156,7 +163,7 @@ export default async function ActivitiesPage({ searchParams }: Props) {
       getActivityFormOptions(),
     ]);
     const technicalAdmin = context.activeRoleAssignments.some((item) => item.role_code === "technical_admin");
-    activities = visibleActivities.filter((activity) => !studentOnly || activity.status_code !== "draft").map((activity) => ({
+    activities = visibleActivities.filter((activity) => activity.status_code !== "draft" || (!studentOnly && activity.created_by === context.user.id)).map((activity) => ({
       ...activity,
       canEdit: activity.canEdit || (
         !studentOnly &&

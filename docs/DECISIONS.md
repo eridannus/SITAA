@@ -239,7 +239,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** las actividades pueden guardarse como borrador con `status_code = draft` o publicarse con `status_code = scheduled`. Guardar borrador solo exige título y programa; los demás campos operativos pueden quedar incompletos. Publicar exige todos los campos operativos, valida fecha y hora, y solo después de pasar validación muestra la confirmación de publicación. En la interfaz **Borrador** y **Programada** usan estilos visuales distintos.
 
-**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos. Los responsables regulares solo editan datos base mientras la actividad sea un borrador no ocurrido. Al confirmar la publicación, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Participantes y asistencia siguen siendo gestionables por usuarios autorizados. Las actividades nuevas publicadas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
+**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos y solo aparece en el panel de quien la creó. Los responsables regulares solo editan datos base mientras la actividad sea un borrador no ocurrido. Al confirmar la publicación, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Participantes y asistencia siguen siendo gestionables por usuarios autorizados. Las actividades nuevas publicadas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
 
 **Estado:** Aceptada.
 
