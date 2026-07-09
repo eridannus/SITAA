@@ -40,6 +40,7 @@ async function requireEditor(activityId: string) {
 
 type SearchRow = {
   profile_id?: string; id?: string; full_name?: string | null; email?: string | null;
+  person_type?: "student" | "worker" | null;
   institutional_id_type?: InstitutionalIdType | null; institutional_id_value?: string | null;
   primary_program_id?: string | null; program_id?: string | null;
   program_name?: string | null; academic_program_name?: string | null;
@@ -79,6 +80,7 @@ export async function searchParticipationProfiles(activityId: string, _previous:
     profile_id: row.profile_id ?? row.id ?? "",
     full_name: row.full_name?.trim() || "Perfil sin nombre",
     email: row.email?.trim() || "Correo no disponible",
+    person_type: row.person_type === "worker" ? "worker" : "student",
     institutional_id_type: row.institutional_id_type ?? "student_account",
     institutional_id_value: row.institutional_id_value?.trim() || "No disponible",
     primary_program_id: row.primary_program_id ?? null,
@@ -90,6 +92,7 @@ export async function searchParticipationProfiles(activityId: string, _previous:
 function addErrorMessage(error: { code?: string; message?: string; details?: string; hint?: string }) {
   const text = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
   const normalizedText = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/solo un trabajador puede registrarse como responsable|trabajador.*responsable/.test(normalizedText)) return "Sólo un trabajador puede registrarse como responsable de la actividad.";
   if (/otro programa academico/.test(normalizedText)) return "La persona seleccionada pertenece a otro programa académico.";
   if (error.code === "23505" || /duplicate|already|ya (está|esta)|registrad/.test(text)) return "Esta persona ya está registrada en la actividad.";
   if (error.code === "42501" || /permission|not authorized|row-level|rls|permiso|autorizad/.test(text)) return "No tienes permiso para agregar participantes a esta actividad.";

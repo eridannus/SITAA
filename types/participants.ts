@@ -1,4 +1,4 @@
-﻿import type { InstitutionalIdType } from "@/types/sitaa";
+﻿import type { InstitutionalIdType, PersonType } from "@/types/sitaa";
 
 export type AttendanceStatus = "pending" | "attended" | "absent" | "justified";
 export type AttendanceSource = "system" | "manual" | "qr" | "code";
@@ -31,6 +31,7 @@ export interface ParticipationProfileSearchResult {
   profile_id: string;
   full_name: string;
   email: string;
+  person_type: PersonType;
   institutional_id_type: InstitutionalIdType;
   institutional_id_value: string;
   primary_program_id: string | null;

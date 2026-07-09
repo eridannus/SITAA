@@ -19,6 +19,50 @@ const attendanceSourceLabels: Record<AttendanceSource, string> = {
   qr: "QR",
   code: "Código",
 };
+
+function normalizeText(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function roleText(role: ParticipantRole) {
+  return normalizeText([role.code, role.label, role.name].filter(Boolean).join(" "));
+}
+
+function roleLabel(role: ParticipantRole) {
+  return role.label?.trim() || role.name?.trim() || role.code;
+}
+
+function isResponsibleRole(role: ParticipantRole) {
+  return /responsable|responsible/.test(roleText(role));
+}
+
+function isPeerTutorRole(role: ParticipantRole) {
+  return /tutor par|peer/.test(roleText(role));
+}
+
+function isStudentParticipantRole(role: ParticipantRole) {
+  return /alumno|student|participante|participant/.test(roleText(role));
+}
+
+function isSupportRole(role: ParticipantRole) {
+  return /apoyo|support/.test(roleText(role));
+}
+
+function isGuestRole(role: ParticipantRole) {
+  return /invitado|guest/.test(roleText(role));
+}
+
+function rolesForPersonType(roles: ParticipantRole[], personType: string) {
+  if (personType === "student") return roles.filter((role) => !isResponsibleRole(role));
+
+  if (personType === "worker") {
+    const workerRoles = roles.filter((role) => isResponsibleRole(role) || isSupportRole(role) || isGuestRole(role));
+    return workerRoles.length ? workerRoles : roles.filter((role) => !isStudentParticipantRole(role) && !isPeerTutorRole(role));
+  }
+
+  return roles;
+}
+
 const bulkActions: Array<{ status: AttendanceStatus; label: string }> = [
   { status: "attended", label: "Marcar como Asistió" },
   { status: "absent", label: "Marcar como No asistió" },
@@ -107,6 +151,7 @@ function AddParticipantForm({ activityId, result, roles }: {
   result: ParticipationProfileSearchResult;
   roles: ParticipantRole[];
 }) {
+  const availableRoles = rolesForPersonType(roles, result.person_type);
   const [roleCode, setRoleCode] = useState("");
   const [state, action] = useActionState<ParticipantMutationState, FormData>(
     addActivityParticipant.bind(null, activityId),
@@ -115,13 +160,14 @@ function AddParticipantForm({ activityId, result, roles }: {
   return <form action={action} className="min-w-0 rounded-2xl border border-slate-200 p-5">
     <input type="hidden" name="profile_id" value={result.profile_id} />
     <input type="hidden" name="participant_primary_program_id" value={result.primary_program_id ?? ""} />
+    <input type="hidden" name="participant_person_type" value={result.person_type} />
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.55fr)_auto] md:items-end">
       <div className="min-w-0"><p className="break-words font-bold text-slate-900">{result.full_name}</p><p className="mt-1 break-all text-sm text-slate-600">{result.email}</p><p className="mt-2 break-words text-xs text-slate-500">{idLabels[result.institutional_id_type]}: {result.institutional_id_value} · {result.program_name}</p></div>
       <div className="min-w-0">
         <label htmlFor={`participant-role-${result.profile_id}`} className="text-sm font-semibold text-slate-700">Rol de participante</label>
         <select id={`participant-role-${result.profile_id}`} name="participant_role_code" required value={roleCode} onChange={(event) => setRoleCode(event.target.value)} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3">
           <option value="" disabled>Selecciona un rol</option>
-          {roles.map((role) => <option key={role.id} value={role.code}>{role.label?.trim() || role.name?.trim() || role.code}</option>)}
+          {availableRoles.map((role) => <option key={role.id} value={role.code}>{roleLabel(role)}</option>)}
         </select>
       </div>
       <AddButton />
