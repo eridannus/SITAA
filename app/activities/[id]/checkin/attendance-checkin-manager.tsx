@@ -32,6 +32,122 @@ function CopyButton({ value, label, copiedLabel }: { value: string; label: strin
   </button>;
 }
 
+function sanitizeFilenamePart(value: string | null | undefined) {
+  return value?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "qr";
+}
+
+function svgFromDataUri(dataUri: string) {
+  const prefix = "data:image/svg+xml;utf8,";
+
+  if (!dataUri.startsWith(prefix)) return null;
+
+  try {
+    return decodeURIComponent(dataUri.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function svgToPngBlob(svg: string) {
+  return new Promise<Blob | null>((resolve) => {
+    const image = new window.Image();
+    const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(svgBlob);
+
+    image.onload = () => {
+      const size = 1024;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        URL.revokeObjectURL(url);
+        resolve(null);
+        return;
+      }
+
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, size, size);
+      context.imageSmoothingEnabled = false;
+      context.drawImage(image, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((blob) => resolve(blob), "image/png");
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+
+    image.src = url;
+  });
+}
+
+function QrAssetActions({ qrDataUri, codeWords }: { qrDataUri: string; codeWords: string | null | undefined }) {
+  const [message, setMessage] = useState<string | null>(null);
+  const filename = "sitaa-asistencia-" + sanitizeFilenamePart(codeWords) + ".svg";
+
+  function showMessage(value: string) {
+    setMessage(value);
+    window.setTimeout(() => setMessage(null), 2200);
+  }
+
+  function downloadSvg() {
+    const svg = svgFromDataUri(qrDataUri);
+
+    if (!svg) {
+      showMessage("No fue posible descargar el QR.");
+      return;
+    }
+
+    downloadBlob(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), filename);
+  }
+
+  async function copyPng() {
+    const svg = svgFromDataUri(qrDataUri);
+    const ClipboardItemConstructor = globalThis.ClipboardItem;
+
+    if (!svg || !navigator.clipboard || !ClipboardItemConstructor) {
+      showMessage("No fue posible copiar el QR como imagen. Usa Descargar QR.");
+      return;
+    }
+
+    const blob = await svgToPngBlob(svg);
+
+    if (!blob || blob.size === 0) {
+      showMessage("No fue posible copiar el QR como imagen. Usa Descargar QR.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.write([new ClipboardItemConstructor({ "image/png": blob })]);
+      showMessage("QR copiado como imagen.");
+    } catch {
+      showMessage("No fue posible copiar el QR como imagen. Usa Descargar QR.");
+    }
+  }
+
+  return <div className="mt-4 space-y-3">
+    <div className="flex flex-wrap justify-center gap-2">
+      <button type="button" onClick={copyPng} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Copiar QR</button>
+      <button type="button" onClick={downloadSvg} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Descargar QR</button>
+    </div>
+    {message ? <p role="status" className="text-sm font-semibold text-slate-700">{message}</p> : null}
+  </div>;
+}
+
 export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, status, detail }: {
   activityId: string;
   token: ActivityCheckinToken | null;
@@ -76,7 +192,10 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
 
     {token && directLink ? <div className="mt-7 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
-        {qrDataUri ? <Image src={qrDataUri} alt="Código QR para registrar asistencia" width={320} height={320} unoptimized className="mx-auto size-72 rounded-xl bg-white p-3 sm:size-80" /> : <p className="text-sm font-semibold text-red-700">No fue posible generar el QR. Usa el enlace directo o el código.</p>}
+        {qrDataUri ? <>
+          <Image src={qrDataUri} alt="Código QR para registrar asistencia" width={320} height={320} unoptimized className="mx-auto size-72 rounded-xl bg-white p-3 sm:size-80" />
+          <QrAssetActions qrDataUri={qrDataUri} codeWords={token.three_word_code} />
+        </> : <p className="text-sm font-semibold text-red-700">No fue posible generar el QR. Usa el enlace directo o el código.</p>}
       </div>
       <div className="min-w-0 space-y-5">
         <div>
