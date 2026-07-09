@@ -19,6 +19,8 @@ import { AttendanceCheckinManager } from "./checkin/attendance-checkin-manager";
 import { ParticipantManager } from "./participants/participant-manager";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const metadata: Metadata = { title: "Detalle de actividad" };
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[]; checkin?: string | string[]; checkin_detail?: string | string[] }> };
 const BASE_CORRECTION_ROLES = new Set(["program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
@@ -143,8 +145,11 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       : "Los datos base están bloqueados. Si necesitas corregirlos, contacta al responsable correspondiente.";
   const baseDataLockMessage = `${activityHasEnded ? "Esta actividad ya ocurrió." : "Esta actividad ya fue publicada."} ${contactMessage} Puedes actualizar participantes y asistencia cuando corresponda.`;
 
-  const activeCheckin = canManageParticipants ? await getActiveActivityAttendanceCheckin(id) : null;
+  const activeCheckinResult = canManageParticipants ? await getActiveActivityAttendanceCheckin(id) : { token: null, error: null };
+  const activeCheckin = activeCheckinResult.token;
   const directCheckinLink = activeCheckin ? (await requestOrigin()) + "/check-in/" + encodeURIComponent(activeCheckin.secret_token) : null;
+  const displayedCheckinStatus = activeCheckinResult.error ? "fetch-error" : checkinStatus;
+  const displayedCheckinDetail = activeCheckinResult.error ?? checkinDetail;
   let qrDataUri: string | null = null;
   if (directCheckinLink) {
     try { qrDataUri = qrSvgDataUri(directCheckinLink); }
@@ -185,7 +190,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
 
-    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} status={checkinStatus} detail={checkinDetail} />}
+    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} status={displayedCheckinStatus} detail={displayedCheckinDetail} />}
 
     {canManageParticipants && (participantsError
       ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>

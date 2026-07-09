@@ -47,6 +47,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
     "open-forbidden": "No tienes permiso para abrir asistencia en esta actividad.",
     "open-draft": "No puedes abrir asistencia en una actividad en borrador.",
     "open-error": "No fue posible abrir la asistencia.",
+    "fetch-error": "No fue posible consultar el código activo.",
     "close-forbidden": "No tienes permiso para cerrar asistencia en esta actividad.",
     "close-draft": "No puedes cerrar asistencia en una actividad en borrador.",
     "close-error": "No fue posible cerrar la asistencia.",
@@ -56,6 +57,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
   };
   const isError = status?.includes("error") || status?.includes("forbidden") || status?.includes("draft") || false;
   const messageClass = isError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800";
+  const shouldShowClosedState = !token && status !== "fetch-error";
 
   return <section id="attendance-checkin" className="mt-10 scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -102,6 +104,6 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
           </form>
         </div>
       </div>
-    </div> : <p className="mt-7 rounded-2xl bg-slate-50 p-5 text-slate-600">La asistencia por QR y código está cerrada.</p>}
+    </div> : shouldShowClosedState ? <p className="mt-7 rounded-2xl bg-slate-50 p-5 text-slate-600">La asistencia por QR y código está cerrada.</p> : null}
   </section>;
 }
