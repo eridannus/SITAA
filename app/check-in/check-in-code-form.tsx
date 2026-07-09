@@ -40,12 +40,14 @@ function subscribeToScannerSupport() {
 }
 
 function getScannerSupportSnapshot() {
-  return Boolean(
+  const canUseCamera =
     typeof window !== "undefined" &&
     window.isSecureContext &&
-    navigator.mediaDevices?.getUserMedia &&
-    (getBarcodeDetectorConstructor() || jsQR),
-  );
+    typeof navigator !== "undefined" &&
+    typeof navigator.mediaDevices !== "undefined" &&
+    typeof navigator.mediaDevices.getUserMedia === "function";
+
+  return canUseCamera && (Boolean(getBarcodeDetectorConstructor()) || Boolean(jsQR));
 }
 
 function getScannerSupportServerSnapshot() {
@@ -108,13 +110,19 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
   }, []);
 
   async function startScanning() {
-    if (!supported || !navigator.mediaDevices?.getUserMedia) return;
+    const canUseCamera =
+      typeof navigator !== "undefined" &&
+      typeof navigator.mediaDevices !== "undefined" &&
+      typeof navigator.mediaDevices.getUserMedia === "function";
 
+    if (!supported || !canUseCamera) return;
+
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     const BarcodeDetector = getBarcodeDetectorConstructor();
     setMessage("Apunta la cámara al código QR de asistencia.");
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+      const stream = await getUserMedia({ video: { facingMode: { ideal: "environment" } } });
       streamRef.current = stream;
       scanningRef.current = true;
       setScanning(true);
