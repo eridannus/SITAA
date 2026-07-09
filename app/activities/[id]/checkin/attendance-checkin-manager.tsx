@@ -265,10 +265,10 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
   const openPendingLabel = isReopen ? "Reabriendo..." : "Abriendo...";
   const windowMessage = attendanceDeadlinePassed ? "El periodo para registrar asistencia ya terminó." : checkinWindowMessage(checkinState, token);
   const formattedOpensAt = formatMexicoCityDateTime(checkinState?.opensAt);
-  const activeExpiresAt = checkinState?.activeExpiresAt ?? token?.expires_at ?? null;
+  const activeExpiresAt = token?.expires_at ?? checkinState?.activeExpiresAt ?? null;
   const formattedExpiresAt = formatMexicoCityDateTime(activeExpiresAt);
-  const isPostEventReopening = Boolean(token && activeExpiresAt && checkinState?.ordinaryClosesAt && !sameInstant(activeExpiresAt, checkinState.ordinaryClosesAt));
-  const shouldShowClosedState = !token && status !== "fetch-error" && !checkinState;
+  const isPostEventReopening = Boolean(token && token.expires_at && checkinState?.ordinaryClosesAt && !sameInstant(token.expires_at, checkinState.ordinaryClosesAt));
+  const shouldShowClosedState = !token && status !== "fetch-error" && !attendanceDeadlinePassed && checkinState?.windowStatus !== "not_yet_available" && checkinState?.windowStatus !== "draft" && checkinState?.windowStatus !== "missing_schedule";
 
   return <section id="attendance-checkin" className="mt-10 scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

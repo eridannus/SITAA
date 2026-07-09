@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -197,7 +197,7 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   if (values.attention_category_code || requireOperationalFields) checks.push(["attention_category_code", options.attentionCategories.some((item) => item.code === values.attention_category_code)]);
   if (values.modality_code || requireOperationalFields) checks.push(["modality_code", options.modalities.some((item) => item.code === values.modality_code)]);
   if (values.location_type_code || requireOperationalFields) checks.push(["location_type_code", options.locationTypes.some((item) => item.code === values.location_type_code)]);
-  for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opción seleccionada ya no est? disponible.";
+  for (const [field, valid] of checks) if (!valid) result.errors[field] = "La opción seleccionada ya no está disponible.";
   if (values.modality_code !== ONLINE_MODALITY_CODE && values.location_type_code === ONLINE_LOCATION_TYPE_CODE) {
     result.errors.location_type_code = "Selecciona un tipo de ubicación presencial o híbrido.";
   }
@@ -244,7 +244,7 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     }
     const { data, error } = await supabase.from("activities").update(payload).eq("id", activityId).select("id").maybeSingle();
     if (error || !data) return invalid(previous, values, {}, "No fue posible actualizar la actividad. Verifica tus permisos e intenta nuevamente.");
-    revalidatePath("/activities"); revalidatePath(`/activities/${activityId}`); redirect(`/activities/${activityId}?updated=1`);
+    revalidatePath("/activities"); revalidatePath(`/activities/${activityId}`); revalidatePath(`/activities/${activityId}`, "page"); redirect(`/activities/${activityId}?updated=1#attendance-checkin`);
   }
   const { error } = await supabase.from("activities").insert({ ...payload, responsible_profile_id: context.profile.id, created_by: context.user.id });
   if (error) return invalid(previous, values, {}, "No fue posible crear la actividad. Verifica tus permisos e intenta nuevamente.");
