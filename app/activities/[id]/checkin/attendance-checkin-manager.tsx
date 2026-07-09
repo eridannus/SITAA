@@ -4,11 +4,11 @@ import Image from "next/image";
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { closeAttendanceCheckin, openAttendanceCheckin, regenerateAttendanceCheckin } from "./actions";
-import type { ActivityCheckinToken } from "@/types/check-in";
+import type { ActivityAttendanceCheckinState, ActivityCheckinToken } from "@/types/check-in";
 
 function SubmitButton({ idle, pending }: { idle: string; pending: string }) {
   const status = useFormStatus();
-  return <button type="submit" disabled={status.pending} className="rounded-full bg-emerald-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+  return <button type="submit" disabled={status.pending} className="cursor-pointer rounded-full bg-emerald-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
     {status.pending ? pending : idle}
   </button>;
 }
@@ -16,7 +16,7 @@ function SubmitButton({ idle, pending }: { idle: string; pending: string }) {
 function SecondarySubmitButton({ idle, pending, tone = "neutral" }: { idle: string; pending: string; tone?: "neutral" | "danger" }) {
   const status = useFormStatus();
   const color = tone === "danger" ? "border-red-300 text-red-800 hover:border-red-700 hover:text-red-950" : "border-slate-300 text-slate-800 hover:border-emerald-700 hover:text-emerald-900";
-  return <button type="submit" disabled={status.pending} className={"rounded-full border px-5 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 " + color}>
+  return <button type="submit" disabled={status.pending} className={"cursor-pointer rounded-full border px-5 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 " + color}>
     {status.pending ? pending : idle}
   </button>;
 }
@@ -27,7 +27,7 @@ function CopyButton({ value, label, copiedLabel }: { value: string; label: strin
     await navigator.clipboard.writeText(value);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
-  }} className="rounded-full border border-slate-300 px-5 py-3 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+  }} className="cursor-pointer rounded-full border border-slate-300 px-5 py-3 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
     {copied ? copiedLabel : label}
   </button>;
 }
@@ -141,18 +141,61 @@ function QrAssetActions({ qrDataUri, codeWords }: { qrDataUri: string; codeWords
 
   return <div className="mt-4 space-y-3">
     <div className="flex flex-wrap justify-center gap-2">
-      <button type="button" onClick={copyPng} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Copiar QR</button>
-      <button type="button" onClick={downloadSvg} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Descargar QR</button>
+      <button type="button" onClick={copyPng} className="cursor-pointer rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Copiar QR</button>
+      <button type="button" onClick={downloadSvg} className="cursor-pointer rounded-full border border-slate-300 px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Descargar QR</button>
     </div>
     {message ? <p role="status" className="text-sm font-semibold text-slate-700">{message}</p> : null}
   </div>;
 }
 
-export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, status, detail }: {
+function formatMexicoCityDateTime(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Mexico_City",
+  }).format(date);
+}
+
+function sameInstant(left: string | null | undefined, right: string | null | undefined) {
+  if (!left || !right) return false;
+  const leftDate = new Date(left);
+  const rightDate = new Date(right);
+  if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) return false;
+  return leftDate.getTime() === rightDate.getTime();
+}
+
+function checkinWindowMessage(state: ActivityAttendanceCheckinState | null, token: ActivityCheckinToken | null) {
+  if (!state) return null;
+  if (state.message) return state.message;
+  if (token) return "La asistencia está abierta.";
+
+  if (state.windowStatus === "draft") return "No puedes abrir asistencia en una actividad en borrador.";
+  if (state.windowStatus === "missing_schedule") return "Completa la fecha y hora de la actividad para abrir asistencia.";
+  if (state.windowStatus === "not_yet_available") {
+    const opensAt = formatMexicoCityDateTime(state.opensAt);
+    return opensAt ? `Podrás abrir asistencia desde: ${opensAt}.` : "La asistencia todavía no está disponible para esta actividad.";
+  }
+  if (state.windowStatus === "available") return "La asistencia ya puede abrirse.";
+  if (state.windowStatus === "reopen_available") return "La actividad ya terminó. Puedes reabrir asistencia por 15 minutos.";
+  if (state.windowStatus === "open") return "La asistencia está abierta.";
+
+  return null;
+}
+
+export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, checkinState, status, detail }: {
   activityId: string;
   token: ActivityCheckinToken | null;
   directLink: string | null;
   qrDataUri: string | null;
+  checkinState: ActivityAttendanceCheckinState | null;
   status?: string;
   detail?: string;
 }) {
@@ -163,7 +206,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
     "open-forbidden": "No tienes permiso para abrir asistencia en esta actividad.",
     "open-draft": "No puedes abrir asistencia en una actividad en borrador.",
     "open-error": "No fue posible abrir la asistencia.",
-    "fetch-error": "No fue posible consultar el código activo.",
+    "fetch-error": "No fue posible consultar el estado de asistencia.",
     "close-forbidden": "No tienes permiso para cerrar asistencia en esta actividad.",
     "close-draft": "No puedes cerrar asistencia en una actividad en borrador.",
     "close-error": "No fue posible cerrar la asistencia.",
@@ -173,7 +216,16 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
   };
   const isError = status?.includes("error") || status?.includes("forbidden") || status?.includes("draft") || false;
   const messageClass = isError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800";
-  const shouldShowClosedState = !token && status !== "fetch-error";
+  const canOpenNow = !token && checkinState?.canOpenNow === true;
+  const isReopen = checkinState?.windowStatus === "reopen_available";
+  const openButtonLabel = isReopen ? "Reabrir asistencia por 15 minutos" : "Abrir asistencia";
+  const openPendingLabel = isReopen ? "Reabriendo..." : "Abriendo...";
+  const windowMessage = checkinWindowMessage(checkinState, token);
+  const formattedOpensAt = formatMexicoCityDateTime(checkinState?.opensAt);
+  const activeExpiresAt = checkinState?.activeExpiresAt ?? token?.expires_at ?? null;
+  const formattedExpiresAt = formatMexicoCityDateTime(activeExpiresAt);
+  const isPostEventReopening = Boolean(token && activeExpiresAt && checkinState?.ordinaryClosesAt && !sameInstant(activeExpiresAt, checkinState.ordinaryClosesAt));
+  const shouldShowClosedState = !token && status !== "fetch-error" && !checkinState;
 
   return <section id="attendance-checkin" className="mt-10 scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -182,12 +234,17 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
         <h2 className="mt-2 text-2xl font-bold text-slate-900">Asistencia por QR y código</h2>
         <p className="mt-3 max-w-2xl text-slate-600">Sólo los participantes ya registrados pueden confirmar asistencia con estos accesos.</p>
       </div>
-      {!token && <form action={openAttendanceCheckin.bind(null, activityId)}><SubmitButton idle="Abrir asistencia" pending="Abriendo..." /></form>}
+      {canOpenNow ? <form action={openAttendanceCheckin.bind(null, activityId)}><SubmitButton idle={openButtonLabel} pending={openPendingLabel} /></form> : null}
     </div>
 
     {status && messages[status] ? <div role={isError ? "alert" : "status"} className={"mt-6 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>
       <p>{messages[status]}</p>
       {isError && detail ? <p className="mt-2 break-words text-xs font-medium opacity-85">Detalle: {detail}</p> : null}
+    </div> : null}
+
+    {windowMessage ? <div role={token ? "status" : undefined} className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
+      <p className="font-semibold">{windowMessage}</p>
+      {checkinState?.windowStatus === "not_yet_available" && formattedOpensAt && !windowMessage.includes(formattedOpensAt) ? <p className="mt-2 text-sm">Podr?s abrir asistencia desde: {formattedOpensAt}.</p> : null}
     </div> : null}
 
     {token && directLink ? <div className="mt-7 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
@@ -198,6 +255,10 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
         </> : <p className="text-sm font-semibold text-red-700">No fue posible generar el QR. Usa el enlace directo o el código.</p>}
       </div>
       <div className="min-w-0 space-y-5">
+        {formattedExpiresAt ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
+          <p>Disponible hasta: {formattedExpiresAt}</p>
+          {isPostEventReopening ? <p className="mt-1 text-xs font-medium text-emerald-800">Reapertura posterior al evento: este código dura 15 minutos.</p> : null}
+        </div> : null}
         <div>
           <p className="text-sm font-semibold text-slate-500">Enlace directo</p>
           <a href={directLink} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">{directLink}</a>

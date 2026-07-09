@@ -31,7 +31,7 @@ function classifyMessage(message: string): CheckinActionState["status"] {
 
   if (/already|ya.*(registr|asist|check)/.test(raw)) return "already";
   if (/not.*participant|no.*participante|no.*registrad/.test(raw)) return "not-participant";
-  if (/closed|invalid|expired|no existe|cerrad|codigo.*inval|token.*inval/.test(raw)) return "invalid";
+  if (/closed|invalid|expired|expir|no existe|cerrad|codigo.*inval|token.*inval/.test(raw)) return "invalid";
   if (/no fue posible|no se pudo|no pudimos/.test(raw)) return "error";
 
   return "success";

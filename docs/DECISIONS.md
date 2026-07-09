@@ -34,6 +34,12 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-020 | Registro, asistencia y códigos de acceso | Aceptada |
 | DEC-021 | Pase de lista compacto | Aceptada |
 | DEC-022 | Asignación automática de semestre académico | Aceptada |
+| DEC-023 | Bloqueo de datos base en actividades ocurridas | Aceptada |
+| DEC-024 | Flujo de borrador y publicación de actividades | Aceptada |
+| DEC-025 | Indicadores monocromáticos en tarjetas de actividad | Aceptada |
+| DEC-026 | Check-in de asistencia por QR, enlace y código | Aceptada |
+| DEC-027 | Etiqueta compartida para QR y enlace directo | Aceptada |
+| DEC-028 | Ventanas de tiempo para check-in de asistencia | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -268,6 +274,17 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** la interfaz describe mejor el comportamiento real sin cambiar enums, RPCs ni analítica de origen. Si más adelante se requiere distinguir QR de enlace directo, se definirá una decisión y modelo específico.
 
 **Estado:** Aceptada.
+
+## DEC-028 — Ventanas de tiempo para check-in de asistencia
+
+**Contexto:** la confirmación por QR, enlace directo o código debe evitar registros fuera del momento operativo de la actividad, sin impedir correcciones manuales autorizadas.
+
+**Decisión:** la asistencia puede abrirse desde 15 minutos antes del inicio de la actividad. Si se abre antes o durante la actividad, el acceso permanece válido hasta 15 minutos después del término. Después de concluida la actividad, un responsable o editor autorizado puede reabrir la asistencia manualmente por ventanas de 15 minutos. El responsable o editor puede cerrar la asistencia manualmente en cualquier momento. No se puede abrir asistencia en actividades en borrador ni en actividades sin fecha y hora completas.
+
+**Consecuencias:** los códigos activos tienen expiración visible para los editores y los códigos cerrados o expirados se rechazan como inválidos. La reapertura posterior al evento queda limitada temporalmente y la asistencia manual sigue disponible para correcciones justificadas.
+
+**Estado:** Aceptada.
+
 
 ## Plantilla para nuevas decisiones
 

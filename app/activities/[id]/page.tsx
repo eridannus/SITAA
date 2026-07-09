@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -6,7 +6,7 @@ import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-c
 import { canManageActivityScope, getActivityScopeAccess, isStudentOnlyUser } from "@/lib/activities/activity-scope-permissions";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { getActivityParticipants } from "@/lib/activities/get-activity-participants";
-import { getActiveActivityAttendanceCheckin } from "@/lib/activities/get-attendance-checkin";
+import { getActiveActivityAttendanceCheckin, getActivityAttendanceCheckinState } from "@/lib/activities/get-attendance-checkin";
 import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
 import { getMexicoCityToday } from "@/lib/activities/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -145,11 +145,14 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       : "Los datos base están bloqueados. Si necesitas corregirlos, contacta al responsable correspondiente.";
   const baseDataLockMessage = `${activityHasEnded ? "Esta actividad ya ocurrió." : "Esta actividad ya fue publicada."} ${contactMessage} Puedes actualizar participantes y asistencia cuando corresponda.`;
 
-  const activeCheckinResult = canManageParticipants ? await getActiveActivityAttendanceCheckin(id) : { token: null, error: null };
+  const [activeCheckinResult, checkinStateResult] = canManageParticipants
+    ? await Promise.all([getActiveActivityAttendanceCheckin(id), getActivityAttendanceCheckinState(id)])
+    : [{ token: null, error: null }, { state: null, error: null }];
   const activeCheckin = activeCheckinResult.token;
+  const activeCheckinState = checkinStateResult.state;
   const directCheckinLink = activeCheckin ? (await requestOrigin()) + "/check-in/" + encodeURIComponent(activeCheckin.secret_token) : null;
-  const displayedCheckinStatus = activeCheckinResult.error ? "fetch-error" : checkinStatus;
-  const displayedCheckinDetail = activeCheckinResult.error ?? checkinDetail;
+  const displayedCheckinStatus = activeCheckinResult.error || checkinStateResult.error ? "fetch-error" : checkinStatus;
+  const displayedCheckinDetail = activeCheckinResult.error ?? checkinStateResult.error ?? checkinDetail;
   let qrDataUri: string | null = null;
   if (directCheckinLink) {
     try { qrDataUri = await qrSvgDataUri(directCheckinLink); }
@@ -190,7 +193,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
 
-    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} status={displayedCheckinStatus} detail={displayedCheckinDetail} />}
+    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} checkinState={activeCheckinState} status={displayedCheckinStatus} detail={displayedCheckinDetail} />}
 
     {canManageParticipants && (participantsError
       ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>

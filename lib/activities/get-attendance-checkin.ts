@@ -1,5 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { ActivityCheckinToken } from "@/types/check-in";
+import type { ActivityAttendanceCheckinState, ActivityCheckinToken } from "@/types/check-in";
 
 type RpcError = { code?: string; message?: string; details?: string; hint?: string };
 
@@ -12,13 +12,27 @@ type CheckinRow = Partial<ActivityCheckinToken> & {
   code_words?: string | string[] | null;
 };
 
-function firstRow(data: unknown): CheckinRow | null {
-  if (Array.isArray(data)) return (data[0] as CheckinRow | undefined) ?? null;
-  return (data as CheckinRow | null) ?? null;
+type CheckinStateRow = {
+  can_open_now?: unknown;
+  window_status?: unknown;
+  opens_at?: unknown;
+  ordinary_closes_at?: unknown;
+  active_expires_at?: unknown;
+  message?: unknown;
+};
+
+function firstRow<T>(data: unknown): T | null {
+  if (Array.isArray(data)) return (data[0] as T | undefined) ?? null;
+  return (data as T | null) ?? null;
 }
 
 function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function textOrNull(value: unknown) {
+  const text = cleanText(value);
+  return text || null;
 }
 
 function cleanCodeWords(value: unknown) {
@@ -38,7 +52,7 @@ function sanitizedDetail(error: RpcError) {
 }
 
 export function normalizeCheckinToken(data: unknown, activityId: string): ActivityCheckinToken | null {
-  const row = firstRow(data);
+  const row = firstRow<CheckinRow>(data);
   if (!row) return null;
   const secretToken = cleanText(row.secret_token) || cleanText(row.token) || cleanText(row.direct_token);
   const threeWordCode =
@@ -55,7 +69,22 @@ export function normalizeCheckinToken(data: unknown, activityId: string): Activi
     three_word_code: threeWordCode,
     is_active: row.is_active ?? true,
     opened_at: row.opened_at ?? null,
+    expires_at: row.expires_at ?? null,
     closed_at: row.closed_at ?? null,
+  };
+}
+
+export function normalizeCheckinState(data: unknown): ActivityAttendanceCheckinState | null {
+  const row = firstRow<CheckinStateRow>(data);
+  if (!row) return null;
+
+  return {
+    canOpenNow: row.can_open_now === true,
+    windowStatus: textOrNull(row.window_status),
+    opensAt: textOrNull(row.opens_at),
+    ordinaryClosesAt: textOrNull(row.ordinary_closes_at),
+    activeExpiresAt: textOrNull(row.active_expires_at),
+    message: textOrNull(row.message),
   };
 }
 
@@ -66,4 +95,13 @@ export async function getActiveActivityAttendanceCheckin(activityId: string): Pr
   });
   if (error) return { token: null, error: sanitizedDetail(error) };
   return { token: normalizeCheckinToken(data, activityId), error: null };
+}
+
+export async function getActivityAttendanceCheckinState(activityId: string): Promise<{ state: ActivityAttendanceCheckinState | null; error: string | null }> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_activity_attendance_checkin_state", {
+    target_activity_id: activityId,
+  });
+  if (error) return { state: null, error: sanitizedDetail(error) };
+  return { state: normalizeCheckinState(data), error: null };
 }
