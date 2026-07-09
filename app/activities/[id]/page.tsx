@@ -152,7 +152,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const displayedCheckinDetail = activeCheckinResult.error ?? checkinDetail;
   let qrDataUri: string | null = null;
   if (directCheckinLink) {
-    try { qrDataUri = qrSvgDataUri(directCheckinLink); }
+    try { qrDataUri = await qrSvgDataUri(directCheckinLink); }
     catch { qrDataUri = null; }
   }
 

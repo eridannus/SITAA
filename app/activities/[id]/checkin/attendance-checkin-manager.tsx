@@ -76,7 +76,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
 
     {token && directLink ? <div className="mt-7 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
-        {qrDataUri ? <Image src={qrDataUri} alt="Código QR para registrar asistencia" width={256} height={256} unoptimized className="mx-auto size-64 rounded-xl bg-white p-3" /> : <p className="text-sm font-semibold text-red-700">No fue posible generar el QR porque el enlace es demasiado largo.</p>}
+        {qrDataUri ? <Image src={qrDataUri} alt="Código QR para registrar asistencia" width={320} height={320} unoptimized className="mx-auto size-72 rounded-xl bg-white p-3 sm:size-80" /> : <p className="text-sm font-semibold text-red-700">No fue posible generar el QR. Usa el enlace directo o el código.</p>}
       </div>
       <div className="min-w-0 space-y-5">
         <div>
