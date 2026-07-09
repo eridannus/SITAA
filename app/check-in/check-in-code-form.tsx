@@ -25,7 +25,11 @@ export function CheckinCodeForm() {
     <label htmlFor="checkin_code" className="block text-sm font-semibold text-slate-700">Código de asistencia</label>
     <input id="checkin_code" name="checkin_code" required placeholder="palabra palabra palabra" className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
     <p className="mt-3 text-sm text-slate-600">Escribe el código de tres palabras que te proporcionó el responsable.</p>
-    {state.message ? <div role={isError || isWarning ? "alert" : "status"} className={"mt-5 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>{state.message}</div> : null}
+    {state.message ? <div role={isError || isWarning ? "alert" : "status"} className={"mt-5 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>
+      {state.activityTitle ? <p className="mb-2 break-words text-xs opacity-80">{state.activityTitle}</p> : null}
+      <p className="break-words">{state.message}</p>
+      {state.checkedInAt ? <p className="mt-2 text-xs opacity-80">Asistencia registrada.</p> : null}
+    </div> : null}
     <div className="mt-6"><SubmitButton /></div>
   </form>;
 }

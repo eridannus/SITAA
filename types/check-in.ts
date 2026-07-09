@@ -11,4 +11,7 @@ export interface ActivityCheckinToken {
 export interface CheckinActionState {
   status: "idle" | "success" | "already" | "not-participant" | "invalid" | "error";
   message: string | null;
+  activityTitle?: string | null;
+  attendanceStatus?: string | null;
+  checkedInAt?: string | null;
 }

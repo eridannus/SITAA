@@ -1,20 +1,29 @@
 import type { CheckinActionState } from "@/types/check-in";
 
 type MaybeError = { code?: string; message?: string; details?: string; hint?: string };
-type CheckinRpcResult = {
+type CheckinRpcRow = {
   message?: unknown;
+  activity_id?: unknown;
+  activity_title?: unknown;
   attendance_status?: unknown;
+  checked_in_at?: unknown;
 };
 
+const GENERIC_CHECKIN_ERROR = "No fue posible registrar tu asistencia.";
+
 function normalize(value: string) {
-  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-function resultObject(data: unknown): CheckinRpcResult | null {
-  if (Array.isArray(data)) return resultObject(data[0]);
-  if (data && typeof data === "object") return data as CheckinRpcResult;
+function firstRow(data: unknown): CheckinRpcRow | null {
+  if (Array.isArray(data)) return data.length > 0 ? firstRow(data[0]) : null;
+  if (data && typeof data === "object") return data as CheckinRpcRow;
   if (typeof data === "string") return { message: data };
   return null;
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function classifyMessage(message: string): CheckinActionState["status"] {
@@ -23,38 +32,40 @@ function classifyMessage(message: string): CheckinActionState["status"] {
   if (/already|ya.*(registr|asist|check)/.test(raw)) return "already";
   if (/not.*participant|no.*participante|no.*registrad/.test(raw)) return "not-participant";
   if (/closed|invalid|expired|no existe|cerrad|codigo.*inval|token.*inval/.test(raw)) return "invalid";
+  if (/no fue posible|no se pudo|no pudimos/.test(raw)) return "error";
 
   return "success";
 }
 
-function messageFromError(error: MaybeError) {
-  const raw = normalize([error.code, error.message, error.details, error.hint].filter(Boolean).join(" "));
-
-  if (/already|ya.*(registr|asist|check)/.test(raw)) return { status: "already", message: "Tu asistencia ya estaba registrada." } satisfies CheckinActionState;
-  if (/not.*participant|no.*participante|no.*registrad/.test(raw)) return { status: "not-participant", message: "No estás registrado como participante en esta actividad." } satisfies CheckinActionState;
-  if (/closed|invalid|expired|no existe|cerrad|codigo.*inval|token.*inval/.test(raw)) return { status: "invalid", message: "El código de asistencia no existe o ya fue cerrado." } satisfies CheckinActionState;
-
-  return { status: "error", message: "No fue posible registrar la asistencia." } satisfies CheckinActionState;
-}
-
 export function checkinMessageFromResult(data: unknown, error?: MaybeError | null): CheckinActionState {
-  const result = resultObject(data);
-  const returnedMessage = typeof result?.message === "string" ? result.message.trim() : "";
-  const attendanceStatus = typeof result?.attendance_status === "string" ? result.attendance_status : null;
-
-  if (returnedMessage) {
-    if (attendanceStatus === "attended") {
-      return { status: classifyMessage(returnedMessage), message: returnedMessage };
-    }
-
-    return { status: classifyMessage(returnedMessage), message: returnedMessage };
+  if (error) {
+    return { status: "error", message: GENERIC_CHECKIN_ERROR };
   }
 
-  if (attendanceStatus === "attended") {
-    return { status: "success", message: "Asistencia registrada correctamente." };
+  const row = firstRow(data);
+
+  if (!row) {
+    return { status: "error", message: GENERIC_CHECKIN_ERROR };
   }
 
-  if (error) return messageFromError(error);
+  const message = stringOrNull(row.message);
+  const activityTitle = stringOrNull(row.activity_title);
+  const attendanceStatus = stringOrNull(row.attendance_status);
+  const checkedInAt = stringOrNull(row.checked_in_at);
+  const classifiedStatus = message ? classifyMessage(message) : "error";
+  const status = attendanceStatus === "attended"
+    ? classifiedStatus === "already"
+      ? "already"
+      : "success"
+    : classifiedStatus === "success"
+      ? "invalid"
+      : classifiedStatus;
 
-  return { status: "success", message: "Asistencia registrada correctamente." };
+  return {
+    status,
+    message: message ?? GENERIC_CHECKIN_ERROR,
+    activityTitle,
+    attendanceStatus,
+    checkedInAt,
+  };
 }
