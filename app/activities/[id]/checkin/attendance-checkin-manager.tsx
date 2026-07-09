@@ -21,6 +21,45 @@ function SecondarySubmitButton({ idle, pending, tone = "neutral" }: { idle: stri
   </button>;
 }
 
+function ConfirmableCheckinAction({ activityId, kind }: { activityId: string; kind: "close" | "regenerate" }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const config = kind === "regenerate"
+    ? {
+      action: regenerateAttendanceCheckin.bind(null, activityId),
+      triggerLabel: "Regenerar c?digo",
+      confirmLabel: "Regenerar c?digo",
+      pendingLabel: "Regenerando...",
+      message: "El c?digo anterior dejar? de funcionar. ?Quieres generar uno nuevo?",
+      tone: "neutral" as const,
+    }
+    : {
+      action: closeAttendanceCheckin.bind(null, activityId),
+      triggerLabel: "Cerrar asistencia",
+      confirmLabel: "Cerrar asistencia",
+      pendingLabel: "Cerrando...",
+      message: "Los alumnos ya no podr?n registrar asistencia con este c?digo.",
+      tone: "danger" as const,
+    };
+  const triggerColor = config.tone === "danger" ? "border-red-300 text-red-800 hover:border-red-700 hover:text-red-950" : "border-slate-300 text-slate-800 hover:border-emerald-700 hover:text-emerald-900";
+
+  if (!isOpen) {
+    return <button type="button" onClick={() => setIsOpen(true)} className={"cursor-pointer rounded-full border px-5 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 " + triggerColor}>
+      {config.triggerLabel}
+    </button>;
+  }
+
+  return <div role="group" aria-label={config.triggerLabel} className="min-w-0 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm">
+    <p className="break-words font-semibold">{config.message}</p>
+    <div className="mt-4 flex flex-wrap gap-3">
+      <button type="button" onClick={() => setIsOpen(false)} className="cursor-pointer rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 transition hover:border-slate-500 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Cancelar</button>
+      <form action={config.action}>
+        <input type="hidden" name="confirmation" value="confirmed" />
+        <SecondarySubmitButton idle={config.confirmLabel} pending={config.pendingLabel} tone={config.tone} />
+      </form>
+    </div>
+  </div>;
+}
+
 function CopyButton({ value, label, copiedLabel }: { value: string; label: string; copiedLabel: string }) {
   const [copied, setCopied] = useState(false);
   return <button type="button" onClick={async () => {
@@ -270,18 +309,8 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
         <div className="flex flex-wrap gap-3">
           <CopyButton value={directLink} label="Copiar enlace" copiedLabel="Enlace copiado" />
           <CopyButton value={token.three_word_code} label="Copiar código" copiedLabel="Código copiado" />
-          <form action={regenerateAttendanceCheckin.bind(null, activityId)} onSubmit={(event) => {
-            if (!window.confirm("El código anterior dejará de funcionar. ¿Quieres generar uno nuevo?")) event.preventDefault();
-          }}>
-            <input type="hidden" name="confirmation" value="confirmed" />
-            <SecondarySubmitButton idle="Regenerar código" pending="Regenerando..." />
-          </form>
-          <form action={closeAttendanceCheckin.bind(null, activityId)} onSubmit={(event) => {
-            if (!window.confirm("Los alumnos ya no podrán registrar asistencia con este código.")) event.preventDefault();
-          }}>
-            <input type="hidden" name="confirmation" value="confirmed" />
-            <SecondarySubmitButton idle="Cerrar asistencia" pending="Cerrando..." tone="danger" />
-          </form>
+          <ConfirmableCheckinAction activityId={activityId} kind="regenerate" />
+          <ConfirmableCheckinAction activityId={activityId} kind="close" />
         </div>
       </div>
     </div> : shouldShowClosedState ? <p className="mt-7 rounded-2xl bg-slate-50 p-5 text-slate-600">La asistencia por QR y código está cerrada.</p> : null}
