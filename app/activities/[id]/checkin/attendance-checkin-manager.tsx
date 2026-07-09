@@ -244,7 +244,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
 
     {windowMessage ? <div role={token ? "status" : undefined} className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
       <p className="font-semibold">{windowMessage}</p>
-      {checkinState?.windowStatus === "not_yet_available" && formattedOpensAt && !windowMessage.includes(formattedOpensAt) ? <p className="mt-2 text-sm">Podr?s abrir asistencia desde: {formattedOpensAt}.</p> : null}
+      {checkinState?.windowStatus === "not_yet_available" && formattedOpensAt && !windowMessage.includes(formattedOpensAt) ? <p className="mt-2 text-sm">Podrás abrir asistencia desde: {formattedOpensAt}.</p> : null}
     </div> : null}
 
     {token && directLink ? <div className="mt-7 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">

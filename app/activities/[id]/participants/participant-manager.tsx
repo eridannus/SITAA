@@ -272,7 +272,7 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
 
   return <section id="participants" className="mt-10 scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-      <div className="min-w-0"><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Registro institucional</p><h2 className="mt-2 text-2xl font-bold text-slate-900">Participantes</h2><p className="mt-3 text-slate-600">Solo pueden agregarse perfiles registrados en SITAA.</p></div>
+      <div className="min-w-0"><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Registro institucional</p><h2 className="mt-2 text-2xl font-bold text-slate-900">Participantes</h2><p className="mt-3 text-slate-600">S?lo pueden agregarse perfiles registrados en SITAA.</p></div>
       {canEdit && <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[24rem]">
         {summaryCards.map((item) => <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{item.label}</p>

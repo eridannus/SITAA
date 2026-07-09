@@ -148,8 +148,8 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const [activeCheckinResult, checkinStateResult] = canManageParticipants
     ? await Promise.all([getActiveActivityAttendanceCheckin(id), getActivityAttendanceCheckinState(id)])
     : [{ token: null, error: null }, { state: null, error: null }];
-  const activeCheckin = activeCheckinResult.token;
   const activeCheckinState = checkinStateResult.state;
+  const activeCheckin = activeCheckinState?.windowStatus === "open" ? activeCheckinResult.token : null;
   const directCheckinLink = activeCheckin ? (await requestOrigin()) + "/check-in/" + encodeURIComponent(activeCheckin.secret_token) : null;
   const displayedCheckinStatus = activeCheckinResult.error || checkinStateResult.error ? "fetch-error" : checkinStatus;
   const displayedCheckinDetail = activeCheckinResult.error ?? checkinStateResult.error ?? checkinDetail;
