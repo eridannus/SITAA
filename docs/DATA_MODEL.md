@@ -144,6 +144,15 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 ## Estado de implementación
 
 Las tablas `activities` y `activity_participants` están implementadas con alta, consulta y retiro sujeto a RLS. Asistencia, formularios y reportes permanecen en diseño. Este documento no crea ni autoriza migraciones SQL.
+### Accesos de asistencia por QR, enlace y código
+
+`activity_checkin_tokens` representa el acceso temporal para confirmar asistencia de participantes ya registrados. El enlace directo usa `secret_token`; el código manual usa `three_word_code`. Ambos actualizan los mismos campos de asistencia de `activity_participants` mediante `check_in_activity`.
+
+- El QR codifica el enlace directo con `secret_token`.
+- El código de tres palabras es corto, en minúsculas, sin acentos, ñ ni caracteres especiales, y único entre códigos activos.
+- Abrir, cerrar o regenerar asistencia no registra participantes nuevos; solo permite confirmar asistencia de participantes existentes.
+- Cerrar o regenerar invalida accesos anteriores conforme a las funciones autorizadas de Supabase.
+
 ### Campos de asistencia implementados en participantes
 
 `activity_participants` conserva la asistencia manual y futura del participante mediante: `attendance_status`, `attendance_source`, `checked_in_at`, `attendance_updated_by`, `attendance_updated_at` y `attendance_notes`.

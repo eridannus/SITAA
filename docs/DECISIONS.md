@@ -198,7 +198,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** SITAA separa registro/invitación de participantes y confirmación de asistencia. La asistencia manual es el mecanismo base y obligatorio; QR, enlace directo y código corto de tres palabras podrán actualizar después los mismos campos de asistencia, pero la corrección manual por responsable o editor autorizado siempre debe existir.
 
-**Consecuencias:** el QR no será el único método de acceso. Los códigos de tres palabras serán breves, en minúsculas, con palabras en español, sin acentos, ? ni caracteres especiales, fáciles de dictar y únicos entre códigos activos. El responsable podrá abrir o cerrar registro y abrir, cerrar o regenerar check-in; el check-in podrá usarse al inicio, durante o al final de la actividad.
+**Consecuencias:** el QR no será el único método de acceso. Los códigos de tres palabras serán breves, en minúsculas, con palabras en español, sin acentos, ñ ni caracteres especiales, fáciles de dictar y únicos entre códigos activos. El responsable podrá abrir o cerrar registro y abrir, cerrar o regenerar check-in; el check-in podrá usarse al inicio, durante o al final de la actividad.
 
 **Seguridad por defecto:** el registro inicia cerrado y la asistencia se limita a participantes registrados. Registro abierto o check-in abierto podrán habilitarse después para tipos de actividad seleccionados. Los estados de asistencia serán `pending`, `attended`, `absent` y `justified`; las fuentes serán `manual`, `qr`, `code` y `system`.
 
@@ -248,6 +248,14 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** las tarjetas de actividad muestran indicadores visuales discretos y fijos: `TUT` para tutoría, `ASE` para asesoría, `✎` para Diseño Gráfico y `△` para Arquitectura. Los indicadores usan estilo monocromático y etiquetas accesibles; no se reinterpretan dinámicamente ni usan emoji decorativo.
 
 **Consecuencias:** las tarjetas pueden escanearse rápidamente sin añadir color semántico adicional. Si falta el dato de servicio o programa, no se muestra un indicador que pueda resultar engañoso.
+
+**Estado:** Aceptada.
+
+## DEC-026 — Check-in de asistencia por QR, enlace y código
+
+**Decisión:** SITAA permite confirmar asistencia de participantes ya registrados mediante QR, enlace directo con token secreto o código corto de tres palabras. Estos mecanismos no registran ni invitan participantes; solo actualizan la asistencia de perfiles ya vinculados a la actividad.
+
+**Consecuencias:** el responsable o editor autorizado abre, cierra o regenera el acceso de asistencia. Regenerar invalida el código anterior. La asistencia manual sigue siendo obligatoria como mecanismo de corrección y todos los métodos actualizan los mismos campos de `activity_participants`.
 
 **Estado:** Aceptada.
 

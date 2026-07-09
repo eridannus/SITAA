@@ -1,22 +1,26 @@
 ﻿import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { canManageActivityScope, getActivityScopeAccess, isStudentOnlyUser } from "@/lib/activities/activity-scope-permissions";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { getActivityParticipants } from "@/lib/activities/get-activity-participants";
+import { getActiveActivityAttendanceCheckin } from "@/lib/activities/get-attendance-checkin";
 import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
 import { getMexicoCityToday } from "@/lib/activities/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { qrSvgDataUri } from "@/lib/qr/qr-code";
 import type { Activity, ActivityFormOptions, ActivityFormValues } from "@/types/activities";
 import type { ParticipantRole } from "@/types/catalogs";
 import { ActivityForm } from "../new/activity-form";
 import { DeleteActivityButton } from "./delete-activity-button";
+import { AttendanceCheckinManager } from "./checkin/attendance-checkin-manager";
 import { ParticipantManager } from "./participants/participant-manager";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Detalle de actividad" };
-type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[] }> };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[]; checkin?: string | string[] }> };
 const BASE_CORRECTION_ROLES = new Set(["program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
 const durationLabels = { one_hour: "1 hora", two_hours: "2 horas", custom: "Personalizada" } as const;
 
@@ -44,6 +48,15 @@ function catalogLabel<T extends { code: string; label?: string | null; name?: st
   if (!code) return null;
   const item = items.find((entry) => entry.code === code);
   return item?.label?.trim() || item?.name?.trim() || code;
+}
+
+async function requestOrigin() {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
+  if (configured) return configured;
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
+  return host ? protocol + "://" + host : "http://localhost:3000";
 }
 
 export default async function ActivityDetailPage({ params, searchParams }: Props) {
@@ -107,6 +120,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const updated = param(query.updated) === "1";
   const deleteError = param(query.error) === "delete";
   const participantStatus = param(query.participant);
+  const checkinStatus = param(query.checkin);
   const responsibleName = card?.responsibleName || "Responsable no disponible";
   const programName = card?.programName || (activity.scope_type === "division" ? "Ambos programas" : options.programs.find((item) => item.id === activity.program_id)?.name ?? "Programa no disponible");
   const locationDetail = activity.location_detail?.trim();
@@ -127,6 +141,14 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       ? "Los datos base están bloqueados. Si necesitas corregirlos, contacta al encargado de asesorías de tu programa."
       : "Los datos base están bloqueados. Si necesitas corregirlos, contacta al responsable correspondiente.";
   const baseDataLockMessage = `${activityHasEnded ? "Esta actividad ya ocurrió." : "Esta actividad ya fue publicada."} ${contactMessage} Puedes actualizar participantes y asistencia cuando corresponda.`;
+
+  const activeCheckin = canManageParticipants ? await getActiveActivityAttendanceCheckin(id) : null;
+  const directCheckinLink = activeCheckin ? (await requestOrigin()) + "/check-in/" + encodeURIComponent(activeCheckin.secret_token) : null;
+  let qrDataUri: string | null = null;
+  if (directCheckinLink) {
+    try { qrDataUri = qrSvgDataUri(directCheckinLink); }
+    catch { qrDataUri = null; }
+  }
 
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -161,6 +183,8 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       {canManageActivity && !canUpdateBaseData && <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{baseDataLockMessage}</p>}
       {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
+
+    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} status={checkinStatus} />}
 
     {canManageParticipants && (participantsError
       ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>
