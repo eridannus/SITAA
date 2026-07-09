@@ -243,6 +243,14 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Estado:** Aceptada.
 
+## DEC-025 — Indicadores monocromáticos en tarjetas de actividad
+
+**Decisión:** las tarjetas de actividad muestran indicadores visuales discretos y fijos: `TUT` para tutoría, `ASE` para asesoría, `✎` para Diseño Gráfico y `△` para Arquitectura. Los indicadores usan estilo monocromático y etiquetas accesibles; no se reinterpretan dinámicamente ni usan emoji decorativo.
+
+**Consecuencias:** las tarjetas pueden escanearse rápidamente sin añadir color semántico adicional. Si falta el dato de servicio o programa, no se muestra un indicador que pueda resultar engañoso.
+
+**Estado:** Aceptada.
+
 ## Plantilla para nuevas decisiones
 
 ### DEC-XXX ? Título

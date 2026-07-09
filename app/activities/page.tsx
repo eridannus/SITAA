@@ -62,6 +62,21 @@ function normalizedLabel(value: string | null | undefined) {
   return value?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() ?? "";
 }
 
+function serviceIndicator(activity: ActivityListItem) {
+  const code = normalizedLabel(activity.service_type_code);
+  const label = normalizedLabel(activity.serviceTypeLabel);
+  if (code === "tutoring" || label === "tutoria") return { text: "TUT", label: "Tutor\u00eda" };
+  if (code === "advising" || label === "asesoria") return { text: "ASE", label: "Asesor\u00eda" };
+  return null;
+}
+
+function programIndicator(activity: ActivityListItem) {
+  const label = normalizedLabel(activity.programName);
+  if (label === "diseno grafico" || label.includes("grafico")) return { text: "\u270e", label: "Dise\u00f1o Gr\u00e1fico" };
+  if (label === "arquitectura" || label.includes("arquitectura")) return { text: "\u25b3", label: "Arquitectura" };
+  return null;
+}
+
 function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; studentOnly: boolean }) {
   const when = schedule(activity);
   const description = activity.description?.trim();
@@ -71,19 +86,29 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
   const locationHeading = repeatsOnlineLabel ? "Acceso" : rawLocationHeading;
   const shouldRenderLocation = Boolean(locationDetail || (!repeatsOnlineLabel && activity.locationTypeLabel));
   const statusBadgeClass = activity.status_code === "draft" ? "border border-amber-300 bg-amber-100 text-amber-900" : "border border-emerald-300 bg-emerald-100 text-emerald-900";
+  const service = serviceIndicator(activity);
+  const program = programIndicator(activity);
 
   return (
-    <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">
+    <article className="flex min-w-0 flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="break-words text-sm font-semibold text-emerald-700">{activity.activityTypeLabel}</p>
           <h2 className="mt-2 break-words text-xl font-bold text-slate-900">{activity.title}</h2>
           {description ? <p className="mt-3 break-words leading-7 text-slate-600">{description}</p> : null}
         </div>
-        <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass}`}>{activity.statusLabel}</span>
+        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+          <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass}`}>{activity.statusLabel}</span>
+          {(service || program) ? (
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500" aria-label="Indicadores de actividad">
+              {service ? <span title={service.label} aria-label={service.label} className="rounded-full border border-slate-200 px-2 py-0.5 tracking-wide">{service.text}</span> : null}
+              {program ? <span title={program.label} aria-label={program.label} className="px-1 text-sm leading-none">{program.text}</span> : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <dl className="mt-6 grid min-w-0 gap-4 border-t border-slate-100 pt-6 text-sm sm:grid-cols-2">
+      <dl className="mt-6 grid min-w-0 flex-1 gap-4 border-t border-slate-100 pt-6 text-sm sm:grid-cols-2">
         <div className="min-w-0">
           <dt className="font-semibold text-slate-500">Fecha</dt>
           <dd className="mt-1 min-w-0 break-words text-slate-900">{when.dates}</dd>
@@ -133,14 +158,14 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
       </dl>
 
       {studentOnly ? (
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="mt-auto flex flex-col gap-3 pt-6 sm:flex-row sm:items-center">
           <p className="inline-flex w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
             Actividad asignada
           </p>
           {activity.viewerAttendanceStatus ? <p className="text-sm font-semibold text-slate-700">Asistencia: {attendanceStatusLabels[activity.viewerAttendanceStatus]}</p> : null}
         </div>
       ) : (
-        <Link href={`/activities/${activity.id}`} className="mt-6 inline-flex cursor-pointer text-sm font-bold text-emerald-800 hover:text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+        <Link href={`/activities/${activity.id}`} className="mt-auto inline-flex cursor-pointer pt-6 text-sm font-bold text-emerald-800 hover:text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
           {activity.canEdit ? "Ver y editar →" : "Ver actividad →"}
         </Link>
       )}
