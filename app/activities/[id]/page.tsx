@@ -152,7 +152,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     : [{ token: null, error: null }, { state: null, error: null }, { deadline: null, hasPassed: false }];
   const activeCheckinState = checkinStateResult.state;
   const attendanceDeadlinePassed = checkinDeadlineResult.hasPassed;
-  const activeCheckin = !attendanceDeadlinePassed && activeCheckinState?.windowStatus === "open" ? activeCheckinResult.token : null;
+  const activeCheckin = activeCheckinResult.token;
   const directCheckinLink = activeCheckin ? (await requestOrigin()) + "/check-in/" + encodeURIComponent(activeCheckin.secret_token) : null;
   const displayedCheckinStatus = activeCheckinResult.error || checkinStateResult.error ? "fetch-error" : checkinStatus;
   const displayedCheckinDetail = activeCheckinResult.error ?? checkinStateResult.error ?? checkinDetail;

@@ -304,6 +304,6 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** quince minutos después de la hora de término de una actividad, SITAA finaliza de forma perezosa la asistencia pendiente y la marca como `absent` cuando se cargan actividades o se intenta registrar asistencia.
 
-**Consecuencias:** el botón estudiantil "Registrar asistencia" sólo aparece mientras la asistencia propia está en `pending`. Los estados `attended`, `absent` y `justified` no pueden modificarse mediante check-in QR, enlace o código. Una vez vencido el periodo, los accesos de QR/código dejan de mostrarse y `check_in_activity` informa que el periodo terminó. La corrección posterior queda en el flujo manual autorizado.
+**Consecuencias:** el botón estudiantil "Registrar asistencia" sólo aparece mientras la asistencia propia está en `pending`. Los estados `attended`, `absent` y `justified` no se modifican desde la tarjeta del alumno. Una vez vencido el periodo normal, un editor autorizado puede reabrir asistencia de forma extraordinaria por 15 minutos usando el mismo flujo QR/enlace/código. Durante esa reapertura, `check_in_activity` puede cambiar a `attended` a participantes marcados `absent` por el sistema, pero no sobreescribe ausencias manuales ni asistencias justificadas. La corrección posterior sigue disponible en el flujo manual autorizado.
 
 **Estado:** Aceptada.

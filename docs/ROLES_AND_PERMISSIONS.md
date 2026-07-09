@@ -102,4 +102,4 @@ Cada política comprobará identidad, asignación vigente, alcance, programa o d
 
 ## Expiración de asistencia
 
-Quince minutos después del término de la actividad, SITAA marca como `absent` las asistencias pendientes al cargar pantallas operativas o al intentar registrar asistencia. El QR, enlace y código dejan de aceptar registros después de ese vencimiento. La corrección posterior sólo puede realizarse mediante controles manuales autorizados.
+Quince minutos después del término de la actividad, SITAA marca como `absent` las asistencias pendientes al cargar pantallas operativas o al intentar registrar asistencia. Después de ese vencimiento, un editor autorizado puede reabrir asistencia de forma extraordinaria por 15 minutos. Esa reapertura permite que participantes marcados `absent` por el sistema confirmen asistencia por QR, enlace o código; no sobreescribe ausencias manuales ni asistencias justificadas. La corrección posterior también puede realizarse mediante controles manuales autorizados.

@@ -223,8 +223,8 @@ function checkinWindowMessage(state: ActivityAttendanceCheckinState | null, toke
     return opensAt ? `Podrás abrir asistencia desde: ${opensAt}.` : "La asistencia todavía no está disponible para esta actividad.";
   }
   if (state.windowStatus === "available") return "La asistencia ya puede abrirse.";
-  if (state.windowStatus === "reopen_available") return "La actividad ya terminó. Puedes reabrir asistencia por 15 minutos.";
-  if (["expired", "closed", "ended", "deadline_passed"].includes(state.windowStatus ?? "")) return "El periodo para registrar asistencia ya terminó.";
+  if (state.windowStatus === "reopen_available") return "El periodo normal de asistencia ya terminó. Puedes reabrir asistencia por 15 minutos.";
+  if (["expired", "closed", "ended", "deadline_passed"].includes(state.windowStatus ?? "")) return "El periodo normal de asistencia ya terminó. Puedes reabrir asistencia por 15 minutos.";
   if (state.windowStatus === "open") return "La asistencia está abierta.";
 
   return null;
@@ -259,11 +259,11 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
   };
   const isError = status?.includes("error") || status?.includes("forbidden") || status?.includes("draft") || false;
   const messageClass = isError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800";
-  const canOpenNow = !attendanceDeadlinePassed && !token && checkinState?.canOpenNow === true;
-  const isReopen = checkinState?.windowStatus === "reopen_available";
-  const openButtonLabel = isReopen ? "Reabrir asistencia por 15 minutos" : "Abrir asistencia";
+  const canOpenNow = !token && (checkinState?.canOpenNow === true || attendanceDeadlinePassed === true);
+  const isReopen = attendanceDeadlinePassed === true || checkinState?.windowStatus === "reopen_available";
+  const openButtonLabel = isReopen ? "Reabrir asistencia" : "Abrir asistencia";
   const openPendingLabel = isReopen ? "Reabriendo..." : "Abriendo...";
-  const windowMessage = attendanceDeadlinePassed ? "El periodo para registrar asistencia ya terminó." : checkinWindowMessage(checkinState, token);
+  const windowMessage = attendanceDeadlinePassed && !token ? "El periodo normal de asistencia ya terminó. Puedes reabrir asistencia por 15 minutos." : checkinWindowMessage(checkinState, token);
   const formattedOpensAt = formatMexicoCityDateTime(checkinState?.opensAt);
   const activeExpiresAt = token?.expires_at ?? checkinState?.activeExpiresAt ?? null;
   const formattedExpiresAt = formatMexicoCityDateTime(activeExpiresAt);
