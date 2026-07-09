@@ -31,7 +31,7 @@ type VisibleActivityCardRow = Partial<Activity> & {
   viewer_checked_in_at?: string | null;
 };
 
-type ActivityProgramFallback = Pick<Activity, "id" | "scope_type" | "division_id" | "program_id">;
+type ActivityProgramFallback = Pick<Activity, "id" | "scope_type" | "division_id" | "program_id" | "created_by" | "status_code">;
 
 function label(item: CatalogRow | undefined, fallback: string) {
   return item?.label?.trim() || item?.name?.trim() || fallback;
@@ -55,12 +55,13 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
   ]);
   if (error) throw new Error("No fue posible consultar las actividades.");
 
+  const { data: { user } } = await supabase.auth.getUser();
   const rows = (data ?? []) as VisibleActivityCardRow[];
   const activityIds = rows.map((row) => row.id ?? row.activity_id).filter((id): id is string => Boolean(id));
   const { data: fallbackRows } = activityIds.length
     ? await supabase
         .from("activities")
-        .select("id, scope_type, division_id, program_id")
+        .select("id, scope_type, division_id, program_id, created_by, status_code")
         .in("id", activityIds)
     : { data: [] as ActivityProgramFallback[] };
   const activityFallbacks = new Map(
@@ -85,9 +86,10 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
     const activityTypeCode = row.activity_type_code ?? "";
     const serviceTypeCode = row.service_type_code ?? "";
     const modalityCode = row.modality_code ?? "";
-    const statusCode = row.status_code ?? "";
+    const statusCode = row.status_code ?? fallback?.status_code ?? "";
     const categoryCode = row.attention_category_code ?? null;
     const locationCode = row.location_type_code ?? null;
+    const createdBy = row.created_by ?? fallback?.created_by ?? (statusCode === "draft" ? user?.id ?? "" : "");
     const programLabel = firstText(
       row.program_name,
       row.program_label,
@@ -117,7 +119,7 @@ export async function getVisibleActivities(): Promise<ActivityListItem[]> {
       starts_at: row.starts_at ?? null,
       ends_at: row.ends_at ?? null,
       responsible_profile_id: row.responsible_profile_id ?? "",
-      created_by: row.created_by ?? "",
+      created_by: createdBy,
       status_code: statusCode,
       created_at: row.created_at,
       updated_at: row.updated_at,
