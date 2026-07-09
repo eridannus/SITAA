@@ -26,10 +26,10 @@ function ConfirmableCheckinAction({ activityId, kind }: { activityId: string; ki
   const config = kind === "regenerate"
     ? {
       action: regenerateAttendanceCheckin.bind(null, activityId),
-      triggerLabel: "Regenerar c?digo",
-      confirmLabel: "Regenerar c?digo",
+      triggerLabel: "Regenerar código",
+      confirmLabel: "Regenerar código",
       pendingLabel: "Regenerando...",
-      message: "El c?digo anterior dejar? de funcionar. ?Quieres generar uno nuevo?",
+      message: "El código anterior dejará de funcionar. ¿Quieres generar uno nuevo?",
       tone: "neutral" as const,
     }
     : {
@@ -37,7 +37,7 @@ function ConfirmableCheckinAction({ activityId, kind }: { activityId: string; ki
       triggerLabel: "Cerrar asistencia",
       confirmLabel: "Cerrar asistencia",
       pendingLabel: "Cerrando...",
-      message: "Los alumnos ya no podr?n registrar asistencia con este c?digo.",
+      message: "Los alumnos ya no podrán registrar asistencia con este código.",
       tone: "danger" as const,
     };
   const triggerColor = config.tone === "danger" ? "border-red-300 text-red-800 hover:border-red-700 hover:text-red-950" : "border-slate-300 text-slate-800 hover:border-emerald-700 hover:text-emerald-900";

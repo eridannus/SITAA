@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run check:text && next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check:text": "node scripts/check-text-integrity.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

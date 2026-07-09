@@ -20,6 +20,8 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 ## Reglas de trabajo
 
 - Usar español en documentación, interfaz y mensajes dirigidos al usuario, salvo nombres técnicos inevitables.
+- Todo texto visible en español debe guardarse como UTF-8; no reemplazar acentos, eñes ni signos de apertura con `?`.
+- Después de editar textos de interfaz o documentación en español, ejecutar `npm run check:text`.
 - Mantener TypeScript en modo estricto cuando se inicialice el proyecto.
 - Diseñar para Next.js con App Router, Tailwind CSS y Supabase.
 - Aplicar autorización en la base de datos mediante Row Level Security (RLS); ocultar controles en la interfaz no cuenta como autorización.
