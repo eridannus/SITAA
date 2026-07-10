@@ -289,7 +289,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 ## Plantilla para nuevas decisiones
 
-### DEC-XXX ? Título
+### DEC-XXX — Título
 
 **Contexto:** por qué se necesita decidir.
 
@@ -302,8 +302,8 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 ## DEC-029 — Expiración automática de asistencia pendiente
 
-**Decisión:** quince minutos después de la hora de término de una actividad, SITAA finaliza de forma perezosa la asistencia pendiente y la marca como `absent` cuando se cargan actividades o se intenta registrar asistencia.
+**Decisión:** `pending` es un estado temporal. Quince minutos después de la hora de término de una actividad, SITAA finaliza de forma perezosa toda asistencia pendiente y la marca como `absent` con fuente `system` cuando se cargan actividades o se intenta registrar asistencia.
 
-**Consecuencias:** el botón estudiantil "Registrar asistencia" sólo aparece mientras la asistencia propia está en `pending`. Los estados `attended`, `absent` y `justified` no se modifican desde la tarjeta del alumno. Una vez vencido el periodo normal, un editor autorizado puede reabrir asistencia de forma extraordinaria por 15 minutos usando el mismo flujo QR/enlace/código. Durante esa reapertura, `check_in_activity` puede cambiar a `attended` a participantes marcados `absent` por el sistema, pero no sobreescribe ausencias manuales ni asistencias justificadas. La corrección posterior sigue disponible en el flujo manual autorizado.
+**Consecuencias:** para indicadores y reportes, una actividad vencida no debe conservar asistencia pendiente indefinida. Después del vencimiento normal, los estados finales esperados son `attended`, `absent` o `justified`. La interfaz de asistencia manual oculta `pending` cuando la ventana ya expiró y el servidor rechaza intentos de volver a dejar registros en pendiente. El botón estudiantil "Registrar asistencia" sólo aparece mientras la asistencia propia está en `pending`. Una vez vencido el periodo normal, un editor autorizado puede reabrir asistencia de forma extraordinaria por 15 minutos usando el mismo flujo QR/enlace/código. Durante esa reapertura, `check_in_activity` puede cambiar a `attended` a participantes marcados `absent` por el sistema, pero no sobreescribe ausencias manuales ni asistencias justificadas. La corrección posterior sigue disponible en el flujo manual autorizado.
 
 **Estado:** Aceptada.

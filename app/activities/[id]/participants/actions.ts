@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { canManageActivityScope } from "@/lib/activities/activity-scope-permissions";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
+import { getActivityAttendanceDeadline } from "@/lib/activities/get-attendance-checkin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Activity, ActivityFormValues } from "@/types/activities";
 import type { AttendanceStatus, ParticipantMutationState, ParticipantSearchState, ParticipationProfileSearchResult } from "@/types/participants";
@@ -20,6 +21,15 @@ function normalizePersonType(value: unknown): PersonType | null {
 
 function normalizeInstitutionalIdType(value: unknown): InstitutionalIdType | null {
   return typeof value === "string" && institutionalIdTypes.has(value as InstitutionalIdType) ? value as InstitutionalIdType : null;
+}
+
+async function isAttendanceWindowExpired(activityId: string) {
+  const deadline = await getActivityAttendanceDeadline(activityId);
+  return deadline.hasPassed;
+}
+
+function pendingAfterExpirationError() {
+  return "La ventana de asistencia ya terminó. No es posible dejar registros en Pendiente.";
 }
 
 function activityValues(activity: Activity): ActivityFormValues {
@@ -166,6 +176,7 @@ export async function updateParticipantAttendance(
 
   const editor = await requireEditor(activityId);
   if (!editor) return { error: "No tienes permiso para modificar la asistencia de esta actividad." };
+  if (status === "pending" && await isAttendanceWindowExpired(activityId)) return { error: pendingAfterExpirationError() };
 
   const { error } = await editor.supabase.rpc("update_activity_participant_attendance", {
     target_participant_id: participantId,
@@ -197,6 +208,7 @@ export async function updateParticipantsAttendanceBulk(
 
   const editor = await requireEditor(activityId);
   if (!editor) return { error: "No tienes permiso para modificar la asistencia de esta actividad." };
+  if (status === "pending" && await isAttendanceWindowExpired(activityId)) return { error: pendingAfterExpirationError() };
 
   const { error } = await editor.supabase.rpc("update_activity_participants_attendance_bulk", {
     target_activity_id: activityId,

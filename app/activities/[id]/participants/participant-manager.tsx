@@ -63,12 +63,31 @@ function rolesForPersonType(roles: ParticipantRole[], personType: string) {
   return roles;
 }
 
+const attendanceStatusOptions: Array<{ status: AttendanceStatus; label: string }> = [
+  { status: "pending", label: "Pendiente" },
+  { status: "attended", label: "Asistió" },
+  { status: "absent", label: "No asistió" },
+  { status: "justified", label: "Justificada" },
+];
+
 const bulkActions: Array<{ status: AttendanceStatus; label: string }> = [
   { status: "attended", label: "Marcar como Asistió" },
   { status: "absent", label: "Marcar como No asistió" },
   { status: "pending", label: "Marcar como Pendiente" },
   { status: "justified", label: "Marcar como Justificada" },
 ];
+
+function availableAttendanceStatusOptions(attendanceWindowExpired: boolean) {
+  return attendanceWindowExpired
+    ? attendanceStatusOptions.filter((item) => item.status !== "pending")
+    : attendanceStatusOptions;
+}
+
+function availableBulkActions(attendanceWindowExpired: boolean) {
+  return attendanceWindowExpired
+    ? bulkActions.filter((item) => item.status !== "pending")
+    : bulkActions;
+}
 
 function formatDateTime(value: string | null) {
   if (!value) return null;
@@ -120,18 +139,21 @@ function RemoveSubmitButton() {
   return <button type="submit" disabled={pending} className="text-sm font-bold text-red-700 disabled:cursor-not-allowed disabled:text-slate-400 hover:text-red-900 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2">{pending ? "Eliminando…" : "Retirar participante"}</button>;
 }
 
-function AttendanceForm({ activityId, participant }: { activityId: string; participant: ActivityParticipantDisplay }) {
+function AttendanceForm({ activityId, participant, attendanceWindowExpired }: { activityId: string; participant: ActivityParticipantDisplay; attendanceWindowExpired: boolean }) {
   const [state, action] = useActionState<ParticipantMutationState, FormData>(
     updateParticipantAttendance.bind(null, activityId, participant.id),
     { error: null },
   );
+  const defaultAttendanceStatus = attendanceWindowExpired && participant.attendance_status === "pending"
+    ? "absent"
+    : participant.attendance_status ?? "pending";
 
   return <form action={action} className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
     <div className="grid gap-4">
       <div>
         <label htmlFor={`attendance-status-${participant.id}`} className="block text-sm font-semibold text-slate-700">Estado de asistencia</label>
-        <select id={`attendance-status-${participant.id}`} name="attendance_status" defaultValue={participant.attendance_status ?? "pending"} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm">
-          {Object.entries(attendanceStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        <select id={`attendance-status-${participant.id}`} name="attendance_status" defaultValue={defaultAttendanceStatus} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm">
+          {availableAttendanceStatusOptions(attendanceWindowExpired).map((item) => <option key={item.status} value={item.status}>{item.label}</option>)}
         </select>
       </div>
       <div>
@@ -176,7 +198,7 @@ function AddParticipantForm({ activityId, result, roles }: {
   </form>;
 }
 
-function AttendanceListView({ activityId, participants }: { activityId: string; participants: ActivityParticipantDisplay[] }) {
+function AttendanceListView({ activityId, participants, attendanceWindowExpired }: { activityId: string; participants: ActivityParticipantDisplay[]; attendanceWindowExpired: boolean }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [state, action] = useActionState<ParticipantMutationState, FormData>(
     updateParticipantsAttendanceBulk.bind(null, activityId),
@@ -202,7 +224,7 @@ function AttendanceListView({ activityId, participants }: { activityId: string; 
     <form action={action} className="mt-4">
       {selectedIds.map((id) => <input key={id} type="hidden" name="participant_ids" value={id} />)}
       <div className="flex flex-wrap gap-2">
-        {bulkActions.map((item) => <BulkButton key={item.status} status={item.status} label={item.label} disabled={!selectedIds.length} />)}
+        {availableBulkActions(attendanceWindowExpired).map((item) => <BulkButton key={item.status} status={item.status} label={item.label} disabled={!selectedIds.length} />)}
       </div>
       {state.error && <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{state.error}</p>}
     </form>
@@ -236,12 +258,13 @@ function AttendanceListView({ activityId, participants }: { activityId: string; 
   </div>;
 }
 
-export function ParticipantManager({ activityId, participants, roles, canEdit, status }: {
+export function ParticipantManager({ activityId, participants, roles, canEdit, status, attendanceWindowExpired = false }: {
   activityId: string;
   participants: ActivityParticipantDisplay[];
   roles: ParticipantRole[];
   canEdit: boolean;
   status?: string;
+  attendanceWindowExpired?: boolean;
 }) {
   const [viewMode, setViewMode] = useState<"detail" | "attendance">("detail");
   const [searchState, searchAction, searchPending] = useActionState<ParticipantSearchState, FormData>(
@@ -281,13 +304,14 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
       </div>}
     </div>
     {status && statusMessages[status] && <div role={status.includes("error") || status.includes("forbidden") || status === "duplicate" || status === "invalid" ? "alert" : "status"} className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">{statusMessages[status]}</div>}
+    {canEdit && attendanceWindowExpired ? <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">La ventana de asistencia ya terminó. Los registros pendientes se marcarán como No asistió.</p> : null}
 
     {canEdit && participants.length > 0 && <div className="mt-7 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
       <button type="button" onClick={() => setViewMode("detail")} className={`cursor-pointer rounded-full px-4 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${viewMode === "detail" ? "bg-white text-emerald-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>Detalle</button>
       <button type="button" onClick={() => setViewMode("attendance")} className={`cursor-pointer rounded-full px-4 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${viewMode === "attendance" ? "bg-white text-emerald-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>Pase de lista</button>
     </div>}
 
-    {participants.length ? (viewMode === "attendance" && canEdit ? <AttendanceListView activityId={activityId} participants={participants} /> : <div className="mt-7 grid gap-4 md:grid-cols-2">{participants.map((participant) => {
+    {participants.length ? (viewMode === "attendance" && canEdit ? <AttendanceListView activityId={activityId} participants={participants} attendanceWindowExpired={attendanceWindowExpired} /> : <div className="mt-7 grid gap-4 md:grid-cols-2">{participants.map((participant) => {
       const updatedAt = formatDateTime(participant.attendance_updated_at);
       return <article key={participant.id} className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-5">
         <h3 className="break-words font-bold text-slate-900">{participant.full_name}</h3>
@@ -301,7 +325,7 @@ export function ParticipantManager({ activityId, participants, roles, canEdit, s
           {updatedAt && <div className="min-w-0"><dt className="font-semibold text-slate-500">Actualización</dt><dd className="break-words text-slate-900">{updatedAt}</dd></div>}
           {participant.attendance_notes && <div className="min-w-0"><dt className="font-semibold text-slate-500">Notas</dt><dd className="break-words text-slate-900">{participant.attendance_notes}</dd></div>}
         </dl>
-        {canEdit && <AttendanceForm activityId={activityId} participant={participant} />}
+        {canEdit && <AttendanceForm activityId={activityId} participant={participant} attendanceWindowExpired={attendanceWindowExpired} />}
         {canEdit && <div className="mt-4"><RemoveButton activityId={activityId} participantId={participant.id} /></div>}
       </article>;
     })}</div>) : <p className="mt-7 rounded-2xl bg-slate-50 p-5 text-slate-600">Aún no hay participantes registrados en esta actividad.</p>}

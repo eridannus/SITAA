@@ -21,13 +21,13 @@ Los permisos se aplicarán con RLS en Supabase. No existe un rol fijo en `profil
 
 Cada asignación incluye usuario, rol, vigencia, alcance (`own`, `program`, `division`, `system`), área de servicio (`tutoring`, `advising`, `both`, `logistics`, `technical`) y la referencia institucional que corresponda.
 
-Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al vencer la segunda asignación, mantiene solo sus permisos de alumno.
+Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al vencer la segunda asignación, mantiene sólo sus permisos de alumno.
 
 ## Identidad frente a autorización
 
 - `student` y `worker` son tipos de persona; no sustituyen las asignaciones de rol.
 - El alumno se identifica con número de cuenta y puede recibir o perder `peer_tutor` sin modificar su identidad base.
-- El trabajador se identifica con número de trabajador y puede recibir `professor`, responsabilidades de coordinaci?n, jefatura, secretar?a técnica u otras asignaciones autorizadas.
+- El trabajador se identifica con número de trabajador y puede recibir `professor`, responsabilidades de coordinación, jefatura, secretaría técnica u otras asignaciones autorizadas.
 - El programa principal describe afiliación y no concede permisos por sí mismo.
 
 ## Editores de formularios
@@ -38,7 +38,7 @@ Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al ve
 - `program_head` interviene solo cuando el flujo institucional le asigna aprobación o supervisión; no decide por defecto el contenido académico.
 - `technical_admin` brinda soporte al constructor y al versionado, pero no decide campos académicos ni su obligatoriedad.
 
-La selecci?n de campos obligatorios corresponde a acuerdos colegiados o institucionales. Publicar una nueva configuración crea una versi?n; no modifica formularios ya respondidos.
+La selección de campos obligatorios corresponde a acuerdos colegiados o institucionales. Publicar una nueva configuración crea una versión; no modifica formularios ya respondidos.
 
 ## Reglas de acceso
 
@@ -58,7 +58,7 @@ La selecci?n de campos obligatorios corresponde a acuerdos colegiados o instituc
 - La interfaz no sustituye RLS.
 
 
-## Creaci?n y edición de actividades
+## Creación y edición de actividades
 
 - professor y peer_tutor operan únicamente en su programa académico principal y en el área de servicio de su asignación.
 - program_tutoring_lead opera tutorías en el programa asignado.
@@ -102,4 +102,4 @@ Cada política comprobará identidad, asignación vigente, alcance, programa o d
 
 ## Expiración de asistencia
 
-Quince minutos después del término de la actividad, SITAA marca como `absent` las asistencias pendientes al cargar pantallas operativas o al intentar registrar asistencia. Después de ese vencimiento, un editor autorizado puede reabrir asistencia de forma extraordinaria por 15 minutos. Esa reapertura permite que participantes marcados `absent` por el sistema confirmen asistencia por QR, enlace o código; no sobreescribe ausencias manuales ni asistencias justificadas. La corrección posterior también puede realizarse mediante controles manuales autorizados.
+Quince minutos después del término de la actividad, SITAA marca como `absent` con fuente `system` toda asistencia pendiente al cargar pantallas operativas o al intentar registrar asistencia. Desde ese momento, `pending` deja de estar disponible en controles manuales individuales y en acciones masivas; responsables y editores autorizados pueden corregir a `attended`, `absent` o `justified`, pero no dejar la asistencia vencida nuevamente en pendiente. Después del vencimiento, un editor autorizado puede reabrir asistencia de forma extraordinaria por 15 minutos. Esa reapertura permite que participantes marcados `absent` por el sistema confirmen asistencia por QR, enlace o código; no sobreescribe ausencias manuales ni asistencias justificadas. La corrección posterior también puede realizarse mediante controles manuales autorizados.

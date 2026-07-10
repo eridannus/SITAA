@@ -200,7 +200,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
 
     {canManageParticipants && (participantsError
       ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>
-      : <ParticipantManager activityId={id} participants={participants} roles={roles} canEdit status={participantStatus} />)}
+      : <ParticipantManager activityId={id} participants={participants} roles={roles} canEdit status={participantStatus} attendanceWindowExpired={attendanceDeadlinePassed} />)}
 
     {canDeleteActivityRecord && <section className="mt-10 rounded-3xl border border-red-200 bg-red-50 p-7 sm:p-10"><h2 className="text-xl font-bold text-red-950">Eliminar actividad</h2><p className="mt-3 text-red-800">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold text-red-800">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
   </main>;
