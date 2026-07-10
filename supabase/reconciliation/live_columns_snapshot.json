@@ -1,0 +1,702 @@
+[
+  {
+    "table_name": "academic_periods",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "academic_periods",
+    "column_name": "code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "academic_periods",
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "academic_periods",
+    "column_name": "starts_on",
+    "data_type": "date",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "academic_periods",
+    "column_name": "ends_on",
+    "data_type": "date",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "academic_periods",
+    "column_name": "is_active",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "academic_periods",
+    "column_name": "sort_order",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "academic_periods",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "academic_periods",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "academic_programs",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "academic_programs",
+    "column_name": "division_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "academic_programs",
+    "column_name": "code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "academic_programs",
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "academic_programs",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "title",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "description",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "academic_period_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "program_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "activity_type_code",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "service_type_code",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "attention_category_code",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "modality_code",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "status_code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "'draft'::text"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "location_type_code",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "location_detail",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "starts_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "ends_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "responsible_profile_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "created_by",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "auth.uid()"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "updated_by",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "start_date",
+    "data_type": "date",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "start_time",
+    "data_type": "time without time zone",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "end_date",
+    "data_type": "date",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "end_time",
+    "data_type": "time without time zone",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "duration_mode",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "scope_type",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": "'program'::text"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "division_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "activity_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "token_type",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "'attendance'::text"
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "code_words",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "secret_token",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "(gen_random_uuid())::text"
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "is_active",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "opened_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "closed_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "expires_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "created_by",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "auth.uid()"
+  },
+  {
+    "table_name": "activity_checkin_tokens",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_modalities",
+    "column_name": "code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_modalities",
+    "column_name": "label",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_modalities",
+    "column_name": "description",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_modalities",
+    "column_name": "sort_order",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "activity_modalities",
+    "column_name": "is_active",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "activity_modalities",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_modalities",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "activity_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "profile_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "participant_role_code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "added_by",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "auth.uid()"
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "attendance_status",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "'pending'::text"
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "attendance_source",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "'system'::text"
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "checked_in_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "attendance_updated_by",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "attendance_updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_participants",
+    "column_name": "attendance_notes",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_statuses",
+    "column_name": "code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_statuses",
+    "column_name": "label",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_statuses",
+    "column_name": "description",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_statuses",
+    "column_name": "sort_order",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "activity_statuses",
+    "column_name": "is_active",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "activity_statuses",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_statuses",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_types",
+    "column_name": "code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_types",
+    "column_name": "label",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_types",
+    "column_name": "description",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activity_types",
+    "column_name": "sort_order",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "activity_types",
+    "column_name": "is_active",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "activity_types",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activity_types",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "attention_categories",
+    "column_name": "code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "attention_categories",
+    "column_name": "label",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "attention_categories",
+    "column_name": "description",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "attention_categories",
+    "column_name": "sort_order",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "attention_categories",
+    "column_name": "is_active",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "attention_categories",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "attention_categories",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "divisions",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "divisions",
+    "column_name": "code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "divisions",
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "divisions",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "location_types",
+    "column_name": "code",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "location_types",
+    "column_name": "label",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "location_types",
+    "column_name": "description",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "location_types",
+    "column_name": "sort_order",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "column_default": "0"
+  }
+]

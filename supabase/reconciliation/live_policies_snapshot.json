@@ -1,0 +1,232 @@
+[
+  {
+    "schemaname": "public",
+    "tablename": "academic_periods",
+    "policyname": "Authenticated users can read academic periods",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "academic_programs",
+    "policyname": "Authenticated users can read academic programs",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activities",
+    "policyname": "Authorized users can create activities",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "((created_by = auth.uid()) AND can_create_activity(scope_type, program_id, division_id, service_type_code))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activities",
+    "policyname": "Authorized users can delete activities",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "DELETE",
+    "qual": "can_delete_activity(id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activities",
+    "policyname": "Authorized users can update activities",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "UPDATE",
+    "qual": "can_update_activity_base(id)",
+    "with_check": "can_update_activity_base(id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activities",
+    "policyname": "Users can read permitted activities",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "((created_by = auth.uid()) OR (responsible_profile_id = auth.uid()) OR is_activity_participant(id) OR can_manage_activity(scope_type, program_id, division_id, service_type_code))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activity_modalities",
+    "policyname": "Authenticated users can read activity modalities",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activity_participants",
+    "policyname": "Users can add permitted activity participants",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "can_edit_activity(activity_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activity_participants",
+    "policyname": "Users can delete permitted activity participants",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "DELETE",
+    "qual": "can_edit_activity(activity_id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activity_participants",
+    "policyname": "Users can read permitted activity participants",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "((profile_id = auth.uid()) OR can_read_activity(activity_id))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activity_participants",
+    "policyname": "Users can update permitted activity participants",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "UPDATE",
+    "qual": "can_edit_activity(activity_id)",
+    "with_check": "can_edit_activity(activity_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activity_statuses",
+    "policyname": "Authenticated users can read activity statuses",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "activity_types",
+    "policyname": "Authenticated users can read activity types",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "attention_categories",
+    "policyname": "Authenticated users can read attention categories",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "divisions",
+    "policyname": "Authenticated users can read divisions",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "location_types",
+    "policyname": "Authenticated users can read location types",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "participant_roles",
+    "policyname": "Authenticated users can read participant roles",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "profiles",
+    "policyname": "Users can read own profile",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "(auth.uid() = id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "profiles",
+    "policyname": "Users can update own basic profile",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "UPDATE",
+    "qual": "(auth.uid() = id)",
+    "with_check": "(auth.uid() = id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "role_assignments",
+    "policyname": "Users can read own role assignments",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "roles",
+    "policyname": "Authenticated users can read roles",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "service_types",
+    "policyname": "Authenticated users can read service types",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "system_health",
+    "policyname": "Allow public read for system health",
+    "permissive": "PERMISSIVE",
+    "roles": "{anon}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  }
+]
