@@ -41,6 +41,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-027 | Etiqueta compartida para QR y enlace directo | Aceptada |
 | DEC-028 | Ventanas de tiempo para check-in de asistencia | Aceptada |
 | DEC-029 | Expiración automática de asistencia pendiente | Aceptada |
+| DEC-030 | Migraciones SQL versionadas en repositorio | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -305,5 +306,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** `pending` es un estado temporal. Quince minutos después de la hora de término de una actividad, SITAA finaliza de forma perezosa toda asistencia pendiente y la marca como `absent` con fuente `system` cuando se cargan actividades o se intenta registrar asistencia.
 
 **Consecuencias:** para indicadores y reportes, una actividad vencida no debe conservar asistencia pendiente indefinida. Después del vencimiento normal, los estados finales esperados son `attended`, `absent` o `justified`. La interfaz de asistencia manual oculta `pending` cuando la ventana ya expiró y el servidor rechaza intentos de volver a dejar registros en pendiente. El botón estudiantil "Registrar asistencia" sólo aparece mientras la asistencia propia está en `pending`. Una vez vencido el periodo normal, un editor autorizado puede reabrir asistencia de forma extraordinaria por 15 minutos usando el mismo flujo QR/enlace/código. Durante esa reapertura, `check_in_activity` puede cambiar a `attended` a participantes marcados `absent` por el sistema, pero no sobreescribe ausencias manuales ni asistencias justificadas. La corrección posterior sigue disponible en el flujo manual autorizado.
+
+**Estado:** Aceptada.
+
+## DEC-030 — Migraciones SQL versionadas en repositorio
+
+**Contexto:** durante el prototipo, varios cambios SQL de Supabase se aplicaron manualmente. Para reducir deriva entre entorno vivo y repositorio, SITAA necesita convertir las migraciones en fuente de verdad verificable.
+
+**Decisión:** a partir de esta etapa, todo cambio de base de datos debe registrarse como archivo SQL numerado en `supabase/migrations/`. La primera migración pendiente será `0001_baseline_current_schema.sql`, generada a partir del estado vivo reconciliado de Supabase. Si una migración se aplica manualmente desde el SQL Editor, el archivo SQL debe quedar comprometido igualmente en el repositorio.
+
+**Consecuencias:** no se crearán migraciones destructivas ni SQL basado en suposiciones. La documentación `docs/DATABASE_STATE.md` y `docs/DATABASE_CHANGELOG.md` guiará la reconciliación hasta que la baseline exista. Después de la baseline, el historial de cambios SQL deberá revisarse junto con el código y la documentación del producto.
 
 **Estado:** Aceptada.
