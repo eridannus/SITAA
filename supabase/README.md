@@ -36,3 +36,22 @@ Hasta que exista esa baseline, los archivos de documentación en `docs/DATABASE_
 La migración `supabase/migrations/0001_baseline_current_schema.sql` fue generada desde los snapshots en `supabase/reconciliation/`. Representa el estado conocido del proyecto vivo al momento de la reconciliación, pero conserva TODOs para objetos no cubiertos por los snapshots: constraints, índices, triggers, grants, datos semilla y tablas mencionadas por políticas sin columnas capturadas.
 
 Esta baseline debe revisarse antes de ejecutarse automáticamente en cualquier entorno. Su objetivo principal es fijar un punto de partida verificable para que los cambios futuros sí queden versionados en el repositorio.
+## Snapshots remotos desde setup de Codex
+
+Codex puede generar snapshots del Supabase vivo durante la fase de setup mediante:
+
+```bash
+bash scripts/pull-supabase-snapshot.sh
+```
+
+En Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/pull-supabase-snapshot.ps1
+```
+
+El entorno debe proporcionar `SUPABASE_DB_URL` como secreto. Ese valor sólo se usa durante el setup, no debe imprimirse, no debe guardarse en archivos y nunca debe comprometerse en Git.
+
+El script usa un flujo de sólo lectura para producir archivos en `supabase/reconciliation/live/`. Si Supabase CLI o `supabase db dump` no están disponibles, falla con instrucciones en lugar de producir un snapshot parcial silencioso. Si `psql` está disponible, también genera snapshots separados de funciones, políticas, tablas, columnas, constraints, índices y triggers mediante transacciones `read only`.
+
+Estos snapshots sirven para construir o revisar migraciones versionadas. Aplicar migraciones a Supabase permanece como paso manual y revisado por ahora. El flujo de snapshots no ejecuta `supabase db push`, `supabase db reset` ni reparación automática de historial remoto.
