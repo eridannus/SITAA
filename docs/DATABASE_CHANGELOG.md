@@ -4,13 +4,15 @@ Los cambios SQL anteriores a la migración baseline fueron aplicados manualmente
 
 ## Baseline pendiente
 
-El siguiente paso es capturar el estado actual de Supabase en una migración baseline:
+La baseline inicial ya fue generada desde snapshots vivos y queda pendiente de revisión antes de ejecutarse automáticamente contra cualquier entorno.
 
-- `supabase/migrations/0001_baseline_current_schema.sql`
+## 0001_baseline_current_schema.sql
 
-Esa migración debe generarse o redactarse a partir del esquema vivo verificado, no desde memoria ni desde inferencias parciales. Debe reconciliar tablas, vistas o RPC, funciones, políticas RLS, índices, triggers, catálogos mínimos y cualquier objeto necesario para reproducir el estado actual de SITAA.
-
-Hasta completar la baseline, este changelog sólo documenta que el historial previo existe fuera del repositorio y debe reconciliarse.
+- Fecha: 2026-07-10
+- Propósito: documentar el estado vivo de Supabase después del prototipo manual y establecer el punto de partida para migraciones versionadas.
+- Objetos afectados: tablas públicas capturadas por columnas, funciones públicas disponibles en snapshot y políticas RLS públicas.
+- Aplicado en Supabase: no desde el repositorio; el estado ya existía por cambios manuales del prototipo.
+- Observaciones: migración no destructiva generada desde `supabase/reconciliation/live_columns_snapshot.json`, `live_functions_snapshot.json` y `live_policies_snapshot.json`. Incluye TODOs para constraints, índices, triggers, grants, datos semilla y tablas mencionadas por políticas pero ausentes en el snapshot de columnas.
 
 ## Cambios posteriores
 

@@ -30,3 +30,9 @@ Hasta que exista esa baseline, los archivos de documentación en `docs/DATABASE_
 - No crear migraciones destructivas sin revisión explícita.
 - No depender sólo de cambios manuales en Supabase: el repositorio debe convertirse en la fuente de verdad.
 - Toda migración debe ser revisable y, cuando aplique, acompañarse de notas en la documentación del modelo o decisiones.
+
+## Baseline generada desde snapshots vivos
+
+La migración `supabase/migrations/0001_baseline_current_schema.sql` fue generada desde los snapshots en `supabase/reconciliation/`. Representa el estado conocido del proyecto vivo al momento de la reconciliación, pero conserva TODOs para objetos no cubiertos por los snapshots: constraints, índices, triggers, grants, datos semilla y tablas mencionadas por políticas sin columnas capturadas.
+
+Esta baseline debe revisarse antes de ejecutarse automáticamente en cualquier entorno. Su objetivo principal es fijar un punto de partida verificable para que los cambios futuros sí queden versionados en el repositorio.

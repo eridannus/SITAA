@@ -1,65 +1,92 @@
 # Estado conocido de base de datos
 
-**Estado:** pendiente de reconciliar contra Supabase vivo.
+**Estado:** reconciliado parcialmente contra snapshots vivos de Supabase.
 
-Este documento resume los módulos de base de datos conocidos por la aplicación y la documentación de SITAA. No sustituye una migración SQL baseline ni debe tratarse como definición exacta del esquema.
+Este documento resume el estado capturado desde los snapshots ubicados en `supabase/reconciliation/`. La baseline `supabase/migrations/0001_baseline_current_schema.sql` fue generada desde esos archivos. La reconciliación es parcial porque los snapshots disponibles cubren columnas, funciones y políticas RLS, pero no incluyen constraints, índices, triggers, grants ni datos semilla.
+
+## Snapshots usados
+
+- `live_columns_snapshot.json`: columnas públicas capturadas desde `information_schema.columns`.
+- `live_functions_snapshot.json`: funciones públicas capturadas con `pg_get_functiondef`.
+- `live_policies_snapshot.json`: políticas RLS públicas capturadas desde `pg_policies`.
+- `live_snapshot_queries.sql`: consultas usadas para generar los snapshots.
+
+## Tablas capturadas por columnas
+
+- `public.academic_periods`
+- `public.academic_programs`
+- `public.activities`
+- `public.activity_checkin_tokens`
+- `public.activity_modalities`
+- `public.activity_participants`
+- `public.activity_statuses`
+- `public.activity_types`
+- `public.attention_categories`
+- `public.divisions`
+- `public.location_types`
+
+## Tablas mencionadas por políticas pero pendientes de columnas
+
+- `public.participant_roles`
+- `public.profiles`
+- `public.role_assignments`
+- `public.roles`
+- `public.service_types`
+- `public.system_health`
+
+Estas tablas aparecen en políticas RLS o en módulos conocidos, pero no tienen definición de columnas en el snapshot disponible. No se reconstruyeron en la baseline para evitar inventar SQL.
 
 ## Módulos conocidos
 
 ### Health check
 
-Existe una verificación básica de conexión con Supabase mediante una tabla pública de salud del sistema.
+Existe una verificación básica de conexión con Supabase mediante una tabla pública de salud del sistema. Su política aparece en el snapshot, pero sus columnas no fueron capturadas.
 
 ### Roles y asignaciones de rol
 
-SITAA usa un catálogo de roles y asignaciones múltiples en el tiempo. Los perfiles no almacenan un rol fijo. Las asignaciones consideran vigencia, alcance, área de servicio y relación con programa, división o sistema.
+Las políticas mencionan `roles` y `role_assignments`. SITAA usa roles mediante asignaciones múltiples y acotadas, pero las columnas de estas tablas no están en el snapshot de columnas.
 
 ### Perfiles
 
-Los perfiles representan identidad institucional estable: nombres, apellidos, nombre completo, correo, tipo de persona, identificador institucional y programa académico principal. El semestre no pertenece al perfil.
+Las políticas mencionan `profiles`. El modelo documentado conserva identidad institucional estable, pero sus columnas no están en el snapshot de columnas y deben reconciliarse contra Supabase vivo.
 
 ### Divisiones y programas académicos
 
-El modelo distingue divisiones y programas académicos. En el MVP, las actividades operativas pertenecen a un programa específico, principalmente Diseño Gráfico o Arquitectura.
+`divisions` y `academic_programs` sí fueron capturadas por columnas. Se requieren constraints y relaciones reales para completar la baseline reproductible.
 
 ### Periodos académicos / semestres
 
-`academic_periods` representa semestres oficiales. SITAA asigna el semestre automáticamente desde la fecha de inicio de la actividad usando rangos registrados y reglas institucionales.
+`academic_periods` sí fue capturada por columnas. Las funciones de semestre fueron preservadas desde el snapshot de funciones.
 
 ### Catálogos operativos
 
-SITAA usa catálogos controlados para tipos de actividad, tipos de servicio, categorías de atención, modalidades, estados, tipos de ubicación y roles de participante.
+Se capturaron por columnas: `activity_types`, `attention_categories`, `activity_modalities`, `activity_statuses` y `location_types`. `service_types` y `participant_roles` aparecen en políticas, pero no en columnas.
 
 ### Actividades
 
-`activities` es el núcleo operativo. Registra planeación, programa, división, responsable, fechas, horarios, duración, estado y campos relacionados con el semestre.
+`activities` fue capturada por columnas. Las funciones relacionadas con visibilidad, edición, borrador/publicación, horarios y asistencia fueron preservadas desde el snapshot de funciones.
 
 ### Participantes de actividad
 
-`activity_participants` vincula actividades con perfiles SITAA registrados y un rol de participante. No se admiten participantes libres de texto como flujo normal.
+`activity_participants` fue capturada por columnas e incluye campos de asistencia manual, fuente, notas y marcas de actualización.
 
 ### Asistencia manual
 
-La asistencia puede actualizarse manualmente por responsables o editores autorizados. Los estados conocidos son `pending`, `attended`, `absent` y `justified`; `pending` es temporal.
+La baseline preserva columnas de asistencia en `activity_participants` y funciones RPC relacionadas con actualización individual y masiva.
 
 ### Tokens de asistencia por QR/código
 
-SITAA usa tokens de check-in para confirmar asistencia mediante QR, enlace directo o código de tres palabras. Estos mecanismos sólo aplican a participantes ya registrados.
+`activity_checkin_tokens` fue capturada por columnas. Las funciones de abrir, cerrar, consultar y registrar asistencia por token/código fueron preservadas desde el snapshot de funciones.
 
 ### Expiración y reapertura de asistencia
 
-La asistencia normal puede abrirse desde 15 minutos antes del inicio de la actividad y cerrar 15 minutos después del término. Después del cierre normal, usuarios autorizados pueden reabrir asistencia por ventanas extraordinarias de 15 minutos. La expiración convierte pendientes vencidos en `absent` con fuente `system` conforme a funciones de Supabase.
+Las funciones de ventana de apertura, deadline, expiración perezosa y reapertura fueron preservadas desde `live_functions_snapshot.json`.
 
-## Reconciliación pendiente
+## Pendientes de reconciliación
 
-La baseline debe verificar contra Supabase vivo al menos:
-
-- Tablas y columnas reales.
-- Claves primarias, foráneas, índices y restricciones.
-- Triggers y funciones RPC.
-- Políticas RLS.
-- Catálogos mínimos requeridos.
-- Permisos de ejecución de funciones.
-- Diferencias entre prototipo y documentación actual.
-
-Cualquier discrepancia debe resolverse antes de declarar al repositorio como fuente de verdad completa para la base de datos.
+- Primary keys, foreign keys, unique constraints y check constraints.
+- Índices.
+- Triggers, incluyendo actualización automática de `updated_at` si aplica.
+- Grants y permisos de ejecución de funciones.
+- Datos semilla mínimos de catálogos.
+- Columnas reales de tablas mencionadas por políticas pero ausentes en `live_columns_snapshot.json`.
