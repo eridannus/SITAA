@@ -211,23 +211,49 @@ function sameInstant(left: string | null | undefined, right: string | null | und
   return leftDate.getTime() === rightDate.getTime();
 }
 
-function checkinWindowMessage(state: ActivityAttendanceCheckinState | null, token: ActivityCheckinToken | null) {
-  if (!state) return null;
-  if (state.message) return state.message;
-  if (token) return "La asistencia está abierta.";
+type CheckinPresentationState = {
+  kind: "open" | "normal-open" | "reopen" | "closed";
+  message: string;
+  buttonLabel: string | null;
+  pendingLabel: string | null;
+};
 
-  if (state.windowStatus === "draft") return "No puedes abrir asistencia en una actividad en borrador.";
-  if (state.windowStatus === "missing_schedule") return "Completa la fecha y hora de la actividad para abrir asistencia.";
-  if (state.windowStatus === "not_yet_available") {
-    const opensAt = formatMexicoCityDateTime(state.opensAt);
-    return opensAt ? `Podrás abrir asistencia desde: ${opensAt}.` : "La asistencia todavía no está disponible para esta actividad.";
+function checkinPresentationState(token: ActivityCheckinToken | null, state: ActivityAttendanceCheckinState | null, attendanceDeadlinePassed?: boolean): CheckinPresentationState {
+  if (token) {
+    return {
+      kind: "open",
+      message: "La asistencia está abierta.",
+      buttonLabel: null,
+      pendingLabel: null,
+    };
   }
-  if (state.windowStatus === "available") return "La asistencia ya puede abrirse.";
-  if (state.windowStatus === "reopen_available") return "El periodo normal de asistencia ya terminó. Puedes reabrir asistencia por 15 minutos.";
-  if (["expired", "closed", "ended", "deadline_passed"].includes(state.windowStatus ?? "")) return "El periodo normal de asistencia ya terminó. Puedes reabrir asistencia por 15 minutos.";
-  if (state.windowStatus === "open") return "La asistencia está abierta.";
 
-  return null;
+  const canOpenNormally = state?.canOpenNow === true && attendanceDeadlinePassed !== true;
+  if (canOpenNormally) {
+    return {
+      kind: "normal-open",
+      message: "Puedes abrir asistencia para esta actividad.",
+      buttonLabel: "Abrir asistencia",
+      pendingLabel: "Abriendo...",
+    };
+  }
+
+  const canReopen = attendanceDeadlinePassed === true || state?.windowStatus === "reopen_available" || ["expired", "ended", "deadline_passed"].includes(state?.windowStatus ?? "");
+  if (canReopen) {
+    return {
+      kind: "reopen",
+      message: "El periodo normal de asistencia ya terminó. Puedes reabrir asistencia por 15 minutos.",
+      buttonLabel: "Reabrir asistencia",
+      pendingLabel: "Reabriendo...",
+    };
+  }
+
+  return {
+    kind: "closed",
+    message: "La asistencia por QR y código está cerrada.",
+    buttonLabel: null,
+    pendingLabel: null,
+  };
 }
 
 export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, checkinState, attendanceDeadlinePassed, status, detail }: {
@@ -259,16 +285,11 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
   };
   const isError = status?.includes("error") || status?.includes("forbidden") || status?.includes("draft") || false;
   const messageClass = isError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800";
-  const canOpenNow = !token && (checkinState?.canOpenNow === true || attendanceDeadlinePassed === true);
-  const isReopen = attendanceDeadlinePassed === true || checkinState?.windowStatus === "reopen_available";
-  const openButtonLabel = isReopen ? "Reabrir asistencia" : "Abrir asistencia";
-  const openPendingLabel = isReopen ? "Reabriendo..." : "Abriendo...";
-  const windowMessage = attendanceDeadlinePassed && !token ? "El periodo normal de asistencia ya terminó. Puedes reabrir asistencia por 15 minutos." : checkinWindowMessage(checkinState, token);
-  const formattedOpensAt = formatMexicoCityDateTime(checkinState?.opensAt);
+  const presentationState = checkinPresentationState(token, checkinState, attendanceDeadlinePassed);
+  const canOpenNow = Boolean(presentationState.buttonLabel && presentationState.pendingLabel);
   const activeExpiresAt = token?.expires_at ?? checkinState?.activeExpiresAt ?? null;
   const formattedExpiresAt = formatMexicoCityDateTime(activeExpiresAt);
   const isPostEventReopening = Boolean(token && token.expires_at && checkinState?.ordinaryClosesAt && !sameInstant(token.expires_at, checkinState.ordinaryClosesAt));
-  const shouldShowClosedState = !token && status !== "fetch-error" && !attendanceDeadlinePassed && checkinState?.windowStatus !== "not_yet_available" && checkinState?.windowStatus !== "draft" && checkinState?.windowStatus !== "missing_schedule";
 
   return <section id="attendance-checkin" className="mt-10 scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -277,7 +298,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
         <h2 className="mt-2 text-2xl font-bold text-slate-900">Asistencia por QR y código</h2>
         <p className="mt-3 max-w-2xl text-slate-600">Sólo los participantes ya registrados pueden confirmar asistencia con estos accesos.</p>
       </div>
-      {canOpenNow ? <form action={openAttendanceCheckin.bind(null, activityId)}><SubmitButton idle={openButtonLabel} pending={openPendingLabel} /></form> : null}
+      {canOpenNow && presentationState.buttonLabel && presentationState.pendingLabel ? <form action={openAttendanceCheckin.bind(null, activityId)}><SubmitButton idle={presentationState.buttonLabel} pending={presentationState.pendingLabel} /></form> : null}
     </div>
 
     {status && messages[status] ? <div role={isError ? "alert" : "status"} className={"mt-6 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>
@@ -285,10 +306,9 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
       {isError && detail ? <p className="mt-2 break-words text-xs font-medium opacity-85">Detalle: {detail}</p> : null}
     </div> : null}
 
-    {windowMessage ? <div role={token ? "status" : undefined} className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
-      <p className="font-semibold">{windowMessage}</p>
-      {checkinState?.windowStatus === "not_yet_available" && formattedOpensAt && !windowMessage.includes(formattedOpensAt) ? <p className="mt-2 text-sm">Podrás abrir asistencia desde: {formattedOpensAt}.</p> : null}
-    </div> : null}
+    <div role={presentationState.kind === "open" ? "status" : undefined} className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
+      <p className="font-semibold">{presentationState.message}</p>
+    </div>
 
     {token && directLink ? <div className="mt-7 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
@@ -317,6 +337,6 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
           <ConfirmableCheckinAction activityId={activityId} kind="close" />
         </div>
       </div>
-    </div> : shouldShowClosedState ? <p className="mt-7 rounded-2xl bg-slate-50 p-5 text-slate-600">La asistencia por QR y código está cerrada.</p> : null}
+    </div> : null}
   </section>;
 }
