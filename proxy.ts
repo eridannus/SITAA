@@ -11,5 +11,6 @@ export const config = {
     "/catalogs/:path*",
     "/profile/:path*",
     "/activities/:path*",
+    "/check-in/:path*",
   ],
 };
