@@ -212,19 +212,63 @@ function sameInstant(left: string | null | undefined, right: string | null | und
 }
 
 type CheckinPresentationState = {
-  kind: "open" | "normal-open" | "reopen" | "closed";
+  kind: "open" | "not-yet-available" | "normal-open" | "reopen" | "missing-schedule" | "closed";
   message: string;
   buttonLabel: string | null;
   pendingLabel: string | null;
+  secondaryLines?: string[];
 };
 
-function checkinPresentationState(token: ActivityCheckinToken | null, state: ActivityAttendanceCheckinState | null, attendanceDeadlinePassed?: boolean): CheckinPresentationState {
+function isFutureTimestamp(value: string | null | undefined) {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() > Date.now();
+}
+
+function checkinPresentationState(
+  token: ActivityCheckinToken | null,
+  state: ActivityAttendanceCheckinState | null,
+  attendanceOpenAt?: string | null,
+  attendanceDeadline?: string | null,
+  attendanceDeadlinePassed?: boolean,
+): CheckinPresentationState {
   if (token) {
     return {
       kind: "open",
       message: "La asistencia está abierta.",
       buttonLabel: null,
       pendingLabel: null,
+    };
+  }
+
+  const windowStatus = state?.windowStatus?.toLowerCase() ?? "";
+  const openAt = state?.opensAt ?? attendanceOpenAt ?? null;
+  const deadline = state?.ordinaryClosesAt ?? attendanceDeadline ?? null;
+  const formattedOpenAt = formatMexicoCityDateTime(openAt);
+  const formattedDeadline = formatMexicoCityDateTime(deadline);
+  const secondaryLines = [
+    formattedOpenAt ? "Podrás abrirla desde: " + formattedOpenAt : null,
+    formattedDeadline ? "Disponible hasta: " + formattedDeadline : null,
+  ].filter(Boolean) as string[];
+
+  const missingSchedule = ["missing_schedule", "missing-schedule", "missing_schedule_data"].includes(windowStatus) || windowStatus.includes("missing");
+  if (missingSchedule) {
+    return {
+      kind: "missing-schedule",
+      message: "La actividad no tiene horario suficiente para abrir asistencia.",
+      buttonLabel: null,
+      pendingLabel: null,
+    };
+  }
+
+  const notYetAvailable = ["not_yet_available", "not-yet-available", "future", "before_open", "before-opening"].includes(windowStatus) || (state?.canOpenNow !== true && attendanceDeadlinePassed !== true && isFutureTimestamp(openAt));
+  if (notYetAvailable) {
+    return {
+      kind: "not-yet-available",
+      message: "La asistencia todavía no puede abrirse.",
+      buttonLabel: null,
+      pendingLabel: null,
+      secondaryLines,
     };
   }
 
@@ -238,7 +282,7 @@ function checkinPresentationState(token: ActivityCheckinToken | null, state: Act
     };
   }
 
-  const canReopen = attendanceDeadlinePassed === true || state?.windowStatus === "reopen_available" || ["expired", "ended", "deadline_passed"].includes(state?.windowStatus ?? "");
+  const canReopen = attendanceDeadlinePassed === true || state?.windowStatus === "reopen_available" || ["expired", "ended", "deadline_passed"].includes(windowStatus);
   if (canReopen) {
     return {
       kind: "reopen",
@@ -256,12 +300,14 @@ function checkinPresentationState(token: ActivityCheckinToken | null, state: Act
   };
 }
 
-export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, checkinState, attendanceDeadlinePassed, status, detail }: {
+export function AttendanceCheckinManager({ activityId, token, directLink, qrDataUri, checkinState, attendanceOpenAt, attendanceDeadline, attendanceDeadlinePassed, status, detail }: {
   activityId: string;
   token: ActivityCheckinToken | null;
   directLink: string | null;
   qrDataUri: string | null;
   checkinState: ActivityAttendanceCheckinState | null;
+  attendanceOpenAt?: string | null;
+  attendanceDeadline?: string | null;
   attendanceDeadlinePassed?: boolean;
   status?: string;
   detail?: string;
@@ -273,6 +319,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
     "open-forbidden": "No tienes permiso para abrir asistencia en esta actividad.",
     "open-draft": "No puedes abrir asistencia en una actividad en borrador.",
     "open-error": "No fue posible abrir la asistencia.",
+    "open-not-yet-available": "La asistencia aún no puede abrirse para esta actividad.",
     "open-expired": "El periodo para registrar asistencia ya terminó.",
     "fetch-error": "No fue posible consultar el estado de asistencia.",
     "close-forbidden": "No tienes permiso para cerrar asistencia en esta actividad.",
@@ -281,11 +328,12 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
     "regenerate-forbidden": "No tienes permiso para regenerar asistencia en esta actividad.",
     "regenerate-draft": "No puedes regenerar asistencia en una actividad en borrador.",
     "regenerate-error": "No fue posible regenerar el código.",
+    "regenerate-not-yet-available": "La asistencia aún no puede abrirse para esta actividad.",
     "regenerate-expired": "El periodo para registrar asistencia ya terminó.",
   };
   const isError = status?.includes("error") || status?.includes("forbidden") || status?.includes("draft") || false;
   const messageClass = isError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800";
-  const presentationState = checkinPresentationState(token, checkinState, attendanceDeadlinePassed);
+  const presentationState = checkinPresentationState(token, checkinState, attendanceOpenAt, attendanceDeadline, attendanceDeadlinePassed);
   const canOpenNow = Boolean(presentationState.buttonLabel && presentationState.pendingLabel);
   const activeExpiresAt = token?.expires_at ?? checkinState?.activeExpiresAt ?? null;
   const formattedExpiresAt = formatMexicoCityDateTime(activeExpiresAt);
@@ -308,6 +356,7 @@ export function AttendanceCheckinManager({ activityId, token, directLink, qrData
 
     <div role={presentationState.kind === "open" ? "status" : undefined} className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
       <p className="font-semibold">{presentationState.message}</p>
+      {presentationState.secondaryLines?.map((line) => <p key={line} className="mt-2 font-medium">{line}</p>)}
     </div>
 
     {token && directLink ? <div className="mt-7 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">

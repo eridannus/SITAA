@@ -280,7 +280,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** la confirmación por QR, enlace directo o código debe evitar registros fuera del momento operativo de la actividad, sin impedir correcciones manuales autorizadas.
 
-**Decisión:** la asistencia puede abrirse desde 15 minutos antes del inicio de la actividad. Si se abre antes o durante la actividad, el acceso permanece válido hasta 15 minutos después del término. Después de concluida la actividad, un responsable o editor autorizado puede reabrir la asistencia manualmente por ventanas de 15 minutos. El responsable o editor puede cerrar la asistencia manualmente en cualquier momento. No se puede abrir asistencia en actividades en borrador ni en actividades sin fecha y hora completas.
+**Decisión:** la ventana normal de asistencia inicia 15 minutos antes del inicio de la actividad y termina 15 minutos después de su término. Si se abre antes o durante la actividad, el acceso permanece válido hasta ese cierre normal. Después de concluida la ventana normal, un responsable o editor autorizado puede reabrir la asistencia manualmente por ventanas de 15 minutos, tantas veces como sea necesario. El responsable o editor puede cerrar la asistencia manualmente en cualquier momento. No se puede abrir asistencia en actividades en borrador ni en actividades sin fecha y hora completas.
 
 **Consecuencias:** los códigos activos tienen expiración visible para los editores y los códigos cerrados o expirados se rechazan como inválidos. La reapertura posterior al evento queda limitada temporalmente y la asistencia manual sigue disponible para correcciones justificadas.
 

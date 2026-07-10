@@ -94,6 +94,23 @@ function firstDeadlineValue(data: unknown) {
   return textOrNull(row.deadline) ?? textOrNull(row.attendance_deadline) ?? textOrNull(row.activity_attendance_deadline) ?? textOrNull(row.expires_at) ?? textOrNull(row.value);
 }
 
+function firstOpenAtValue(data: unknown) {
+  const row = firstRow<Record<string, unknown>>(data);
+  if (!row) return null;
+  return textOrNull(row.open_at) ?? textOrNull(row.opens_at) ?? textOrNull(row.attendance_open_at) ?? textOrNull(row.activity_attendance_open_at) ?? textOrNull(row.value);
+}
+
+export async function getActivityAttendanceOpenAt(activityId: string): Promise<{ openAt: string | null }> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("activity_attendance_open_at", {
+    target_activity_id: activityId,
+  });
+  if (error) return { openAt: null };
+
+  const openAt = typeof data === "string" ? textOrNull(data) : firstOpenAtValue(data);
+  return { openAt };
+}
+
 export async function getActivityAttendanceDeadline(activityId: string): Promise<{ deadline: string | null; hasPassed: boolean }> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("activity_attendance_deadline", {
