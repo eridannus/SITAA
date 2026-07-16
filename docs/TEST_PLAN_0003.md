@@ -11,6 +11,12 @@ Validar que las fechas y horas de un borrador sean provisionales y nunca activen
 - Ejecutar `0003_fix_draft_temporal_lifecycle_verify.sql` y conservar el resultado sin datos personales.
 - Probar el rollback sólo en un entorno desechable; éste restaura deliberadamente el defecto conocido.
 
+## Integridad de la fixture automatizada
+
+El verificador crea dentro de una sola transacción usuarios Auth ficticios, perfiles, una división, un programa, un semestre, asignaciones de rol y actividades aisladas. Los códigos de roles y catálogos operativos se toman de las semillas estables y se validan antes de insertar actividades. `session_replication_role = replica` se limita al bootstrap de usuarios Auth; todas las filas de `public` se insertan después de restaurar `origin`, con FK, checks y triggers activos.
+
+Antes de probar permisos o temporalidad, el verificador confirma que programas, divisiones, semestres, creadores, responsables, perfiles, roles y catálogos referenciados existan. La ejecución anterior falló porque el `program_id` sintético de las actividades no tenía una fila correspondiente en `academic_programs`; fue una fixture FK incompleta y no un defecto de la migración 0003.
+
 ## Matriz temporal de borradores
 
 ### 1. Borrador sin fecha ni hora
@@ -88,7 +94,8 @@ Antes de 0003, conservar un borrador propio con fecha pasada que aparezca bloque
 
 ## Criterios de salida
 
-- El verificador transaccional termina sin excepciones y ejecuta `ROLLBACK`.
+- La aserción `fixture_foreign_keys_valid` pasa antes de las pruebas funcionales.
+- El verificador transaccional devuelve los nueve resultados booleanos esperados, termina sin excepciones y ejecuta `ROLLBACK`.
 - Las diez pruebas manuales pasan.
-- 0001 y 0002 permanecen sin cambios.
-- 0003 continúa marcada como creada/no aplicada hasta contar con evidencia de ejecución controlada.
+- 0001, 0002 y `0003_fix_draft_temporal_lifecycle.sql` permanecen sin cambios.
+- La verificación corregida confirma la migración 0003 ya aplicada sin persistir fixtures.
