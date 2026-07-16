@@ -24,18 +24,79 @@ function Write-Utf8File {
 function Resolve-NativePostgresTool {
   param([Parameter(Mandatory = $true)][string]$Name)
 
-  $Command = Get-Command ($Name + '.exe') -CommandType Application -ErrorAction SilentlyContinue
+  $Command = Get-Command ($Name + '.exe') -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
   if (-not $Command) {
-    $Command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue
+    $Command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue |
+      Select-Object -First 1
   }
   if ($Command) {
-    return $Command.Source
+    return $Command
   }
 
   $KnownPath = Join-Path 'C:\Program Files\PostgreSQL\18\bin' ($Name + '.exe')
   if (Test-Path -LiteralPath $KnownPath -PathType Leaf) {
-    return $KnownPath
+    return Get-Command $KnownPath -CommandType Application -ErrorAction SilentlyContinue |
+      Select-Object -First 1
   }
+  return $null
+}
+
+function Get-ExecutablePath {
+  param([System.Management.Automation.CommandInfo]$Command)
+
+  if (-not $Command) {
+    return $null
+  }
+  if (-not [string]::IsNullOrWhiteSpace($Command.Path)) {
+    return [string]$Command.Path
+  }
+  return [string]$Command.Source
+}
+
+function Resolve-SupabaseFallback {
+  param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
+
+  $LocalCandidates = @(
+    (Join-Path $RepositoryRoot 'node_modules\.bin\supabase.cmd'),
+    (Join-Path $RepositoryRoot 'node_modules\.bin\supabase.ps1'),
+    (Join-Path $RepositoryRoot 'node_modules\.bin\supabase')
+  )
+  $LocalPath = $LocalCandidates |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+    Select-Object -First 1
+  if ($LocalPath) {
+    return [pscustomobject]@{
+      CommandPath = [string]$LocalPath
+      PrefixArguments = @()
+      Label = 'Supabase CLI local'
+    }
+  }
+
+  $GlobalCommand = Get-Command 'supabase' -CommandType Application, ExternalScript -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if ($GlobalCommand) {
+    return [pscustomobject]@{
+      CommandPath = Get-ExecutablePath -Command $GlobalCommand
+      PrefixArguments = @()
+      Label = 'Supabase CLI global'
+    }
+  }
+
+  $NpxCommand = Get-Command 'npx.cmd' -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if (-not $NpxCommand) {
+    $NpxCommand = Get-Command 'npx' -CommandType Application, ExternalScript -ErrorAction SilentlyContinue |
+      Select-Object -First 1
+  }
+  if ($NpxCommand) {
+    return [pscustomobject]@{
+      CommandPath = Get-ExecutablePath -Command $NpxCommand
+      PrefixArguments = @('supabase')
+      Label = 'npx supabase'
+    }
+  }
+
   return $null
 }
 
@@ -69,29 +130,38 @@ $OutputNames = @(
   'live_snapshot_metadata.txt'
 )
 
-$PgDumpPath = Resolve-NativePostgresTool -Name 'pg_dump'
-$PsqlPath = Resolve-NativePostgresTool -Name 'psql'
-$SupabaseCommand = Get-Command 'supabase.exe' -CommandType Application -ErrorAction SilentlyContinue
-if (-not $SupabaseCommand) {
-  $SupabaseCommand = Get-Command 'supabase' -CommandType Application -ErrorAction SilentlyContinue
-}
-$SupabasePath = if ($SupabaseCommand) { $SupabaseCommand.Source } else { $null }
+$PgDumpCommand = Resolve-NativePostgresTool -Name 'pg_dump'
+$PsqlCommand = Resolve-NativePostgresTool -Name 'psql'
+$PgDumpPath = Get-ExecutablePath -Command $PgDumpCommand
+$PsqlPath = Get-ExecutablePath -Command $PsqlCommand
+$NativeToolsAvailable =
+  -not [string]::IsNullOrWhiteSpace($PgDumpPath) -and
+  -not [string]::IsNullOrWhiteSpace($PsqlPath)
 
-if ([string]::IsNullOrWhiteSpace($PsqlPath)) {
-  throw 'No se encontró psql en PATH ni en C:\Program Files\PostgreSQL\18\bin. Instala o habilita las herramientas cliente de PostgreSQL antes de generar el snapshot completo.'
-}
-
-$SchemaTool = if (-not [string]::IsNullOrWhiteSpace($PgDumpPath)) {
-  'pg_dump'
-} elseif (-not [string]::IsNullOrWhiteSpace($SupabasePath)) {
-  'supabase-cli-fallback'
+$SupabaseFallback = $null
+if ($NativeToolsAvailable) {
+  $SchemaTool = 'pg_dump'
+  $SupabaseFallbackLabel = 'no evaluado; se seleccionaron herramientas nativas'
+  Write-Host 'Usando pg_dump y psql nativos para generar el snapshot.'
 } else {
-  throw 'No se encontró pg_dump en PATH ni en C:\Program Files\PostgreSQL\18\bin, y Supabase CLI tampoco está disponible como respaldo final.'
+  $SupabaseFallback = Resolve-SupabaseFallback -RepositoryRoot $RootDir
+  $SupabaseFallbackLabel = if ($SupabaseFallback) { $SupabaseFallback.Label } else { 'no disponible' }
+
+  if ([string]::IsNullOrWhiteSpace($PsqlPath)) {
+    throw 'No se encontró psql en PATH ni en C:\Program Files\PostgreSQL\18\bin. psql es obligatorio para generar el conjunto completo de snapshots de sólo lectura.'
+  }
+  if (-not [string]::IsNullOrWhiteSpace($PgDumpPath)) {
+    $SchemaTool = 'pg_dump'
+  } elseif ($SupabaseFallback) {
+    $SchemaTool = 'supabase-cli-fallback'
+    Write-Host ('Usando ' + $SupabaseFallback.Label + ' como respaldo para el dump de esquema y psql nativo para las consultas de reconciliación.')
+  } else {
+    throw 'No se encontró pg_dump ni un único comando válido de Supabase CLI como respaldo final para generar live_schema.sql.'
+  }
 }
 
 $PgDumpVersion = Get-ToolVersion -Path $PgDumpPath
 $PsqlVersion = Get-ToolVersion -Path $PsqlPath
-$SupabaseVersion = Get-ToolVersion -Path $SupabasePath
 $GeneratedAtUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ('sitaa-supabase-snapshot-' + [System.Guid]::NewGuid().ToString('N'))
@@ -114,15 +184,13 @@ function Invoke-ReadOnlySnapshotQuery {
 
   Write-Host ('Generando ' + $Name + ' con psql en una transacción de sólo lectura...')
   $PsqlArguments = @(
-    '--no-psqlrc',
-    '--set=ON_ERROR_STOP=1',
-    '--quiet',
-    '--tuples-only',
-    '--no-align',
-    '--pset=pager=off',
-    ('--dbname=' + $env:SUPABASE_DB_URL),
-    ('--file=' + $QueryPath),
-    ('--output=' + $OutputPath)
+    '-X',
+    '-v', 'ON_ERROR_STOP=1',
+    '-qAt',
+    '-P', 'pager=off',
+    '-f', $QueryPath,
+    '-o', $OutputPath,
+    $env:SUPABASE_DB_URL
   )
   & $PsqlPath @PsqlArguments
   if ($LASTEXITCODE -ne 0) {
@@ -142,7 +210,7 @@ function Write-FailureMetadata {
     ('Schema tool selected: ' + $SchemaTool),
     ('pg_dump version: ' + $PgDumpVersion),
     ('psql version: ' + $PsqlVersion),
-    ('Supabase CLI version: ' + $SupabaseVersion),
+    ('Supabase CLI fallback: ' + $SupabaseFallbackLabel),
     'Connection credentials: provided at runtime and intentionally not recorded.',
     'Result: no live snapshot file was replaced by this failed run.'
   )
@@ -152,7 +220,7 @@ function Write-FailureMetadata {
 try {
   $SchemaTemp = Join-Path $TempDir 'live_schema.sql'
   if ($SchemaTool -eq 'pg_dump') {
-    Write-Host 'Generando live_schema.sql con pg_dump nativo; Docker no es necesario...'
+    Write-Host 'Generando live_schema.sql con pg_dump nativo...'
     $PgDumpArguments = @(
       ('--dbname=' + $env:SUPABASE_DB_URL),
       '--schema-only',
@@ -164,8 +232,13 @@ try {
     )
     & $PgDumpPath @PgDumpArguments
   } else {
-    Write-Warning 'pg_dump nativo no está disponible. Se usará Supabase CLI como respaldo final; este camino puede requerir Docker.'
-    & $SupabasePath db dump --db-url $env:SUPABASE_DB_URL --schema public --file $SchemaTemp
+    $FallbackArguments = @($SupabaseFallback.PrefixArguments) + @(
+      'db', 'dump',
+      '--db-url', $env:SUPABASE_DB_URL,
+      '--schema', 'public',
+      '--file', $SchemaTemp
+    )
+    & $SupabaseFallback.CommandPath @FallbackArguments
   }
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $SchemaTemp -PathType Leaf)) {
     throw 'No fue posible generar live_schema.sql. La salida temporal incompleta será eliminada.'
@@ -277,7 +350,7 @@ try {
     ('Schema tool selected: ' + $SchemaTool),
     ('pg_dump version: ' + $PgDumpVersion),
     ('psql version: ' + $PsqlVersion),
-    ('Supabase CLI version: ' + $SupabaseVersion),
+    ('Supabase CLI fallback: ' + $SupabaseFallbackLabel),
     'PostgreSQL client encoding: UTF8',
     'Connection credentials: provided at runtime and intentionally not recorded.',
     'Schema scope: public only; schema-only; ownership and privileges excluded.',
