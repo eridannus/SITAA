@@ -88,22 +88,29 @@ Validar `0002_database_security_and_integrity.sql` antes de su aplicación manua
 
 ### Publicación y bloqueo posterior
 
-1. Intentar publicar el mismo id por segunda vez.
-2. Intentar publicar el borrador de otro usuario por RPC.
-3. Como profesor A, abrir la actividad publicada y tratar de modificar o eliminar datos base.
-4. Gestionar participantes y asistencia.
+1. Publicar por `publish_activity(uuid)` un borrador completo de un creador que todavía conserva el rol y alcance requeridos.
+2. Crear otro borrador, retirar o inactivar la asignación que autorizaba su alcance e intentar `draft → scheduled` directamente por PostgREST.
+3. Intentar el mismo cambio directo con una sesión sin autenticar y con un creador distinto.
+4. Intentar cambiar `created_by` de un borrador por `UPDATE` directo.
+5. Intentar devolver una actividad `scheduled` a `draft` por `UPDATE` directo.
+6. Intentar publicar el mismo id por segunda vez y publicar por RPC el borrador de otro usuario.
+7. Como profesor A, abrir la actividad publicada y tratar de modificar o eliminar datos base.
+8. Gestionar participantes y asistencia.
 
-**Esperado:** sólo el creador publica una vez; una actividad no draft es rechazada; los datos base publicados quedan bloqueados para el responsable regular, mientras participantes y asistencia siguen operativos.
+**Esperado:** el RPC publica al creador elegible. La transición directa exige sesión, creador y permiso vigente; perder el rol impide publicar. `created_by` es inmutable para clientes y una actividad no borrador no vuelve a `draft`. Una segunda publicación falla; los datos base publicados quedan bloqueados para el responsable regular, mientras participantes y asistencia siguen operativos. `postgres` y `service_role` conservan su vía administrativa de confianza.
 
 ### Asistencia manual vencida
 
 1. En una actividad antes del plazo natural, marcar individualmente y en lote como Pendiente.
-2. Mover el reloj del entorno de prueba o usar una actividad cuyo plazo natural ya venció.
-3. Ejecutar `finalize_expired_attendance()` y recargar.
-4. Intentar volver a Pendiente individualmente y en lote.
-5. Corregir a Asistió, No asistió y Justificada.
+2. Probar la frontera exacta con una fixture controlada donde `activity_attendance_deadline(id) = now()` dentro de la transacción; invocar los RPC individual y masivo con `pending`.
+3. Mover el reloj del entorno de prueba o usar una actividad cuyo plazo natural ya venció.
+4. Ejecutar `finalize_expired_attendance()` y recargar.
+5. Intentar volver a Pendiente individualmente y en lote mediante los RPC.
+6. Como editor permitido por RLS, intentar `UPDATE activity_participants SET attendance_status = 'pending'` directamente.
+7. Corregir individualmente y en lote a Asistió, No asistió y Justificada.
+8. Reabrir asistencia extraordinaria y confirmar que ésta permite el check-in previsto, pero no vuelve a habilitar `pending` manual.
 
-**Esperado:** Pendiente funciona sólo hasta el plazo natural; después se rechaza atómicamente con “La ventana de asistencia ya terminó; el estado Pendiente ya no está disponible.” Los pendientes vencidos quedan No asistió/Sistema y los estados finales siguen corregibles manualmente.
+**Esperado:** Pendiente funciona sólo antes del plazo natural; en la frontera exacta y después se rechaza atómicamente con “La ventana de asistencia ya terminó; el estado Pendiente ya no está disponible.” El trigger bloquea también el `UPDATE` directo. Los pendientes vencidos quedan No asistió/Sistema; Asistió, No asistió y Justificada siguen corregibles, y la reapertura extraordinaria conserva el check-in autorizado.
 
 ### QR, enlace y código
 
@@ -129,10 +136,11 @@ Validar `0002_database_security_and_integrity.sql` antes de su aplicación manua
 ## Technical admin
 
 1. Confirmar que no puede leer el borrador ajeno del profesor A.
-2. Abrir y corregir una actividad publicada dentro del alcance amplio de prueba existente.
-3. Gestionar participantes, asistencia y limpieza de una actividad divisional heredada.
+2. Crear y publicar un borrador propio dentro de cualquiera de los programas permitidos por su alcance amplio vigente.
+3. Abrir y corregir una actividad publicada dentro del alcance amplio de prueba existente.
+4. Gestionar participantes, asistencia y limpieza de una actividad divisional heredada.
 
-**Esperado:** 0002 no introduce una restricción nueva de `technical_admin` sobre contenido publicado. La excepción no se extiende a borradores privados ajenos.
+**Esperado:** 0002 no introduce una restricción nueva de `technical_admin` sobre creación o contenido publicado. La excepción no se extiende a borradores privados ajenos y las reglas generales de inmutabilidad y ciclo de estado se aplican a la sesión cliente.
 
 ## Regresión funcional y visual
 

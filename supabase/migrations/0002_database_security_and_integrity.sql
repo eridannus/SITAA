@@ -325,7 +325,7 @@ begin
 
   if new_attendance_status = 'pending' then
     natural_deadline := public.activity_attendance_deadline(target_activity_id);
-    if natural_deadline is null or now() > natural_deadline then
+    if natural_deadline is null or natural_deadline <= now() then
       raise exception 'La ventana de asistencia ya terminó; el estado Pendiente ya no está disponible.'
         using errcode = 'P0001';
     end if;
@@ -368,7 +368,7 @@ begin
 
   if new_attendance_status = 'pending' then
     natural_deadline := public.activity_attendance_deadline(target_activity_id);
-    if natural_deadline is null or now() > natural_deadline then
+    if natural_deadline is null or natural_deadline <= now() then
       raise exception 'La ventana de asistencia ya terminó; el estado Pendiente ya no está disponible.'
         using errcode = 'P0001';
     end if;
@@ -393,6 +393,35 @@ begin
 end;
 $$;
 
+-- La misma frontera se aplica a UPDATE directo bajo RLS. El guard sólo actúa
+-- cuando el estado cambia a pending; no bloquea altas válidas ni correcciones
+-- entre estados finales, finalización automática o check-in extraordinario.
+create or replace function public.guard_activity_participant_pending_deadline()
+returns trigger language plpgsql set search_path to 'public'
+as $$
+declare
+  natural_deadline timestamptz;
+begin
+  if new.attendance_status = 'pending'
+     and new.attendance_status is distinct from old.attendance_status then
+    natural_deadline := public.activity_attendance_deadline(new.activity_id);
+    if natural_deadline is null or natural_deadline <= now() then
+      raise exception 'La ventana de asistencia ya terminó; el estado Pendiente ya no está disponible.'
+        using errcode = 'P0001';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists guard_activity_participants_pending_deadline
+on public.activity_participants;
+create trigger guard_activity_participants_pending_deadline
+before update of attendance_status on public.activity_participants
+for each row
+execute function public.guard_activity_participant_pending_deadline();
+
 -- -----------------------------------------------------------------------------
 -- Integridad condicional de actividades programadas
 -- -----------------------------------------------------------------------------
@@ -405,7 +434,34 @@ declare
   start_value timestamp;
   end_value timestamp;
   require_future_start boolean := false;
+  trusted_database_role boolean := current_user in ('postgres', 'service_role');
 begin
+  if tg_op = 'UPDATE' and not trusted_database_role then
+    if new.created_by is distinct from old.created_by then
+      raise exception 'No se puede cambiar el creador de una actividad.'
+        using errcode = '23514';
+    end if;
+
+    if old.status_code <> 'draft' and new.status_code = 'draft' then
+      raise exception 'Una actividad publicada no puede volver a borrador.'
+        using errcode = '23514';
+    end if;
+
+    if old.status_code = 'draft' and new.status_code = 'scheduled' then
+      if auth.uid() is null
+         or new.created_by is distinct from auth.uid()
+         or public.can_create_activity(
+           new.scope_type,
+           new.program_id,
+           new.division_id,
+           new.service_type_code
+         ) is distinct from true then
+        raise exception 'No tienes permiso para publicar esta actividad.'
+          using errcode = '42501';
+      end if;
+    end if;
+  end if;
+
   if new.status_code <> 'scheduled' then return new; end if;
 
   if nullif(btrim(new.title), '') is null then
@@ -527,18 +583,18 @@ begin
   if not found then
     raise exception 'La actividad no existe o no está disponible.' using errcode = 'P0001';
   end if;
-  if target_activity.created_by <> auth.uid() then
+  if target_activity.created_by is distinct from auth.uid() then
     raise exception 'Sólo el creador puede publicar esta actividad.' using errcode = '42501';
   end if;
   if target_activity.status_code <> 'draft' then
     raise exception 'Sólo pueden publicarse actividades en borrador.' using errcode = 'P0001';
   end if;
-  if not public.can_create_activity(
+  if public.can_create_activity(
     target_activity.scope_type,
     target_activity.program_id,
     target_activity.division_id,
     target_activity.service_type_code
-  ) then
+  ) is distinct from true then
     raise exception 'Tus asignaciones actuales no permiten publicar esta actividad.'
       using errcode = '42501';
   end if;

@@ -57,10 +57,10 @@ El flujo no aplica cambios remotos. Genera artefactos de reconciliación en `sup
 - Fecha: 2026-07-16.
 - Propósito: aislar borradores por creador, impedir asistencia pendiente vencida, publicar actividades completas de forma transaccional y aplicar privilegios mínimos confirmados.
 - Objetos reemplazados: `can_read_activity`, `can_edit_activity`, `can_update_activity_base`, `can_delete_activity`, dos RPC de actualización de asistencia y dos políticas SELECT.
-- Objetos nuevos: `publish_activity(uuid)`, `validate_activity_scheduled_state()` y trigger `validate_activities_scheduled_state`.
+- Objetos nuevos: `publish_activity(uuid)`, `validate_activity_scheduled_state()`, trigger `validate_activities_scheduled_state`, `guard_activity_participant_pending_deadline()` y trigger `guard_activity_participants_pending_deadline`.
 - Privilegios: se propone retirar `EXECUTE` de `PUBLIC`/`anon`, dejar a `anon` sólo `system_health.SELECT`, reconstruir el contrato directo de `authenticated` y retirar la secuencia de roles cliente.
 - Verificación: `supabase/reconciliation/0002_database_security_and_integrity_verify.sql`.
 - Rollback manual: `supabase/reconciliation/0002_database_security_and_integrity_rollback.sql`.
 - Plan de pruebas: `docs/TEST_PLAN_0002.md`.
 - Aplicado en Supabase: **no**.
-- Observaciones: el preflight aborta ante filas `scheduled` incompatibles; no corrige ni elimina datos. A-02 permanece diferido y no se restringe `technical_admin` sobre contenido publicado.
+- Observaciones: el preflight aborta ante filas `scheduled` incompatibles; no corrige ni elimina datos. La publicación directa revalida creador y permiso vigente, `created_by` no cambia, una actividad publicada no vuelve a borrador y ningún `UPDATE` directo puede restaurar `pending` vencido. A-02 permanece diferido y no se restringe `technical_admin` sobre contenido publicado.

@@ -442,8 +442,8 @@ La base reconciliada es comprensible y tiene controles importantes. `0002_databa
 | --- | --- | --- |
 | A-01 | Helpers y RLS separan `draft` por creador; no amplían por responsable, participante, gestor ni `technical_admin` | Pendiente de aplicar/verificar |
 | A-02 | Sin cambio para contenido publicado. **Deferred intentionally until user, role and permission administration is designed.** | Diferido intencionalmente |
-| A-03 | Ambas RPC rechazan `pending` después de `activity_attendance_deadline` | Pendiente de aplicar/verificar |
-| A-04 | `publish_activity(uuid)` asigna semestre y publica dentro de una transacción; un trigger valida toda fila `scheduled` | Pendiente de aplicar/verificar |
+| A-03 | Ambas RPC y un trigger de tabla rechazan `pending` cuando `activity_attendance_deadline <= now()`, incluso ante `UPDATE` directo | Pendiente de aplicar/verificar |
+| A-04 | `publish_activity(uuid)` asigna semestre y publica dentro de una transacción; el trigger valida filas `scheduled`, revalida permisos en transiciones directas, hace inmutable `created_by` para clientes y prohíbe volver a borrador | Pendiente de aplicar/verificar |
 | A-05 | Revocación propuesta de `EXECUTE` a `PUBLIC` y `anon` para todas las funciones públicas | Pendiente de aplicar/verificar |
 | A-06 | Contratos explícitos de tablas y secuencia para `anon`/`authenticated` | Pendiente de aplicar/verificar |
 

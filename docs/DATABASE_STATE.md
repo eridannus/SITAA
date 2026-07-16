@@ -100,10 +100,12 @@ Aunque el dump de esquema se produjo con `--no-privileges`, los snapshots especi
 `0002_database_security_and_integrity.sql` propone, sin estar aplicada todavía:
 
 - privacidad de borradores exclusivamente por `created_by` en RLS y helpers;
-- rechazo de `pending` después del plazo natural de asistencia;
+- autorización vigente, creador inmutable y transición irreversible para cualquier `draft → scheduled` de cliente;
+- rechazo de `pending` en la frontera natural o después;
+- guard de tabla que impide restaurar `pending` vencido mediante `UPDATE` directo;
 - `publish_activity(uuid)` y un trigger que validan transaccionalmente las filas `scheduled`;
 - privilegios directos mínimos para `anon` y `authenticated`, sin cambiar `postgres` ni `service_role`.
 
-La migración contiene un preflight que aborta si una actividad programada viva incumple el contrato completo. `technical_admin` conserva intencionalmente su alcance amplio sobre contenido publicado durante desarrollo y pruebas, pero no puede leer borradores ajenos. Overloads heredados, `activities.updated_by`, alcance divisional reservado, tokens de registro y `starts_at`/`ends_at` permanecen.
+La migración contiene un preflight que aborta si una actividad programada viva incumple el contrato completo. La frontera de asistencia es inclusiva: cuando `activity_attendance_deadline(id) <= now()`, `pending` ya expiró tanto por RPC como por escritura directa. `technical_admin` conserva intencionalmente su alcance amplio sobre creación y contenido publicado durante desarrollo y pruebas, pero no puede leer borradores ajenos. Overloads heredados, `activities.updated_by`, alcance divisional reservado, tokens de registro y `starts_at`/`ends_at` permanecen.
 
 **Estado operativo:** migración creada en repositorio; no ejecutada ni verificada contra Supabase vivo.

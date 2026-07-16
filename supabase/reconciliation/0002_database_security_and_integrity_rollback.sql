@@ -9,6 +9,9 @@
 -- estuvo activa. No usa CASCADE.
 
 begin;
+drop trigger if exists guard_activity_participants_pending_deadline
+on public.activity_participants;
+drop function if exists public.guard_activity_participant_pending_deadline();
 
 drop trigger if exists validate_activities_scheduled_state on public.activities;
 drop function if exists public.publish_activity(uuid);
