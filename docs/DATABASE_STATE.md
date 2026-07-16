@@ -95,9 +95,9 @@ El esquema vivo depende de `extensions.unaccent`, por lo que la baseline crea es
 
 Aunque el dump de esquema se produjo con `--no-privileges`, los snapshots especializados `live_routine_privileges.sql`, `live_table_privileges.sql`, `live_sequence_privileges.sql` y `live_acl.sql` reconciliaron posteriormente los grants vivos. Confirmaron privilegios explícitos excesivos para `PUBLIC`, `anon` y `authenticated`; `docs/DATABASE_PRIVILEGES.md` conserva la matriz verificable. `0001` permanece sin grants inventados porque representa la baseline estructural previa a la consolidación.
 
-## Migración 0002 creada y pendiente de aplicación
+## Migración 0002 aplicada y verificada
 
-`0002_database_security_and_integrity.sql` propone, sin estar aplicada todavía:
+`0002_database_security_and_integrity.sql` estableció:
 
 - privacidad de borradores exclusivamente por `created_by` en RLS y helpers;
 - autorización vigente, creador inmutable y transición irreversible para cualquier `draft → scheduled` de cliente;
@@ -108,4 +108,15 @@ Aunque el dump de esquema se produjo con `--no-privileges`, los snapshots especi
 
 La migración contiene un preflight que aborta si una actividad programada viva incumple el contrato completo. La frontera de asistencia es inclusiva: cuando `activity_attendance_deadline(id) <= now()`, `pending` ya expiró tanto por RPC como por escritura directa. `technical_admin` conserva intencionalmente su alcance amplio sobre creación y contenido publicado durante desarrollo y pruebas, pero no puede leer borradores ajenos. Overloads heredados, `activities.updated_by`, alcance divisional reservado, tokens de registro y `starts_at`/`ends_at` permanecen.
 
-**Estado operativo:** migración creada en repositorio; no ejecutada ni verificada contra Supabase vivo.
+**Estado operativo:** migración aplicada y verificada en Supabase.
+
+## Migración 0003 creada y pendiente de aplicación
+
+`0003_fix_draft_temporal_lifecycle.sql` corrige el ciclo temporal de borradores:
+
+- `activity_has_ended(uuid)` devuelve false para `draft` y conserva la comparación de Ciudad de México para estados publicados;
+- `can_update_activity_base(uuid)` y `can_delete_activity(uuid)` autorizan al creador del borrador sin evaluar fechas u horas provisionales;
+- contenido publicado conserva bloqueo temporal, corrección administrativa y alcance amplio diferido de `technical_admin`;
+- no modifica filas: un borrador atrapado vuelve a ser editable en cuanto se aplican las nuevas definiciones.
+
+**Estado operativo:** migración creada en repositorio; no aplicada a Supabase.

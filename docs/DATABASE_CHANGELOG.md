@@ -52,7 +52,7 @@ powershell -ExecutionPolicy Bypass -File scripts/pull-supabase-snapshot.ps1
 
 El flujo no aplica cambios remotos. Genera artefactos de reconciliación en `supabase/reconciliation/live/`, que deben validarse antes de preparar una migración.
 
-## 0002_database_security_and_integrity.sql — consolidación propuesta
+## 0002_database_security_and_integrity.sql — consolidación aplicada
 
 - Fecha: 2026-07-16.
 - Propósito: aislar borradores por creador, impedir asistencia pendiente vencida, publicar actividades completas de forma transaccional y aplicar privilegios mínimos confirmados.
@@ -62,5 +62,17 @@ El flujo no aplica cambios remotos. Genera artefactos de reconciliación en `sup
 - Verificación: `supabase/reconciliation/0002_database_security_and_integrity_verify.sql`.
 - Rollback manual: `supabase/reconciliation/0002_database_security_and_integrity_rollback.sql`.
 - Plan de pruebas: `docs/TEST_PLAN_0002.md`.
-- Aplicado en Supabase: **no**.
+- Aplicado y verificado en Supabase: **sí**.
 - Observaciones: el preflight aborta ante filas `scheduled` incompatibles; no corrige ni elimina datos. La publicación directa revalida creador y permiso vigente, `created_by` no cambia, una actividad publicada no vuelve a borrador y ningún `UPDATE` directo puede restaurar `pending` vencido. A-02 permanece diferido y no se restringe `technical_admin` sobre contenido publicado.
+
+## 0003_fix_draft_temporal_lifecycle.sql — temporalidad provisional de borradores
+
+- Fecha: 2026-07-16.
+- Propósito: impedir que fechas u horas provisionales bloqueen un borrador propio.
+- Objetos reemplazados: `activity_has_ended(uuid)`, `can_update_activity_base(uuid)` y `can_delete_activity(uuid)`.
+- Datos: no reescribe ni elimina filas; los borradores atrapados se recuperan al cambiar la evaluación de los helpers.
+- Compatibilidad: conserva privacidad de borradores, validación de publicación, privilegios mínimos, `technical_admin` sobre contenido publicado y controles de asistencia de 0002.
+- Verificación: `supabase/reconciliation/0003_fix_draft_temporal_lifecycle_verify.sql`.
+- Rollback manual: `supabase/reconciliation/0003_fix_draft_temporal_lifecycle_rollback.sql`.
+- Plan de pruebas: `docs/TEST_PLAN_0003.md`.
+- Aplicado en Supabase: **no**.

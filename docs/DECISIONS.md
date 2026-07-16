@@ -42,6 +42,8 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-028 | Ventanas de tiempo para check-in de asistencia | Aceptada |
 | DEC-029 | Expiración automática de asistencia pendiente | Aceptada |
 | DEC-030 | Migraciones SQL versionadas en repositorio | Aceptada |
+| DEC-031 | Consolidación inicial de seguridad e integridad | Aceptada |
+| DEC-032 | Temporalidad provisional de borradores | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -235,9 +237,9 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** las actividades ya realizadas requieren correcciones de asistencia y participantes, pero no deben modificar libremente su planeación base.
 
-**Decisión:** las actividades nuevas no pueden crearse con fecha pasada. Una actividad ocurrida bloquea sus datos base para responsables regulares; participantes, asistencia y notas de asistencia permanecen editables para usuarios autorizados. Las correcciones administrativas de datos base y la eliminación se determinan con funciones autorizadas de Supabase.
+**Decisión:** una actividad publicada que ya ocurrió bloquea sus datos base para responsables regulares; participantes, asistencia y notas permanecen editables para usuarios autorizados. Los borradores no participan en este cálculo temporal. Las correcciones administrativas de datos base y la eliminación se determinan con funciones autorizadas de Supabase.
 
-**Consecuencias:** la interfaz muestra resumen de solo lectura cuando los datos base están bloqueados y conserva la gestión de asistencia. La base de datos mantiene la autorización definitiva mediante RLS y funciones como `activity_has_ended`, `can_update_activity_base` y `can_delete_activity`.
+**Consecuencias:** la interfaz muestra resumen de sólo lectura cuando los datos base publicados están bloqueados y conserva la gestión de asistencia. La base de datos mantiene la autorización definitiva mediante RLS y funciones como `activity_has_ended`, `can_update_activity_base` y `can_delete_activity`.
 
 **Estado:** Aceptada.
 
@@ -247,7 +249,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** las actividades pueden guardarse como borrador con `status_code = draft` o publicarse con `status_code = scheduled`. Guardar borrador solo exige título y programa; los demás campos operativos pueden quedar incompletos. Publicar exige todos los campos operativos, valida fecha y hora, y solo después de pasar validación muestra la confirmación de publicación. En la interfaz **Borrador** y **Programada** usan estilos visuales distintos.
 
-**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos y solo aparece en el panel de quien la creó. Los responsables regulares solo editan datos base mientras la actividad sea un borrador no ocurrido. Al confirmar la publicación, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Participantes y asistencia siguen siendo gestionables por usuarios autorizados. Las actividades nuevas publicadas no pueden crearse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
+**Consecuencias:** una actividad en borrador no se muestra como actividad asignada a alumnos y sólo aparece en el panel de quien la creó. Su creador puede editarla o eliminarla aunque la fecha sea pasada o la hora esté incompleta. Al confirmar la publicación, responsables regulares dejan de editar libremente datos base; las correcciones administrativas dependen de `can_update_activity_base`. Participantes y asistencia siguen siendo gestionables por usuarios autorizados después de publicar. Una actividad no puede publicarse con fecha u hora de inicio pasada en tiempo de Ciudad de México.
 
 **Estado:** Aceptada.
 
@@ -327,4 +329,14 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Consecuencias:** la aplicación crea primero un borrador y sólo después invoca la RPC de publicación. Los borradores incompletos siguen permitidos; las filas programadas incompletas no. Se conservan overloads heredados, `activities.updated_by`, alcance divisional reservado, capacidad de tokens de registro y timestamps de compatibilidad. Los privilegios predeterminados no cambian por falta de evidencia reconciliada.
 
-**Estado:** Aceptada en repositorio; migración pendiente de aplicación y verificación en Supabase.
+**Estado:** Aceptada; 0002 aplicada y verificada en Supabase.
+
+## DEC-032 — Temporalidad provisional de borradores
+
+**Contexto:** una fecha pasada o una hora faltante en un borrador hacía que `activity_has_ended` lo tratara como ocurrido y que los helpers de datos base bloquearan al propio creador.
+
+**Decisión:** Las fechas y horas de un borrador son provisionales y no activan bloqueo temporal. `activity_has_ended(uuid)` devuelve false para `draft`; el creador conserva lectura, edición y eliminación exclusivas. El bloqueo temporal comienza sólo después de publicar.
+
+**Consecuencias:** 0003 corrige las funciones sin reescribir filas, por lo que los borradores atrapados se recuperan al aplicarla. `publish_activity(uuid)` sigue rechazando campos incompletos, inicio pasado, semestre inválido y cualquier inconsistencia del contrato programado. Los controles de asistencia y QR no se muestran mientras la actividad siga en borrador.
+
+**Estado:** Aceptada en repositorio; 0003 creada y pendiente de aplicación.

@@ -91,6 +91,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   if (error || !data) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex cursor-pointer font-bold text-emerald-800 transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link></main>;
 
   const activity = data as Activity;
+  const isDraft = activity.status_code === "draft";
   let options: ActivityFormOptions;
   try { options = await getActivityFormOptions(); }
   catch { return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">No fue posible cargar la actividad</h1></main>; }
@@ -98,7 +99,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const card = cardsResult.cards.find((item) => item.id === id);
   const values = formValues(activity);
   const studentOnly = isStudentOnlyUser(context);
-  if (studentOnly && activity.status_code === "draft") return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex cursor-pointer font-bold text-emerald-800 transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link></main>;
+  if (studentOnly && isDraft) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex cursor-pointer font-bold text-emerald-800 transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link></main>;
   const technicalAdmin = context.activeRoleAssignments.some((item) => item.role_code === "technical_admin");
   const legacyCleanup = activity.scope_type === "division" && (technicalAdmin || activity.created_by === context.user.id);
   const normalCanEdit = activity.scope_type === "program" && canManageActivityScope(context, values, options.programs, activity.division_id);
@@ -106,13 +107,14 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const [baseUpdatePermission, deletePermission, endedResult] = await Promise.all([
     supabase.rpc("can_update_activity_base", { target_activity_id: id }),
     supabase.rpc("can_delete_activity", { target_activity_id: id }),
-    supabase.rpc("activity_has_ended", { target_activity_id: id }),
+    isDraft ? Promise.resolve({ data: false, error: null }) : supabase.rpc("activity_has_ended", { target_activity_id: id }),
   ]);
   const hasBaseCorrectionRole = context.activeRoleAssignments.some((item) => BASE_CORRECTION_ROLES.has(item.role_code));
-  const canUpdateBaseData = baseUpdatePermission.data === true;
-  const canDeleteActivityRecord = deletePermission.data === true;
-  const activityHasEnded = endedResult.data === true;
-  const canManageParticipants = !studentOnly && normalCanEdit;
+  const isOwnDraft = isDraft && activity.created_by === context.user.id;
+  const canUpdateBaseData = isOwnDraft || (!isDraft && baseUpdatePermission.data === true);
+  const canDeleteActivityRecord = isOwnDraft || (!isDraft && deletePermission.data === true);
+  const activityHasEnded = !isDraft && endedResult.data === true;
+  const canManageParticipants = !isDraft && !studentOnly && normalCanEdit;
 
   let access = getActivityScopeAccess(context, options.programs, options.divisions);
   if (legacyCleanup && !technicalAdmin) {
@@ -156,8 +158,8 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const showMissingPlaceholder = !studentOnly;
   const valueOrPlaceholder = (value: string | null | undefined) => value?.trim() || (showMissingPlaceholder ? "No especificado" : "");
   const durationLabel = activity.duration_mode ? durationLabels[activity.duration_mode] : null;
-  const isPublished = activity.status_code !== "draft";
-  const showAdministrativeCorrectionMode = canUpdateBaseData && hasBaseCorrectionRole && (activityHasEnded || isPublished);
+  const isPublished = !isDraft;
+  const showAdministrativeCorrectionMode = !isDraft && canUpdateBaseData && hasBaseCorrectionRole && (activityHasEnded || isPublished);
   const contactMessage = activity.service_type_code === "tutoring"
     ? "Los datos base están bloqueados. Si necesitas corregirlos, contacta al encargado de tutorías de tu programa."
     : activity.service_type_code === "advising"
@@ -214,7 +216,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Responsable</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(responsibleName)}</dd></div>
       </dl>
       {studentOnly && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">{card?.ownParticipantRoleLabel ? `Tu participación: ${card.ownParticipantRoleLabel}.` : "Estás registrado como participante en esta actividad."}</p>}
-      {canManageActivity && !canUpdateBaseData && <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{baseDataLockMessage}</p>}
+      {!isDraft && canManageActivity && !canUpdateBaseData && <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{baseDataLockMessage}</p>}
       {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
 
