@@ -10,9 +10,17 @@ Los cambios SQL anteriores a la baseline fueron aplicados manualmente durante el
 - Objetos: 17 tablas, 151 columnas, 61 constraints, 37 índices, 4 triggers, 30 funciones, RLS para 17 tablas, 23 políticas y 51 filas de semillas controladas.
 - Aplicado en Supabase desde el repositorio: no. El estado ya existe por cambios manuales del prototipo.
 - Seguridad: la baseline no debe ejecutarse a ciegas contra la base viva actual.
-- Pendiente verificable: grants, porque el dump fue generado con `--no-privileges` y no existe un snapshot especializado de privilegios.
+- Pendiente verificable: regenerar el snapshot vivo con el flujo ampliado para capturar grants y ACL; el dump de esquema permanece deliberadamente en `--no-privileges`.
 
 Esta versión sustituye completamente el intento anterior de `0001`, construido desde snapshots JSON incompletos. La versión anterior nunca fue aplicada como migración administrada y ya no es autoritativa.
+
+## Ampliación del snapshot de privilegios — 2026-07-16
+
+- El flujo PowerShell incorpora `live_routine_privileges.sql`, `live_table_privileges.sql`, `live_sequence_privileges.sql` y `live_acl.sql`.
+- Las fuentes son `information_schema.routine_privileges`, `information_schema.table_privileges`, ACL de secuencias y la expansión de `pg_proc.proacl`/`pg_class.relacl`.
+- Todas las consultas se ejecutan en transacciones de sólo lectura y primero escriben a un directorio temporal.
+- La generación completa falla si falta cualquiera de los cuatro artefactos; no se publican snapshots parciales.
+- Este cambio no modifica la baseline ni aplica privilegios a Supabase. La evidencia quedará reconciliada cuando se ejecute nuevamente el script con `SUPABASE_DB_URL` disponible.
 
 ## Regla para cambios posteriores
 

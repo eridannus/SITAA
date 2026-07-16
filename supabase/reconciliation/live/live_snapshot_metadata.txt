@@ -1,5 +1,5 @@
 SITAA Supabase live snapshot metadata
-Generated at UTC: 2026-07-16T18:41:41Z
+Generated at UTC: 2026-07-16T19:44:34Z
 Status: SUCCESS
 Purpose: reconciliation only; no remote writes.
 Schema tool selected: pg_dump
@@ -9,4 +9,8 @@ Supabase CLI fallback: no evaluado; se seleccionaron herramientas nativas
 PostgreSQL client encoding: UTF8
 Connection credentials: provided at runtime and intentionally not recorded.
 Schema scope: public only; schema-only; ownership and privileges excluded.
+Privilege artifact: live_routine_privileges.sql
+Privilege artifact: live_table_privileges.sql
+Privilege artifact: live_sequence_privileges.sql
+Privilege artifact: live_acl.sql
 Catalog seed scope: controlled SITAA catalogs only; operational and personal data excluded.

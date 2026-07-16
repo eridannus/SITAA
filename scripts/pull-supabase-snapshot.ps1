@@ -128,6 +128,10 @@ $OutputNames = @(
   'live_triggers.sql',
   'live_functions.sql',
   'live_policies.sql',
+  'live_routine_privileges.sql',
+  'live_table_privileges.sql',
+  'live_sequence_privileges.sql',
+  'live_acl.sql',
   'live_seed_catalogs.sql',
   'live_snapshot_metadata.txt'
 )
@@ -213,6 +217,7 @@ function Write-FailureMetadata {
     ('pg_dump version: ' + $PgDumpVersion),
     ('psql version: ' + $PsqlVersion),
     ('Supabase CLI fallback: ' + $SupabaseFallbackLabel),
+    'Required privilege artifacts: live_routine_privileges.sql, live_table_privileges.sql, live_sequence_privileges.sql, live_acl.sql',
     'Connection credentials: provided at runtime and intentionally not recorded.',
     'Result: no live snapshot file was replaced by this failed run.'
   )
@@ -327,6 +332,80 @@ try {
     'commit;'
   )
 
+  Invoke-ReadOnlySnapshotQuery -Name 'live_routine_privileges' -SqlLines @(
+    'begin transaction read only;',
+    "select '-- routine_schema' || E'\t' || 'routine_name' || E'\t' || 'specific_name' || E'\t' || 'grantor' || E'\t' || 'grantee' || E'\t' || 'privilege_type' || E'\t' || 'is_grantable';",
+    "select routine_schema || E'\t' || routine_name || E'\t' || specific_name || E'\t' ||",
+    "  coalesce(grantor, '') || E'\t' || coalesce(grantee, '') || E'\t' || privilege_type || E'\t' || is_grantable",
+    'from information_schema.routine_privileges',
+    "where routine_schema = 'public'",
+    'order by routine_name, specific_name, grantee, privilege_type;',
+    'commit;'
+  )
+
+  Invoke-ReadOnlySnapshotQuery -Name 'live_table_privileges' -SqlLines @(
+    'begin transaction read only;',
+    "select '-- table_schema' || E'\t' || 'table_name' || E'\t' || 'grantor' || E'\t' || 'grantee' || E'\t' || 'privilege_type' || E'\t' || 'is_grantable' || E'\t' || 'with_hierarchy';",
+    "select table_schema || E'\t' || table_name || E'\t' || coalesce(grantor, '') || E'\t' ||",
+    "  coalesce(grantee, '') || E'\t' || privilege_type || E'\t' || is_grantable || E'\t' || with_hierarchy",
+    'from information_schema.table_privileges',
+    "where table_schema = 'public'",
+    'order by table_name, grantee, privilege_type;',
+    'commit;'
+  )
+
+  Invoke-ReadOnlySnapshotQuery -Name 'live_sequence_privileges' -SqlLines @(
+    'begin transaction read only;',
+    "select '-- sequence_schema' || E'\t' || 'sequence_name' || E'\t' || 'grantor' || E'\t' || 'grantee' || E'\t' || 'privilege_type' || E'\t' || 'is_grantable';",
+    "select n.nspname || E'\t' || c.relname || E'\t' || pg_get_userbyid(acl.grantor) || E'\t' ||",
+    "  case when acl.grantee = 0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end || E'\t' ||",
+    "  acl.privilege_type || E'\t' || acl.is_grantable::text",
+    'from pg_class c',
+    'join pg_namespace n on n.oid = c.relnamespace',
+    "cross join lateral aclexplode(coalesce(c.relacl, acldefault('S', c.relowner))) acl",
+    "where n.nspname = 'public' and c.relkind = 'S'",
+    'order by c.relname, grantee, acl.privilege_type;',
+    'commit;'
+  )
+
+  Invoke-ReadOnlySnapshotQuery -Name 'live_acl' -SqlLines @(
+    'begin transaction read only;',
+    "select '-- object_type' || E'\t' || 'object_identity' || E'\t' || 'owner' || E'\t' || 'grantor' || E'\t' || 'grantee' || E'\t' || 'privilege_type' || E'\t' || 'is_grantable' || E'\t' || 'raw_acl';",
+    'with acl_entries as (',
+    '  select',
+    "    case p.prokind when 'p' then 'procedure' else 'function' end as object_type,",
+    '    p.oid::regprocedure::text as object_identity,',
+    '    pg_get_userbyid(p.proowner) as owner_name,',
+    '    pg_get_userbyid(acl.grantor) as grantor_name,',
+    "    case when acl.grantee = 0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end as grantee_name,",
+    '    acl.privilege_type,',
+    '    acl.is_grantable,',
+    "    coalesce(array_to_string(p.proacl, ','), '<default>') as raw_acl",
+    '  from pg_proc p',
+    '  join pg_namespace n on n.oid = p.pronamespace',
+    "  cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl",
+    "  where n.nspname = 'public' and p.prokind in ('f', 'p')",
+    '  union all',
+    '  select',
+    "    case c.relkind when 'r' then 'table' when 'p' then 'partitioned_table' when 'v' then 'view' when 'm' then 'materialized_view' when 'S' then 'sequence' else c.relkind::text end,",
+    '    c.oid::regclass::text,',
+    '    pg_get_userbyid(c.relowner),',
+    '    pg_get_userbyid(acl.grantor),',
+    "    case when acl.grantee = 0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end,",
+    '    acl.privilege_type,',
+    '    acl.is_grantable,',
+    "    coalesce(array_to_string(c.relacl, ','), '<default>')",
+    '  from pg_class c',
+    '  join pg_namespace n on n.oid = c.relnamespace',
+    "  cross join lateral aclexplode(coalesce(c.relacl, case when c.relkind = 'S' then acldefault('S', c.relowner) else acldefault('r', c.relowner) end)) acl",
+    "  where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'S')",
+    ')',
+    "select object_type || E'\t' || object_identity || E'\t' || owner_name || E'\t' || grantor_name || E'\t' || grantee_name || E'\t' || privilege_type || E'\t' || is_grantable::text || E'\t' || raw_acl",
+    'from acl_entries',
+    'order by object_type, object_identity, grantee_name, privilege_type;',
+    'commit;'
+  )
+
   Invoke-ReadOnlySnapshotQuery -Name 'live_seed_catalogs' -SqlLines @(
     'begin transaction read only;',
     "select '-- catalog' || E'\t' || 'row_as_json';",
@@ -356,6 +435,10 @@ try {
     'PostgreSQL client encoding: UTF8',
     'Connection credentials: provided at runtime and intentionally not recorded.',
     'Schema scope: public only; schema-only; ownership and privileges excluded.',
+    'Privilege artifact: live_routine_privileges.sql',
+    'Privilege artifact: live_table_privileges.sql',
+    'Privilege artifact: live_sequence_privileges.sql',
+    'Privilege artifact: live_acl.sql',
     'Catalog seed scope: controlled SITAA catalogs only; operational and personal data excluded.'
   )
   Write-Utf8File -Path (Join-Path $TempDir 'live_snapshot_metadata.txt') -Lines $SuccessMetadata
