@@ -20,6 +20,47 @@ type AcademicPeriodRpcResult = string | {
   name?: string | null;
 } | null;
 
+type PublicationErrorCode = "permission" | "semester" | "schedule" | "validation" | "generic";
+
+const publicationMessages: Record<PublicationErrorCode, string> = {
+  permission: "No tienes permiso para publicar esta actividad.",
+  semester: "No fue posible publicar la actividad porque no hay un semestre válido para la fecha de inicio.",
+  schedule: "La fecha y hora de inicio deben ser posteriores a la hora actual de Ciudad de México.",
+  validation: "La actividad permanece como borrador. Revisa que todos los datos requeridos estén completos y sean válidos.",
+  generic: "No fue posible publicar la actividad. El borrador se conservó para que puedas revisarlo.",
+};
+
+function publicationError(error: { code?: string; message?: string } | null) {
+  const message = error?.message?.toLocaleLowerCase("es-MX") ?? "";
+  let code: PublicationErrorCode = "generic";
+  if (error?.code === "42501" || message.includes("sólo el creador") || message.includes("permiso")) {
+    code = "permission";
+  } else if (message.includes("semestre") || message.includes("academic_period")) {
+    code = "semester";
+  } else if (message.includes("posteriores a la hora actual")) {
+    code = "schedule";
+  } else if (error?.code === "23514" || message.includes("selecciona") || message.includes("indica")) {
+    code = "validation";
+  }
+  return { code, message: publicationMessages[code] };
+}
+
+async function publishDraft(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  activityId: string,
+) {
+  const { data, error } = await supabase.rpc("publish_activity", {
+    target_activity_id: activityId,
+  });
+  if (error) return publicationError(error);
+  const first = Array.isArray(data) ? data[0] : data;
+  const returnedStatus = first && typeof first === "object" && "status_code" in first ? first.status_code : null;
+  if (returnedStatus !== "scheduled") {
+    return publicationError(null);
+  }
+  return null;
+}
+
 function normalizeAcademicPeriodResult(data: unknown) {
   const rows = Array.isArray(data) ? data : (data ? [data] : []);
   const first = rows[0] as AcademicPeriodRpcResult | undefined;
@@ -174,6 +215,9 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   if (access.allowedPrograms.length === 1) values.program_id = access.allowedPrograms[0].id;
 
   const willPublish = intent === "publish" || intent === "validate_publish";
+  if (willPublish && existingActivity && (existingActivity.status_code !== "draft" || existingActivity.created_by !== context.user.id)) {
+    return invalid(previous, values, {}, "Sólo el creador puede publicar una actividad que permanezca en borrador.");
+  }
   const willRemainDraft = !willPublish && (activityId ? existingActivity?.status_code === "draft" : true);
   const requireOperationalFields = !willRemainDraft;
   const result = validate(values, { enforceFutureStartDate: !activityId, requireOperationalFields });
@@ -213,7 +257,9 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     return { revision: previous.revision + 1, values, errors: {}, message: null, confirmPublish: true };
   }
 
-  const nextStatusCode = intent === "publish" ? "scheduled" : (activityId ? existingActivity?.status_code ?? "draft" : "draft");
+  // Toda alta se guarda primero como borrador. La única transición a scheduled
+  // ocurre después mediante publish_activity, dentro de una transacción de base.
+  const nextStatusCode = activityId ? existingActivity?.status_code ?? "draft" : "draft";
 
   const payload = {
     status_code: nextStatusCode,
@@ -244,10 +290,30 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     }
     const { data, error } = await supabase.from("activities").update(payload).eq("id", activityId).select("id").maybeSingle();
     if (error || !data) return invalid(previous, values, {}, "No fue posible actualizar la actividad. Verifica tus permisos e intenta nuevamente.");
+    if (intent === "publish") {
+      const errorResult = await publishDraft(supabase, activityId);
+      if (errorResult) return invalid(previous, values, {}, errorResult.message);
+      revalidatePath("/activities");
+      revalidatePath(`/activities/${activityId}`);
+      revalidatePath(`/activities/${activityId}`, "page");
+      redirect(`/activities/${activityId}?published=1`);
+    }
     revalidatePath("/activities"); revalidatePath(`/activities/${activityId}`); revalidatePath(`/activities/${activityId}`, "page"); redirect(`/activities/${activityId}?updated=1#attendance-checkin`);
   }
-  const { error } = await supabase.from("activities").insert({ ...payload, responsible_profile_id: context.profile.id, created_by: context.user.id });
-  if (error) return invalid(previous, values, {}, "No fue posible crear la actividad. Verifica tus permisos e intenta nuevamente.");
+  const { data: inserted, error } = await supabase
+    .from("activities")
+    .insert({ ...payload, responsible_profile_id: context.profile.id, created_by: context.user.id })
+    .select("id")
+    .maybeSingle();
+  if (error || !inserted) return invalid(previous, values, {}, "No fue posible crear la actividad. Verifica tus permisos e intenta nuevamente.");
+  if (intent === "publish") {
+    const errorResult = await publishDraft(supabase, inserted.id);
+    if (errorResult) {
+      revalidatePath("/activities");
+      revalidatePath(`/activities/${inserted.id}`);
+      redirect(`/activities/${inserted.id}?publication_error=${errorResult.code}`);
+    }
+  }
   revalidatePath("/activities"); redirect("/activities?created=1");
 }
 

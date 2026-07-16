@@ -23,9 +23,24 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 export const metadata: Metadata = { title: "Detalle de actividad" };
-type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string | string[]; error?: string | string[]; participant?: string | string[]; checkin?: string | string[]; checkin_detail?: string | string[] }> };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{
+  updated?: string | string[];
+  published?: string | string[];
+  publication_error?: string | string[];
+  error?: string | string[];
+  participant?: string | string[];
+  checkin?: string | string[];
+  checkin_detail?: string | string[];
+}> };
 const BASE_CORRECTION_ROLES = new Set(["program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
 const durationLabels = { one_hour: "1 hora", two_hours: "2 horas", custom: "Personalizada" } as const;
+const publicationErrorMessages: Record<string, string> = {
+  permission: "No tienes permiso para publicar esta actividad.",
+  semester: "No fue posible publicar la actividad porque no hay un semestre válido para la fecha de inicio.",
+  schedule: "La fecha y hora de inicio deben ser posteriores a la hora actual de Ciudad de México.",
+  validation: "La actividad permanece como borrador. Revisa que todos los datos requeridos estén completos y sean válidos.",
+  generic: "No fue posible publicar la actividad. El borrador se conservó para que puedas revisarlo.",
+};
 
 function formValues(activity: Activity): ActivityFormValues {
   return {
@@ -122,6 +137,9 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
 
   const query = await searchParams;
   const updated = param(query.updated) === "1";
+  const published = param(query.published) === "1";
+  const publicationErrorCode = param(query.publication_error);
+  const publicationErrorMessage = publicationErrorCode ? publicationErrorMessages[publicationErrorCode] ?? publicationErrorMessages.generic : null;
   const deleteError = param(query.error) === "delete";
   const participantStatus = param(query.participant);
   const checkinStatus = param(query.checkin);
@@ -170,6 +188,8 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       <Link href="/activities" className="shrink-0 cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-sm font-bold transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link>
     </div>
     {updated && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Los cambios se guardaron correctamente.</div>}
+    {published && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">La actividad se publicó correctamente.</div>}
+    {publicationErrorMessage && <div role="alert" className="mt-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{publicationErrorMessage}</div>}
 
     {canUpdateBaseData ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       {showAdministrativeCorrectionMode && <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Corrección administrativa de datos base habilitada.</div>}

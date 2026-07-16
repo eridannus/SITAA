@@ -132,3 +132,17 @@ La futura migración debe incluir únicamente correcciones confirmadas por estos
 9. No retirar overloads, columnas ni capacidades reservadas.
 
 Antes de aplicar 0002 deben probarse login, panel, perfil, actividades, participantes, asistencia manual, QR/código, `/supabase-test` y las políticas RLS mediante los roles `anon` y `authenticated`. Los grants de `postgres` y `service_role` quedan fuera de este ajuste inicial.
+
+## Perfil materializado en la migración 0002
+
+`0002_database_security_and_integrity.sql` materializa el perfil mínimo anterior de forma explícita:
+
+- revoca `EXECUTE` de todas las funciones públicas a `PUBLIC` y `anon`;
+- conserva los grants existentes de `authenticated`, `service_role` y propietario, y concede la nueva `publish_activity(uuid)` a `authenticated`/`service_role`;
+- revoca todos los privilegios de tabla de roles cliente y concede de nuevo sólo el contrato documentado;
+- deja a `anon` únicamente `system_health.SELECT`;
+- deja `activity_checkin_tokens` sin privilegio directo autenticado;
+- revoca la secuencia `system_health_id_seq` a `anon` y `authenticated`;
+- no toca grants de `postgres`, `service_role`, `authenticator` ni privilegios predeterminados.
+
+**Estado:** definición creada y acompañada por verificación/rollback; no aplicada al proyecto Supabase vivo. La matriz observada al inicio de este documento sigue describiendo el prototipo vivo hasta que una nueva captura demuestre la aplicación.

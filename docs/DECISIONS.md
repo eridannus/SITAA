@@ -318,3 +318,13 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** el repositorio pasa a ser la fuente de verdad para cambios futuros. La baseline no debe ejecutarse a ciegas contra la base viva actual, que ya contiene los objetos por cambios manuales históricos. Los snapshots de reconciliación no sustituyen migraciones y cada migración posterior debe revisarse junto con la documentación relacionada.
 
 **Estado:** Aceptada.
+
+## DEC-031 — Consolidación inicial de seguridad e integridad en base de datos
+
+**Contexto:** la auditoría reconciliada confirmó borradores expuestos por helpers/RLS, posibilidad de devolver asistencia vencida a Pendiente, publicación incompleta al usar la API directamente y grants de objeto excesivos. La restricción académica de `technical_admin` requiere un diseño posterior de administración de identidades y permisos.
+
+**Decisión:** 0002 define cuatro límites: los borradores son privados al creador en la base; Pendiente es temporal y se rechaza después del plazo natural incluso si existe reapertura extraordinaria; la publicación se realiza mediante `publish_activity(uuid)` y una validación transaccional condicional para `scheduled`; `anon` y `authenticated` reciben sólo los privilegios directos confirmados como necesarios. `technical_admin` conserva temporalmente acceso amplio a contenido publicado para desarrollo y pruebas, pero no a borradores ajenos.
+
+**Consecuencias:** la aplicación crea primero un borrador y sólo después invoca la RPC de publicación. Los borradores incompletos siguen permitidos; las filas programadas incompletas no. Se conservan overloads heredados, `activities.updated_by`, alcance divisional reservado, capacidad de tokens de registro y timestamps de compatibilidad. Los privilegios predeterminados no cambian por falta de evidencia reconciliada.
+
+**Estado:** Aceptada en repositorio; migración pendiente de aplicación y verificación en Supabase.

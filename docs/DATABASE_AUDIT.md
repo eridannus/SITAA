@@ -434,4 +434,17 @@ Unicidad institucional, índices, dimensiones de roles, timestamps, contratos RP
 
 ## Conclusión
 
-La base reconciliada es comprensible y tiene controles importantes, pero **no es prudente extenderla antes de una consolidación de seguridad e integridad**. A-01 puede exponer borradores; A-03 y A-04 pueden producir asistencia o actividades publicadas inconsistentes; A-05 y A-06 confirman un perímetro de grants excesivo. A-02 sigue siendo alto, pero se difiere deliberadamente durante desarrollo y pruebas. La futura 0002 debe atender exactamente los puntos enumerados arriba, conservar las capacidades reservadas y posponer cualquier eliminación.
+La base reconciliada es comprensible y tiene controles importantes. `0002_database_security_and_integrity.sql` ya fue creada para atender exactamente A-01, A-03, A-04, A-05 y A-06, conservar las capacidades reservadas y posponer eliminaciones. **Crear la migración no equivale a aplicarla:** los seis hallazgos altos y sus conteos permanecen vigentes para la base viva hasta contar con evidencia posterior de ejecución y verificación.
+
+## Estado de remediación propuesta en 0002
+
+| Hallazgo | Cobertura creada en repositorio | Estado vivo |
+| --- | --- | --- |
+| A-01 | Helpers y RLS separan `draft` por creador; no amplían por responsable, participante, gestor ni `technical_admin` | Pendiente de aplicar/verificar |
+| A-02 | Sin cambio para contenido publicado. **Deferred intentionally until user, role and permission administration is designed.** | Diferido intencionalmente |
+| A-03 | Ambas RPC rechazan `pending` después de `activity_attendance_deadline` | Pendiente de aplicar/verificar |
+| A-04 | `publish_activity(uuid)` asigna semestre y publica dentro de una transacción; un trigger valida toda fila `scheduled` | Pendiente de aplicar/verificar |
+| A-05 | Revocación propuesta de `EXECUTE` a `PUBLIC` y `anon` para todas las funciones públicas | Pendiente de aplicar/verificar |
+| A-06 | Contratos explícitos de tablas y secuencia para `anon`/`authenticated` | Pendiente de aplicar/verificar |
+
+La migración no cambia los conteos actuales: crítica 0, alta 6, media 7, baja 4 e informativa 5. Tras aplicarla en un entorno controlado deben ejecutarse el script de verificación y `TEST_PLAN_0002.md`; sólo entonces corresponde reauditar y cerrar hallazgos.

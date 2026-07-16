@@ -6,7 +6,7 @@ La fuente autoritativa es `supabase/reconciliation/live/live_schema.sql`, verifi
 
 ## Resultado de validación
 
-- 10 archivos esperados presentes y no vacíos.
+- 14 archivos estructurales y de privilegios esperados, presentes y no vacíos.
 - 17 tablas públicas.
 - 151 columnas.
 - 61 constraints PK, FK, UNIQUE o CHECK.
@@ -93,4 +93,17 @@ La baseline incluye semillas verificadas para `divisions`, `academic_programs`, 
 
 El esquema vivo depende de `extensions.unaccent`, por lo que la baseline crea esa extensión en el esquema `extensions`. `gen_random_uuid()` forma parte del PostgreSQL vivo capturado.
 
-El dump se produjo con `--no-privileges` y no existe un snapshot independiente de grants. Por ello, los grants administrados por Supabase siguen pendientes de reconciliación explícita para una instalación PostgreSQL ajena a Supabase. No se inventaron grants en `0001`.
+Aunque el dump de esquema se produjo con `--no-privileges`, los snapshots especializados `live_routine_privileges.sql`, `live_table_privileges.sql`, `live_sequence_privileges.sql` y `live_acl.sql` reconciliaron posteriormente los grants vivos. Confirmaron privilegios explícitos excesivos para `PUBLIC`, `anon` y `authenticated`; `docs/DATABASE_PRIVILEGES.md` conserva la matriz verificable. `0001` permanece sin grants inventados porque representa la baseline estructural previa a la consolidación.
+
+## Migración 0002 creada y pendiente de aplicación
+
+`0002_database_security_and_integrity.sql` propone, sin estar aplicada todavía:
+
+- privacidad de borradores exclusivamente por `created_by` en RLS y helpers;
+- rechazo de `pending` después del plazo natural de asistencia;
+- `publish_activity(uuid)` y un trigger que validan transaccionalmente las filas `scheduled`;
+- privilegios directos mínimos para `anon` y `authenticated`, sin cambiar `postgres` ni `service_role`.
+
+La migración contiene un preflight que aborta si una actividad programada viva incumple el contrato completo. `technical_admin` conserva intencionalmente su alcance amplio sobre contenido publicado durante desarrollo y pruebas, pero no puede leer borradores ajenos. Overloads heredados, `activities.updated_by`, alcance divisional reservado, tokens de registro y `starts_at`/`ends_at` permanecen.
+
+**Estado operativo:** migración creada en repositorio; no ejecutada ni verificada contra Supabase vivo.
