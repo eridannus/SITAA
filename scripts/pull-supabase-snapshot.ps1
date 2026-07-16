@@ -1,4 +1,6 @@
-# SITAA: snapshot remoto de Supabase para Windows PowerShell.
+﻿# SITAA: snapshot remoto de Supabase para Windows PowerShell.
+# Este archivo debe conservarse como UTF-8 con BOM para que Windows PowerShell
+# 5.1 interprete correctamente los mensajes en español.
 # Reconciliación solamente. Todas las consultas son de sólo lectura y los
 # artefactos generados deben revisarse antes de convertirlos en migraciones.
 

@@ -1,92 +1,96 @@
-# Estado conocido de base de datos
+# Estado reconciliado de la base de datos
 
-**Estado:** reconciliado parcialmente contra snapshots vivos de Supabase.
+**Estado:** reconciliado contra el snapshot vivo completo de Supabase generado el 16 de julio de 2026.
 
-Este documento resume el estado capturado desde los snapshots ubicados en `supabase/reconciliation/`. La baseline `supabase/migrations/0001_baseline_current_schema.sql` fue generada desde esos archivos. La reconciliación es parcial porque los snapshots disponibles cubren columnas, funciones y políticas RLS, pero no incluyen constraints, índices, triggers, grants ni datos semilla.
+La fuente autoritativa es `supabase/reconciliation/live/live_schema.sql`, verificada con los snapshots especializados de tablas, columnas, constraints, índices, triggers, funciones, políticas y semillas. La baseline resultante es `supabase/migrations/0001_baseline_current_schema.sql`.
 
-## Snapshots usados
+## Resultado de validación
 
-- `live_columns_snapshot.json`: columnas públicas capturadas desde `information_schema.columns`.
-- `live_functions_snapshot.json`: funciones públicas capturadas con `pg_get_functiondef`.
-- `live_policies_snapshot.json`: políticas RLS públicas capturadas desde `pg_policies`.
-- `live_snapshot_queries.sql`: consultas usadas para generar los snapshots.
+- 10 archivos esperados presentes y no vacíos.
+- 17 tablas públicas.
+- 151 columnas.
+- 61 constraints PK, FK, UNIQUE o CHECK.
+- 37 índices, incluidos los respaldados implícitamente por constraints.
+- 4 triggers.
+- 30 funciones públicas.
+- 23 políticas RLS.
+- 17 tablas con RLS habilitado.
+- 51 filas de semillas en 11 catálogos controlados.
+- Sin diferencias estructurales entre `live_schema.sql` y los snapshots especializados.
+- Sin credenciales, mojibake ni datos personales u operativos en las semillas.
 
-## Tablas capturadas por columnas
+## Tablas públicas reconciliadas
 
-- `public.academic_periods`
-- `public.academic_programs`
-- `public.activities`
-- `public.activity_checkin_tokens`
-- `public.activity_modalities`
-- `public.activity_participants`
-- `public.activity_statuses`
-- `public.activity_types`
-- `public.attention_categories`
-- `public.divisions`
-- `public.location_types`
+- `academic_periods`
+- `academic_programs`
+- `activities`
+- `activity_checkin_tokens`
+- `activity_modalities`
+- `activity_participants`
+- `activity_statuses`
+- `activity_types`
+- `attention_categories`
+- `divisions`
+- `location_types`
+- `participant_roles`
+- `profiles`
+- `role_assignments`
+- `roles`
+- `service_types`
+- `system_health`
 
-## Tablas mencionadas por políticas pero pendientes de columnas
+## Funciones reconciliadas
 
-- `public.participant_roles`
-- `public.profiles`
-- `public.role_assignments`
-- `public.roles`
-- `public.service_types`
-- `public.system_health`
+Se preservaron las 30 firmas vivas:
 
-Estas tablas aparecen en políticas RLS o en módulos conocidos, pero no tienen definición de columnas en el snapshot disponible. No se reconstruyeron en la baseline para evitar inventar SQL.
+- `activity_attendance_deadline(uuid)`
+- `activity_attendance_open_at(uuid)`
+- `activity_has_ended(uuid)`
+- `add_activity_participant(uuid,uuid,text)`
+- `can_create_activity(text,uuid,uuid,text)`
+- `can_create_activity(uuid,text)`
+- `can_delete_activity(uuid)`
+- `can_edit_activity(uuid)`
+- `can_manage_activity(text,uuid,uuid,text)`
+- `can_manage_activity(uuid,text)`
+- `can_read_activity(uuid)`
+- `can_update_activity_base(uuid)`
+- `check_in_activity(text)`
+- `close_activity_attendance_checkin(uuid)`
+- `finalize_expired_attendance()`
+- `generate_three_word_code()`
+- `get_academic_period_for_date(date)`
+- `get_active_activity_attendance_checkin(uuid)`
+- `get_activity_attendance_checkin_state(uuid)`
+- `get_activity_participants(uuid)`
+- `get_visible_activity_cards()`
+- `has_active_role(text)`
+- `has_any_active_role(text[])`
+- `is_activity_participant(uuid)`
+- `open_activity_attendance_checkin(uuid)`
+- `remove_activity_participant(uuid)`
+- `search_profiles_for_participation(uuid,text)`
+- `set_updated_at()`
+- `update_activity_participant_attendance(uuid,text,text)`
+- `update_activity_participants_attendance_bulk(uuid,uuid[],text,text)`
 
-## Módulos conocidos
+## Triggers y políticas
 
-### Health check
+Los triggers reconciliados son:
 
-Existe una verificación básica de conexión con Supabase mediante una tabla pública de salud del sistema. Su política aparece en el snapshot, pero sus columnas no fueron capturadas.
+- `activities.set_activities_updated_at`
+- `activity_participants.set_activity_participants_updated_at`
+- `profiles.set_profiles_updated_at`
+- `role_assignments.set_role_assignments_updated_at`
 
-### Roles y asignaciones de rol
+Las 23 políticas RLS cubren `academic_periods`, `academic_programs`, `activities`, `activity_modalities`, `activity_participants`, `activity_statuses`, `activity_types`, `attention_categories`, `divisions`, `location_types`, `participant_roles`, `profiles`, `role_assignments`, `roles`, `service_types` y `system_health`.
 
-Las políticas mencionan `roles` y `role_assignments`. SITAA usa roles mediante asignaciones múltiples y acotadas, pero las columnas de estas tablas no están en el snapshot de columnas.
+## Catálogos reproducibles
 
-### Perfiles
+La baseline incluye semillas verificadas para `divisions`, `academic_programs`, `roles`, `academic_periods`, `activity_types`, `service_types`, `attention_categories`, `activity_modalities`, `activity_statuses`, `location_types` y `participant_roles`. La inserción respeta primero la dependencia de `academic_programs` hacia `divisions`.
 
-Las políticas mencionan `profiles`. El modelo documentado conserva identidad institucional estable, pero sus columnas no están en el snapshot de columnas y deben reconciliarse contra Supabase vivo.
+## Alcance y pendiente verificable
 
-### Divisiones y programas académicos
+El esquema vivo depende de `extensions.unaccent`, por lo que la baseline crea esa extensión en el esquema `extensions`. `gen_random_uuid()` forma parte del PostgreSQL vivo capturado.
 
-`divisions` y `academic_programs` sí fueron capturadas por columnas. Se requieren constraints y relaciones reales para completar la baseline reproductible.
-
-### Periodos académicos / semestres
-
-`academic_periods` sí fue capturada por columnas. Las funciones de semestre fueron preservadas desde el snapshot de funciones.
-
-### Catálogos operativos
-
-Se capturaron por columnas: `activity_types`, `attention_categories`, `activity_modalities`, `activity_statuses` y `location_types`. `service_types` y `participant_roles` aparecen en políticas, pero no en columnas.
-
-### Actividades
-
-`activities` fue capturada por columnas. Las funciones relacionadas con visibilidad, edición, borrador/publicación, horarios y asistencia fueron preservadas desde el snapshot de funciones.
-
-### Participantes de actividad
-
-`activity_participants` fue capturada por columnas e incluye campos de asistencia manual, fuente, notas y marcas de actualización.
-
-### Asistencia manual
-
-La baseline preserva columnas de asistencia en `activity_participants` y funciones RPC relacionadas con actualización individual y masiva.
-
-### Tokens de asistencia por QR/código
-
-`activity_checkin_tokens` fue capturada por columnas. Las funciones de abrir, cerrar, consultar y registrar asistencia por token/código fueron preservadas desde el snapshot de funciones.
-
-### Expiración y reapertura de asistencia
-
-Las funciones de ventana de apertura, deadline, expiración perezosa y reapertura fueron preservadas desde `live_functions_snapshot.json`.
-
-## Pendientes de reconciliación
-
-- Primary keys, foreign keys, unique constraints y check constraints.
-- Índices.
-- Triggers, incluyendo actualización automática de `updated_at` si aplica.
-- Grants y permisos de ejecución de funciones.
-- Datos semilla mínimos de catálogos.
-- Columnas reales de tablas mencionadas por políticas pero ausentes en `live_columns_snapshot.json`.
+El dump se produjo con `--no-privileges` y no existe un snapshot independiente de grants. Por ello, los grants administrados por Supabase siguen pendientes de reconciliación explícita para una instalación PostgreSQL ajena a Supabase. No se inventaron grants en `0001`.

@@ -1,55 +1,66 @@
 # Reconciliación de Supabase
 
-Este directorio contiene snapshots usados para comparar la base de datos viva de Supabase con las migraciones versionadas del repositorio. Son artefactos de reconciliación: no son migraciones y no deben ejecutarse directamente.
+Este directorio contiene snapshots de sólo lectura usados para comparar la base de datos viva con las migraciones versionadas. Los snapshots son insumos de reconciliación y no deben ejecutarse directamente.
+
+## Snapshot vivo completo
+
+El conjunto generado el 16 de julio de 2026 contiene:
+
+- `live_schema.sql`: esquema `public` obtenido con `pg_dump --schema-only --no-owner --no-privileges`.
+- `live_tables.sql`: tablas, tipo de relación y estado RLS.
+- `live_columns.sql`: tipos, UDT, nulabilidad, defaults y metadatos de longitud o precisión.
+- `live_constraints.sql`: PK, FK, UNIQUE y CHECK con definición completa.
+- `live_indexes.sql`: definiciones de `pg_indexes`, incluidos índices implícitos de constraints.
+- `live_triggers.sql`: definiciones completas de triggers no internos.
+- `live_functions.sql`: firmas, argumentos y definiciones completas.
+- `live_policies.sql`: políticas RLS con modo, roles, comando, `USING` y `WITH CHECK`.
+- `live_seed_catalogs.sql`: filas JSON de catálogos controlados.
+- `live_snapshot_metadata.txt`: fecha UTC, versiones y estado de generación.
+
+La validación de reconciliación confirmó 17 tablas, 151 columnas, 61 constraints, 37 índices, 4 triggers, 30 funciones, 23 políticas y 51 filas de semillas. No se encontraron inconsistencias entre el esquema principal y los snapshots especializados. Los índices de PK y UNIQUE se consideran representados por sus constraints aunque no aparezcan como sentencias `CREATE INDEX` independientes en el dump.
+
+Los antiguos snapshots JSON de columnas, funciones y políticas quedan conservados como antecedente, pero fueron sustituidos como fuente autoritativa por este conjunto completo bajo `supabase/reconciliation/live/`.
 
 ## Flujo recomendado en Windows
 
-Configura `SUPABASE_DB_URL` como secreto de la sesión de PowerShell y ejecuta:
+Configura `SUPABASE_DB_URL` como secreto de la sesión y ejecuta:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/pull-supabase-snapshot.ps1
 ```
 
-El script busca las herramientas en este orden:
+La resolución de herramientas sigue este orden:
 
-1. `pg_dump` y `psql` nativos disponibles en `PATH`.
+1. `pg_dump` y `psql` nativos desde `PATH`.
 2. `C:\Program Files\PostgreSQL\18\bin`.
-3. Supabase CLI únicamente como respaldo final para el dump de esquema si `pg_dump` no existe.
+3. Supabase CLI sólo como respaldo final cuando falta `pg_dump`; `psql` sigue siendo obligatorio para el conjunto completo.
 
-Cuando `pg_dump` y `psql` están disponibles, Supabase CLI no se invoca y Docker no es necesario. `psql` sí es obligatorio para producir el conjunto completo de snapshots.
+Con las herramientas nativas disponibles no se evalúa ni invoca Supabase CLI. El script se guarda como UTF-8 con BOM para que Windows PowerShell 5.1 interprete correctamente los mensajes en español; los archivos SQL se generan directamente en UTF-8 sin transformaciones manuales.
 
-## Flujo alternativo en Bash
+## Semillas permitidas
 
-Se conserva el script existente para entornos compatibles:
+`live_seed_catalogs.sql` se limita a:
 
-```bash
-bash scripts/pull-supabase-snapshot.sh
-```
+- `roles`
+- `divisions`
+- `academic_programs`
+- `academic_periods`
+- `activity_types`
+- `service_types`
+- `attention_categories`
+- `activity_modalities`
+- `activity_statuses`
+- `location_types`
+- `participant_roles`
 
-## Salidas
+No se exportan usuarios, perfiles, asignaciones de rol, actividades, participantes, asistencia, tokens ni otros datos operativos o de prueba.
 
-El flujo de Windows genera en `supabase/reconciliation/live/`:
+## Seguridad y manejo de fallos
 
-- `live_schema.sql`: esquema `public` obtenido con `pg_dump --schema-only`, sin propietarios ni privilegios.
-- `live_tables.sql`: tablas, tipo de relación y estado de RLS.
-- `live_columns.sql`: tipos, UDT, nulabilidad, valores predeterminados y metadatos de longitud o precisión.
-- `live_constraints.sql`: llaves primarias y foráneas, restricciones únicas y checks.
-- `live_indexes.sql`: definiciones completas de índices.
-- `live_triggers.sql`: definiciones de triggers no internos.
-- `live_functions.sql`: firmas, argumentos y definiciones completas de funciones y procedimientos.
-- `live_policies.sql`: políticas RLS con roles, comando, `USING` y `WITH CHECK`.
-- `live_seed_catalogs.sql`: filas JSON de los catálogos controlados conocidos que existan.
-- `live_snapshot_metadata.txt`: fecha UTC, versiones de herramientas y estado del proceso.
+- La URI sólo existe como secreto de entorno; no se imprime ni persiste.
+- `psql` usa transacciones `read only` y el proceso establece PostgreSQL en modo de sólo lectura.
+- Todos los archivos se generan primero en un directorio temporal.
+- Si un comando falla, el temporal se elimina y no se publican archivos parciales.
+- El flujo no aplica migraciones, no modifica la base viva y no repara historial remoto.
 
-El snapshot de semillas se limita a `roles`, `divisions`, `academic_programs`, `academic_periods`, `activity_types`, `service_types`, `attention_categories`, `activity_modalities`, `activity_statuses`, `location_types` y `participant_roles`. No exporta usuarios, perfiles, asignaciones de roles, actividades, participantes, tokens ni datos operativos o de prueba.
-
-## Seguridad y fallos
-
-- `SUPABASE_DB_URL` debe existir sólo como secreto de entorno; el script no la imprime ni la guarda.
-- `pg_dump` opera únicamente sobre el esquema `public` y `psql` usa transacciones `read only`.
-- También se configura PostgreSQL en modo de transacción predeterminado de sólo lectura durante la ejecución.
-- Todos los artefactos se generan primero en un directorio temporal. Sólo reemplazan las salidas vivas cuando el conjunto completo termina correctamente.
-- Si algo falla, el temporal se elimina, las salidas parciales no se publican y los metadatos registran `FAILURE` sin credenciales.
-- El flujo no aplica migraciones, no repara historial remoto y no realiza escrituras en Supabase.
-
-Después de generar los snapshots, revísalos y úsalos para construir o actualizar archivos versionados bajo `supabase/migrations/`. Aplicar migraciones permanece como un paso manual y revisado.
+Después de generar un snapshot, se valida su integridad y se usa para preparar una migración numerada revisable. Aplicar SQL a Supabase permanece como un paso separado y manual.

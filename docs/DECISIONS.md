@@ -311,10 +311,10 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 ## DEC-030 — Migraciones SQL versionadas en repositorio
 
-**Contexto:** durante el prototipo, varios cambios SQL de Supabase se aplicaron manualmente. Para reducir deriva entre entorno vivo y repositorio, SITAA necesita convertir las migraciones en fuente de verdad verificable.
+**Contexto:** durante el prototipo, varios cambios SQL de Supabase se aplicaron manualmente. El primer intento de baseline se construyó desde snapshots JSON incompletos y no representaba constraints, índices, triggers, todas las tablas ni semillas. Posteriormente se obtuvo un snapshot completo y de sólo lectura del esquema vivo mediante `pg_dump` y `psql`.
 
-**Decisión:** a partir de esta etapa, todo cambio de base de datos debe registrarse como archivo SQL numerado en `supabase/migrations/`. La primera migración pendiente será `0001_baseline_current_schema.sql`, generada a partir del estado vivo reconciliado de Supabase. Si una migración se aplica manualmente desde el SQL Editor, el archivo SQL debe quedar comprometido igualmente en el repositorio.
+**Decisión:** `0001_baseline_current_schema.sql` queda sustituida por la baseline reconciliada desde los snapshots vivos completos y se convierte en el punto de partida para instalaciones nuevas. La versión incompleta anterior queda superada y nunca fue aplicada como migración administrada. Después de esta reconciliación, `0001` no se reescribe salvo para corregir un defecto comprobado de la baseline. Todo cambio posterior usa `0002_short_description.sql`, `0003_short_description.sql` y así sucesivamente. La migración debe crearse antes o junto con cualquier SQL aplicado a Supabase, aunque la aplicación siga realizándose manualmente.
 
-**Consecuencias:** no se crearán migraciones destructivas ni SQL basado en suposiciones. La documentación `docs/DATABASE_STATE.md` y `docs/DATABASE_CHANGELOG.md` guiará la reconciliación hasta que la baseline exista. Después de la baseline, el historial de cambios SQL deberá revisarse junto con el código y la documentación del producto.
+**Consecuencias:** el repositorio pasa a ser la fuente de verdad para cambios futuros. La baseline no debe ejecutarse a ciegas contra la base viva actual, que ya contiene los objetos por cambios manuales históricos. Los snapshots de reconciliación no sustituyen migraciones y cada migración posterior debe revisarse junto con la documentación relacionada.
 
 **Estado:** Aceptada.
