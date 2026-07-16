@@ -1,0 +1,6 @@
+SITAA Supabase live snapshot metadata
+Generated at UTC: 2026-07-16T18:16:31Z
+Purpose: reconciliation only; no remote writes.
+SUPABASE_DB_URL: present; value intentionally not recorded.
+Supabase CLI: 2.109.1
+psql: psql (PostgreSQL) 18.4

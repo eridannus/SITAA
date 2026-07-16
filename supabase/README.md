@@ -4,9 +4,7 @@ Este directorio concentra el historial de cambios de base de datos de SITAA.
 
 ## Regla principal
 
-A partir de esta etapa, todo cambio futuro en la base de datos debe registrarse en el repositorio como archivo SQL de migración dentro de `supabase/migrations/`.
-
-Durante el prototipo, algunas migraciones pueden seguir ejecutándose manualmente desde el SQL Editor de Supabase. Aun así, el archivo SQL correspondiente debe quedar comprometido en Git, aunque la aplicación manual ya se haya realizado en Supabase.
+Todo cambio futuro en la base de datos debe registrarse como archivo SQL de migración dentro de `supabase/migrations/`. Durante el prototipo, una migración puede aplicarse manualmente desde el SQL Editor de Supabase, pero su archivo SQL debe conservarse en Git aunque ya haya sido ejecutado.
 
 ## Convención de nombres
 
@@ -16,42 +14,33 @@ Usar nombres consecutivos, breves y descriptivos:
 - `0002_short_description.sql`
 - `0003_short_description.sql`
 
-El número indica el orden de aplicación. La descripción debe usar minúsculas, guiones bajos y una frase corta en inglés o español técnico consistente.
+El número indica el orden de aplicación. La descripción usa minúsculas, guiones bajos y una frase técnica corta y consistente.
 
-## Baseline pendiente
+## Baseline reconciliada
 
-La primera migración real debe capturar el estado actual de Supabase como baseline verificable. No debe escribirse a mano con suposiciones: debe reconciliarse contra el esquema vivo, funciones, políticas RLS, índices, catálogos mínimos y objetos necesarios para que SITAA opere.
+La migración `supabase/migrations/0001_baseline_current_schema.sql` fue generada desde los snapshots disponibles en `supabase/reconciliation/`. Representa el estado conocido del proyecto vivo al momento de la reconciliación y conserva TODOs explícitos para objetos que todavía requieren verificación.
 
-Hasta que exista esa baseline, los archivos de documentación en `docs/DATABASE_STATE.md` y `docs/DATABASE_CHANGELOG.md` funcionan como guía de reconciliación, no como definición ejecutable del esquema.
+La baseline debe revisarse antes de ejecutarse en cualquier entorno. Su objetivo es fijar un punto de partida verificable para que los cambios posteriores queden versionados en el repositorio.
 
-## Reglas de seguridad
+## Snapshots remotos
 
-- No incluir secretos, llaves `service_role`, tokens ni datos personales reales.
-- No crear migraciones destructivas sin revisión explícita.
-- No depender sólo de cambios manuales en Supabase: el repositorio debe convertirse en la fuente de verdad.
-- Toda migración debe ser revisable y, cuando aplique, acompañarse de notas en la documentación del modelo o decisiones.
-
-## Baseline generada desde snapshots vivos
-
-La migración `supabase/migrations/0001_baseline_current_schema.sql` fue generada desde los snapshots en `supabase/reconciliation/`. Representa el estado conocido del proyecto vivo al momento de la reconciliación, pero conserva TODOs para objetos no cubiertos por los snapshots: constraints, índices, triggers, grants, datos semilla y tablas mencionadas por políticas sin columnas capturadas.
-
-Esta baseline debe revisarse antes de ejecutarse automáticamente en cualquier entorno. Su objetivo principal es fijar un punto de partida verificable para que los cambios futuros sí queden versionados en el repositorio.
-## Snapshots remotos desde setup de Codex
-
-Codex puede generar snapshots del Supabase vivo durante la fase de setup mediante:
-
-```bash
-bash scripts/pull-supabase-snapshot.sh
-```
-
-En Windows PowerShell:
+En Windows, el flujo recomendado es:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/pull-supabase-snapshot.ps1
 ```
 
-El entorno debe proporcionar `SUPABASE_DB_URL` como secreto. Ese valor sólo se usa durante el setup, no debe imprimirse, no debe guardarse en archivos y nunca debe comprometerse en Git.
+El entorno debe proporcionar `SUPABASE_DB_URL` como secreto. El valor se usa sólo durante la ejecución: no se imprime, no se incluye en metadatos y no debe guardarse en archivos ni comprometerse en Git.
 
-El script usa un flujo de sólo lectura para producir archivos en `supabase/reconciliation/live/`. Si Supabase CLI o `supabase db dump` no están disponibles, falla con instrucciones en lugar de producir un snapshot parcial silencioso. Si `psql` está disponible, también genera snapshots separados de funciones, políticas, tablas, columnas, constraints, índices y triggers mediante transacciones `read only`.
+El script prefiere `pg_dump` y `psql` nativos desde `PATH`; después busca PostgreSQL 18 en `C:\Program Files\PostgreSQL\18\bin`. Con esas herramientas no usa Supabase CLI y no requiere Docker. Supabase CLI queda únicamente como respaldo final del dump de esquema cuando `pg_dump` no está disponible; `psql` sigue siendo necesario para generar las consultas de reconciliación.
 
-Estos snapshots sirven para construir o revisar migraciones versionadas. Aplicar migraciones a Supabase permanece como paso manual y revisado por ahora. El flujo de snapshots no ejecuta `supabase db push`, `supabase db reset` ni reparación automática de historial remoto.
+Las salidas se escriben en `supabase/reconciliation/live/` e incluyen el esquema `public`, tablas, columnas, restricciones, índices, triggers, funciones, políticas y datos de catálogos controlados. No se exportan datos personales ni operativos. Consulta `supabase/reconciliation/README.md` para el detalle y las garantías ante fallos.
+
+Los snapshots son artefactos de reconciliación, no migraciones ejecutables. Sirven para construir o revisar migraciones versionadas; aplicar cambios a Supabase permanece como un paso manual y revisado.
+
+## Reglas de seguridad
+
+- No incluir secretos, llaves `service_role`, tokens ni datos personales reales.
+- No crear migraciones destructivas sin revisión explícita.
+- No depender sólo de cambios manuales: el repositorio debe ser la fuente de verdad.
+- Revisar cada migración y actualizar la documentación del modelo o las decisiones cuando corresponda.
