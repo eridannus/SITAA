@@ -2,20 +2,24 @@
 
 ## Alcance y método
 
-Esta auditoría es de sólo lectura. Contrasta la migración baseline `0001_baseline_current_schema.sql`, los diez artefactos reconciliados de `supabase/reconciliation/live/`, las llamadas Supabase de `app/`, `lib/` y `components/`, los tipos de `types/` y la documentación funcional vigente. No se consultó Supabase remoto, no se inspeccionaron datos personales y no se modificó la aplicación ni la baseline.
+Esta auditoría es de sólo lectura. Contrasta la migración baseline `0001_baseline_current_schema.sql`, los catorce artefactos reconciliados de `supabase/reconciliation/live/`, las llamadas Supabase de `app/`, `lib/` y `components/`, los tipos de `types/` y la documentación funcional vigente. No se consultó Supabase remoto, no se inspeccionaron datos personales y no se modificó la aplicación ni la baseline.
 
-La evidencia refleja el snapshot reconciliado disponible en el repositorio. Los privilegios efectivos de ejecución no están incluidos porque el esquema se obtuvo con `--no-privileges`; esa limitación se mantiene explícita.
+La evidencia refleja el snapshot reconciliado disponible en el repositorio. Aunque el esquema principal conserva `--no-privileges`, los snapshots especializados de rutinas, tablas, secuencias y ACL resuelven la incertidumbre sobre grants efectivos que antes se registró como M-08.
 
 ## Resumen ejecutivo
 
 La estructura tiene una base coherente para el MVP: las 17 tablas públicas tienen RLS habilitado, no hay índices exactamente duplicados, las funciones `SECURITY DEFINER` declaran un `search_path` controlado y los flujos centrales de semestre, ventana normal de asistencia, reapertura extraordinaria y privacidad de la lista de participantes están representados.
 
-Sin embargo, no conviene ampliar todavía el sistema con formularios, reportes u otros módulos sensibles. Antes debe existir una migración de consolidación revisada que corrija cuatro hallazgos altos:
+Sin embargo, no conviene ampliar todavía el sistema con formularios, reportes u otros módulos sensibles. Se confirmaron seis hallazgos altos:
 
 1. La política RLS de `activities` permite leer borradores a responsables, participantes y roles de gestión, aunque el producto establece visibilidad exclusiva para `created_by`.
 2. `technical_admin` recibe acceso académico amplio por `can_manage_activity`, contrario a la documentación de permisos.
 3. Los RPC manuales permiten devolver una asistencia vencida a `pending`, aunque ese estado debe ser temporal.
 4. La integridad de una actividad publicada depende de la aplicación; la base permite una fila `scheduled` incompleta si se usa la API directamente.
+5. Las 30 funciones públicas, incluidos ocho RPC de mutación, conceden `EXECUTE` explícito a `PUBLIC` y `anon`.
+6. `anon` y `authenticated` tienen privilegios de tabla y mantenimiento mucho más amplios que los flujos expuestos por SITAA.
+
+A-02 se conserva como riesgo conocido, pero queda diferido intencionalmente durante desarrollo y pruebas hasta diseñar la administración de usuarios, roles y permisos. La migración 0002 inicial debe concentrarse en A-01, A-03, A-04 y las correcciones de privilegios confirmadas por los snapshots.
 
 Se identificaron **cuatro candidatos potencialmente obsoletos o sin uso conocido**: tres funciones (`can_create_activity(uuid,text)`, `can_manage_activity(uuid,text)` y `has_active_role(text)`) y la columna `activities.updated_by`. Ninguno debe retirarse sin ejecutar primero las consultas de dependencias y verificar consumidores externos.
 
@@ -24,8 +28,8 @@ Se identificaron **cuatro candidatos potencialmente obsoletos o sin uso conocido
 | Severidad | Cantidad |
 | --- | ---: |
 | Crítica | 0 |
-| Alta | 4 |
-| Media | 8 |
+| Alta | 6 |
+| Media | 7 |
 | Baja | 4 |
 | Informativa | 5 |
 
@@ -41,6 +45,10 @@ Se identificaron **cuatro candidatos potencialmente obsoletos o sin uso conocido
 | Funciones y firmas | 30 |
 | Políticas RLS | 23 |
 | Filas de semillas controladas | 51 |
+| Grants de rutinas | 150 |
+| Grants de tablas en `information_schema` | 476 |
+| Grants de secuencia | 12 |
+| Entradas ACL expandidas | 706 |
 
 Módulos representados: salud del sistema, perfiles, roles y asignaciones, divisiones y programas, semestres, catálogos operativos, actividades, participantes, asistencia manual, tokens QR/código y expiración/reapertura de asistencia.
 
@@ -53,6 +61,8 @@ Módulos representados: salud del sistema, perfiles, roles y asignaciones, divis
 - La ventana normal usa `America/Mexico_City`: abre 15 minutos antes del inicio y cierra 15 minutos después del término. Las reaperturas posteriores duran 15 minutos según `expires_at` y pueden repetirse.
 - `check_in_activity(text)` distingue `qr`/enlace de `code`, protege `justified` y la ausencia manual, y permite corregir una ausencia creada por el sistema durante una reapertura válida.
 - La política de `activity_participants` permite al alumno leer sólo su propia fila; el roster completo requiere `can_read_activity`.
+- `postgres` y `service_role` conservan el acceso administrativo esperado; `authenticator` no aparece como receptor directo y no se observaron otros roles en las ACL.
+- No falta ningún grant requerido por las llamadas actuales de la aplicación: `authenticated` puede ejecutar los 30 RPC y conserva los privilegios de tabla necesarios. El problema confirmado es exceso, no ausencia.
 - Los códigos internos verificados son estables y coherentes: `tutoring`/`advising`, `student`/`worker`, `graphic_design`/`architecture`, `online` para modalidad y `online_space` para tipo de ubicación. No hay motivo para renombrarlos por razones cosméticas.
 
 ## Hallazgos críticos
@@ -72,11 +82,13 @@ No se confirmó ningún hallazgo crítico con la evidencia disponible.
 
 ### A-02 — `technical_admin` obtiene acceso académico amplio implícito
 
+- **Estado:** diferido intencionalmente durante desarrollo y pruebas. **Deferred intentionally until user, role and permission administration is designed.**
+
 - **Objetos afectados:** `can_manage_activity(text,uuid,uuid,text)`, `can_edit_activity(uuid)`, `can_read_activity(uuid)`, `can_update_activity_base(uuid)`, `can_delete_activity(uuid)` y políticas/RPC que los invocan.
 - **Evidencia:** la rama `ra.role_code = 'technical_admin'` de `can_manage_activity` no exige alcance, programa, división ni una asignación académica adicional. La documentación establece que el rol técnico no obtiene lectura amplia de contenido sensible.
 - **Llamadores/dependencias actuales:** políticas CRUD de `activities`, políticas de `activity_participants`, gestión de participantes, asistencia, QR/código y corrección base.
 - **Riesgo:** lectura y modificación de actividades, rosters y asistencia por una responsabilidad exclusivamente técnica. También amplía la visibilidad de borradores por A-01.
-- **Acción recomendada:** separar soporte técnico de gestión académica. Exigir una asignación administrativa/académica explícita o crear permisos técnicos acotados por operación, sin reutilizar `can_manage_activity` como acceso universal.
+- **Acción recomendada:** no cambiarlo en 0002. Cuando exista administración de usuarios, roles y permisos, separar soporte técnico de gestión académica y exigir una asignación administrativa/académica explícita para contenido sensible.
 - **Confianza:** alta.
 
 ### A-03 — Una asistencia vencida puede volver a `pending` mediante RPC
@@ -96,6 +108,24 @@ No se confirmó ningún hallazgo crítico con la evidencia disponible.
 - **Riesgo:** actividades publicadas incompletas, semestres o ventanas de asistencia incoherentes y fallos posteriores en reportes.
 - **Acción recomendada:** centralizar la transición de publicación en un RPC transaccional o en una validación de base condicionada por estado, preservando la flexibilidad de `draft`. No imponer `NOT NULL` global a campos que un borrador puede omitir.
 - **Confianza:** alta.
+
+### A-05 — Todos los RPC permiten `EXECUTE` a `PUBLIC` y `anon`
+
+- **Objetos afectados:** las 30 firmas públicas, en especial `add_activity_participant`, `remove_activity_participant`, `update_activity_participant_attendance`, `update_activity_participants_attendance_bulk`, `open_activity_attendance_checkin`, `close_activity_attendance_checkin`, `check_in_activity` y `finalize_expired_attendance`.
+- **Evidencia:** `live_routine_privileges.sql` contiene 150 filas: cada firma concede `EXECUTE` a `PUBLIC`, `anon`, `authenticated`, `postgres` y `service_role`. `live_acl.sql` confirma las mismas 150 entradas; todas tienen ACL explícita, no `<default>`.
+- **Llamadores/dependencias actuales:** los siete RPC administrativos o de check-in dependen de controles internos; `finalize_expired_attendance()` no valida al llamador y realiza actualizaciones globales deterministas. Los helpers de horario `SECURITY DEFINER` tampoco verifican permiso antes de devolver fechas para un UUID conocido.
+- **Riesgo:** cualquier sesión anónima puede invocar la superficie RPC. Los controles internos rechazan a `anon` en altas, bajas, asistencia, apertura y cierre porque `auth.uid()` es nulo, pero el grant permite sondeo, carga innecesaria y diferencias de error. `finalize_expired_attendance()` sí puede producir cambios globales vencidos sin autenticación.
+- **Acción recomendada:** revocar `EXECUTE` a `PUBLIC` y `anon` en las 30 firmas; conservar `authenticated`, `service_role` y `postgres`. Evaluar después, con consumidores externos verificados, si `authenticated` debe perder funciones internas como `generate_three_word_code()` o `set_updated_at()`.
+- **Confianza:** alta.
+
+### A-06 — Privilegios directos de tabla y secuencia exceden el modelo RLS
+
+- **Objetos afectados:** las 17 tablas públicas y `system_health_id_seq`.
+- **Evidencia:** `live_table_privileges.sql` muestra para `anon`, `authenticated`, `postgres` y `service_role` los siete privilegios `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES` y `TRIGGER` sobre cada tabla. La ACL añade `MAINTAIN` para esos cuatro roles. La secuencia concede `SELECT`, `UPDATE` y `USAGE` a los mismos roles. No hay grants de tabla o secuencia para `PUBLIC`.
+- **Llamadores/dependencias actuales:** la aplicación anónima sólo consulta `system_health`; usuarios autenticados leen catálogos y usan acceso directo acotado para perfiles, roles y actividades. Participantes y tokens usan principalmente RPC.
+- **Riesgo:** RLS bloquea la lectura y DML anónimos sin política, por lo que no se confirmó exposición directa de filas sensibles. Sin embargo, `TRUNCATE` y capacidades de mantenimiento no son controles por fila y sobran en roles de cliente; los catálogos supuestamente de sólo lectura también tienen grants de escritura.
+- **Acción recomendada:** dejar a `anon` únicamente `SELECT` en `system_health`; retirar privilegios utilitarios a `authenticated`; reducir catálogos a `SELECT`; retirar acceso directo autenticado a `activity_checkin_tokens`; retirar acceso de secuencia a `anon` y `authenticated`; conservar administración para `postgres`/`service_role`.
+- **Confianza:** alta sobre ACL directas; la herencia de roles no puede evaluarse porque el snapshot no incluye `pg_auth_members`.
 
 ## Hallazgos medios
 
@@ -162,15 +192,6 @@ No se confirmó ningún hallazgo crítico con la evidencia disponible.
 - **Acción recomendada:** centralizar el cálculo de ventana y decidir si `checked_in_at` significa check-in efectivo o cualquier confirmación manual. Aplicar una semántica consistente.
 - **Confianza:** alta.
 
-### M-08 — Los privilegios efectivos no están reconciliados
-
-- **Objetos afectados:** grants de tablas, secuencias y las 29 funciones `SECURITY DEFINER`.
-- **Evidencia:** el dump fue generado con `--no-privileges` y no existe snapshot especializado de grants. Los cuerpos observados tienen controles internos razonables, pero no se conoce qué roles pueden ejecutar cada RPC.
-- **Llamadores/dependencias actuales:** API Supabase y todos los RPC.
-- **Riesgo:** una función prevista sólo para `authenticated` podría quedar ejecutable por `anon` o `PUBLIC`; la revisión del perímetro queda incompleta.
-- **Acción recomendada:** capturar `information_schema.routine_privileges`, `table_privileges` y ACL de `pg_proc`/`pg_class` mediante consultas de sólo lectura, y versionar grants explícitos en 0002.
-- **Confianza:** alta sobre la brecha de evidencia; desconocida sobre los grants reales.
-
 ## Hallazgos bajos
 
 ### B-01 — `activities.updated_by` no tiene escritor conocido
@@ -219,9 +240,9 @@ No se confirmó ningún hallazgo crítico con la evidencia disponible.
 
 Fuera de A-03 y M-07, el flujo mantiene una fuente práctica de verdad: helpers para apertura/plazo, tokens con `expires_at`, finalización a `absent/system`, reaperturas de 15 minutos y protección de estados manuales/justificados. Todas las conversiones naturales observadas usan `America/Mexico_City`.
 
-### I-03 — RLS completo por tabla, CRUD deliberadamente limitado
+### I-03 — RLS completo por tabla, pero grants de objeto no mínimos
 
-Todos los objetos de datos públicos tienen RLS. Catálogos y `system_health` son de lectura; `profiles` y `role_assignments` no tienen alta pública; tokens carecen de políticas directas. Esta cobertura incompleta de CRUD parece intencional, no un defecto, siempre que los grants efectivos confirmen el perímetro.
+Todos los objetos de datos públicos tienen RLS. Las políticas mantienen catálogos y `system_health` como lectura, limitan perfiles/asignaciones y ocultan tokens. Los grants de objeto no reflejan esas limitaciones, por lo que A-06 debe corregirse aunque RLS continúe como autorización por fila.
 
 ### I-04 — Índices y unicidades principales
 
@@ -284,6 +305,92 @@ No se detectó una función con `SECURITY DEFINER` sin `search_path` controlado.
 
 No hay dos políticas del mismo comando que se solapen sobre una tabla. La principal amplitud no proviene de políticas duplicadas, sino de expresiones helper demasiado amplias.
 
+## Privilegios efectivos y ACL
+
+### Resolución de M-08
+
+M-08 queda **resuelto como incertidumbre**: existen snapshots completos y concordantes. La evidencia no demuestra un perímetro mínimo; demuestra dos excesos confirmados, reclasificados como A-05 y A-06.
+
+- Rutinas: 150 grants, correspondientes a 30 firmas × 5 receptores.
+- Tablas: 476 grants de `information_schema`, correspondientes a 17 tablas × 7 privilegios × 4 receptores.
+- ACL de tablas: las 476 combinaciones anteriores coinciden y agregan 68 entradas `MAINTAIN` no mostradas por `information_schema.table_privileges`.
+- Secuencias: 12 grants, correspondientes a una secuencia × 3 privilegios × 4 receptores.
+- ACL total: 706 entradas sobre 48 objetos; ninguna usa `<default>`. El `EXECUTE` de `PUBLIC` es explícito, no sólo el privilegio implícito predeterminado de PostgreSQL.
+
+No se detectó una discrepancia contradictoria entre las vistas y ACL. La diferencia documentada es de cobertura: `live_acl.sql` incluye `MAINTAIN`, mientras `information_schema.table_privileges` no lo reporta. No hay evidencia de membresía de roles porque el snapshot no captura `pg_auth_members`; por tanto, no se infiere acceso heredado de `authenticator`.
+
+### Matriz resumida de rutinas
+
+| Receptor | Objetos con `EXECUTE` | Evaluación |
+| --- | ---: | --- |
+| `PUBLIC` | 30/30 | Excesivo; retirar |
+| `anon` | 30/30 | Excesivo; SITAA exige autenticación para todos los RPC actuales |
+| `authenticated` | 30/30 | Suficiente para la aplicación; más amplio que el mínimo interno |
+| `service_role` | 30/30 | Administrativo esperado; la aplicación no usa su clave |
+| `postgres` | 30/30, con capacidad de delegación | Propietario esperado |
+| `authenticator` | 0 grants directos | Correcto; membresía no capturada |
+| Otros roles | Ninguno observado | Sin evidencia adicional |
+
+Los RPC administrativos `add_activity_participant`, `remove_activity_participant`, las dos actualizaciones manuales y `open`/`close` dependen de `can_edit_activity` y rechazan a un anónimo. `check_in_activity` exige implícitamente un `auth.uid()` que coincida con un participante. Esas defensas son necesarias, pero no justifican conceder `EXECUTE` a `PUBLIC` o `anon`. `finalize_expired_attendance()` es la excepción: no valida al llamador y puede mutar globalmente filas vencidas.
+
+### Matriz resumida de tablas
+
+| Categoría | Grants observados | RLS/política | Desviación |
+| --- | --- | --- | --- |
+| Tablas sensibles: `profiles`, `role_assignments`, `activities`, `activity_participants`, `activity_checkin_tokens` | Los 8 privilegios ACL para `anon` y `authenticated` | RLS bloquea filas no autorizadas | `TRUNCATE`/`MAINTAIN` y grants no usados son excesivos |
+| 11 catálogos/semestres | Los 8 privilegios ACL para `anon` y `authenticated` | Sólo SELECT para `authenticated` | Deben quedar en SELECT autenticado |
+| `system_health` | Los 8 privilegios ACL para `anon` y `authenticated` | SELECT anónimo deliberado | `anon` sólo necesita SELECT |
+| Todas las tablas | Acceso completo para `postgres` y `service_role` | Roles administrativos | Confirmado como esperado para el prototipo |
+| Todas las tablas | Sin ACL para `PUBLIC` | Sin acceso directo | Correcto |
+
+No se confirmó lectura de filas sensibles por `anon`: las políticas RLS no la permiten. El riesgo confirmado está en la capacidad de objeto innecesaria, especialmente operaciones que no son autorización por fila.
+
+### Secuencia
+
+El único objeto es `system_health_id_seq`. `anon`, `authenticated`, `service_role` y `postgres` tienen `SELECT`, `UPDATE` y `USAGE`; `PUBLIC` y `authenticator` no tienen grant directo. Como las demás claves primarias de SITAA usan UUID, la secuencia no participa en actividades, perfiles, roles, participantes ni tokens. Los clientes no necesitan acceso; puede conservarse para administración/propietario.
+
+### Grants confirmados como suficientes, excesivos o ausentes
+
+- **Seguros/suficientes:** acceso de propietario `postgres`; acceso administrativo `service_role`; `authenticated` para RPC vigentes, lectura de catálogos y operaciones directas que usa la aplicación; `anon` SELECT de `system_health`.
+- **Excesivos:** `EXECUTE` de `PUBLIC`/`anon`; todos los grants de tabla de `anon` salvo `system_health.SELECT`; privilegios `TRUNCATE`, `REFERENCES`, `TRIGGER` y `MAINTAIN` de `authenticated`; escritura autenticada en catálogos; acceso directo autenticado a tokens; acceso de secuencia para clientes.
+- **Ausentes:** no falta un privilegio requerido por la aplicación actual. `authenticator` no necesita ACL directa según la evidencia disponible.
+
+### Operaciones explícitas recomendadas para una migración futura
+
+Este bloque es una recomendación auditable, no una migración creada ni ejecutada:
+
+```sql
+revoke execute on all functions in schema public from public, anon;
+
+revoke all privileges on all tables in schema public from anon;
+grant select on table public.system_health to anon;
+
+revoke truncate, references, trigger, maintain
+on all tables in schema public from authenticated;
+
+revoke insert, update, delete on table
+  public.academic_periods,
+  public.academic_programs,
+  public.activity_modalities,
+  public.activity_statuses,
+  public.activity_types,
+  public.attention_categories,
+  public.divisions,
+  public.location_types,
+  public.participant_roles,
+  public.roles,
+  public.service_types,
+  public.system_health,
+  public.role_assignments
+from authenticated;
+
+revoke insert, delete on table public.profiles from authenticated;
+revoke all privileges on table public.activity_checkin_tokens from authenticated;
+revoke all privileges on sequence public.system_health_id_seq from anon, authenticated;
+```
+
+La migración debe conservar `SELECT/INSERT/UPDATE/DELETE` autenticado sobre `activities`, mantener por ahora el contrato RLS de `activity_participants`, conservar `SELECT/UPDATE` propio de `profiles` y `SELECT` de `role_assignments`. No se recomienda cambiar grants de `service_role` o `postgres` en 0002. Tampoco se recomienda modificar privilegios de las firmas heredadas para `authenticated` hasta verificar consumidores externos.
+
 ## Objetos que parecen redundantes pero todavía no deben eliminarse
 
 - `can_create_activity(uuid,text)` y `can_manage_activity(uuid,text)`: parecen firmas anteriores al modelo con alcance; requieren `pg_depend`, revisión de grants y búsqueda de clientes externos.
@@ -303,34 +410,28 @@ No hay dos políticas del mismo comando que se solapen sobre una tabla. La princ
 
 ## Plan de consolidación propuesto
 
-1. **Cerrar exposición y reglas altas:** corregir RLS de borradores, separar permisos técnicos, impedir `pending` vencido y llevar publicación a una operación de base validada.
-2. **Capturar permisos efectivos:** generar snapshot de grants/ACL y definir privilegios mínimos por tabla y función.
-3. **Validar datos antes de restringir:** ejecutar las consultas agregadas de duplicados, filas publicadas incompletas, asignaciones solapadas y divergencia temporal.
-4. **Optimizar autorización:** medir y crear índices para `role_assignments` y claves de joins frecuentes.
-5. **Consolidar contratos:** fijar retornos RPC canónicos y alinear TypeScript/documentación sin añadir columnas por inercia.
-6. **Retirar legado verificado:** sólo después de `pg_depend`, grants y búsqueda externa, retirar las tres funciones candidatas y decidir `updated_by`/timestamps compatibles.
-7. **Homogeneizar auditoría:** definir una política única de `updated_at`, `updated_by` y `checked_in_at`.
+1. **0002 inicial:** aislamiento RLS de borradores, asistencia vencida no pendiente, publicación transaccional completa y correcciones de privilegios verificadas.
+2. **Diferir A-02:** conservar temporalmente el acceso de `technical_admin` durante desarrollo/pruebas hasta diseñar administración de identidades y permisos.
+3. **Validar datos antes de restricciones posteriores:** duplicados de identidad, asignaciones solapadas y divergencia temporal.
+4. **Optimizar después:** índices de autorización y joins medidos.
+5. **Consolidar contratos después:** retornos RPC, TypeScript y timestamps canónicos.
+6. **Conservar legado/reservas:** no retirar overloads, columnas de compatibilidad, alcance divisional ni tokens de registro en 0002.
 
 Cada paso debe ser pequeño, reversible y probado en un entorno no productivo antes de aplicarse manualmente.
 
 ## Candidatos para `0002_database_consolidation.sql`
 
-La siguiente lista es una propuesta; esta auditoría no crea la migración:
+La siguiente lista define el alcance inicial recomendado; esta auditoría no crea la migración:
 
-1. Reemplazo revisado de la política SELECT de `activities` con aislamiento de `draft` por creador.
-2. Ajuste coordinado de `can_read_activity`/`can_edit_activity` para no ampliar borradores por roster o gestión.
-3. Refactor de `can_manage_activity` que retire el acceso académico implícito de `technical_admin` y aclare el alcance de autoridades.
-4. Validación en base para transición `draft` → `scheduled`, preferentemente mediante RPC transaccional.
-5. Rechazo de `pending` manual/masivo después del plazo natural.
-6. Unicidad parcial del identificador institucional, sólo tras resolver duplicados.
-7. Índices medidos para asignaciones de rol y claves foráneas frecuentes.
-8. Restricción revisada para dimensiones de `role_assignments` y estrategia de duplicados/solapamientos.
-9. Fuente temporal canónica y sincronización o retiro gradual de `starts_at`/`ends_at`.
-10. Semántica uniforme de `checked_in_at` y timestamps de auditoría.
-11. Retornos RPC canónicos para tarjetas/participantes y tipos correspondientes.
-12. Grants explícitos de mínimo privilegio, basados en un snapshot real.
-13. Retiro condicionado de las tres funciones candidatas y posible columna `updated_by`, únicamente después de verificar dependencias y datos.
+1. Aplicar visibilidad RLS de borradores exclusivamente para `created_by` y alinear los helpers relacionados.
+2. Rechazar `pending` en actualizaciones manuales o masivas después del plazo natural de asistencia.
+3. Implementar una transición transaccional y completa de `draft` a `scheduled` en la base.
+4. Aplicar sólo las correcciones de privilegios confirmadas: retirar `EXECUTE` de `PUBLIC`/`anon`, reducir tablas de `anon`, retirar capacidades utilitarias de `authenticated`, limitar catálogos/tokens y retirar la secuencia a roles cliente.
+5. No restringir `technical_admin` todavía; A-02 permanece diferido intencionalmente.
+6. No eliminar overloads heredados, columnas de compatibilidad ni capacidades reservadas.
+
+Unicidad institucional, índices, dimensiones de roles, timestamps, contratos RPC y cualquier retiro de objetos deben quedar fuera de 0002 y tratarse en migraciones posteriores con evidencia adicional.
 
 ## Conclusión
 
-La base reconciliada es comprensible y tiene controles importantes, pero **no es prudente extenderla antes de una consolidación de seguridad e integridad**. A-01 y A-02 pueden causar exposición de información académica a usuarios autenticados con alcance mayor al producto; A-03 y A-04 pueden producir asistencia o actividades publicadas inconsistentes. La futura 0002 debe atender primero esos cuatro puntos, conservar las capacidades reservadas y posponer cualquier eliminación hasta contar con evidencia de dependencias y privilegios.
+La base reconciliada es comprensible y tiene controles importantes, pero **no es prudente extenderla antes de una consolidación de seguridad e integridad**. A-01 puede exponer borradores; A-03 y A-04 pueden producir asistencia o actividades publicadas inconsistentes; A-05 y A-06 confirman un perímetro de grants excesivo. A-02 sigue siendo alto, pero se difiere deliberadamente durante desarrollo y pruebas. La futura 0002 debe atender exactamente los puntos enumerados arriba, conservar las capacidades reservadas y posponer cualquier eliminación.
