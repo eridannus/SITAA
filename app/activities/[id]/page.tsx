@@ -4,11 +4,14 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { canManageActivityScope, getActivityScopeAccess, isStudentOnlyUser } from "@/lib/activities/activity-scope-permissions";
+import {
+  getPublicationScheduleRejectionErrors,
+  PUBLICATION_SCHEDULE_MESSAGE,
+} from "@/lib/activities/activity-form-validation";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { getActivityParticipants } from "@/lib/activities/get-activity-participants";
 import { getActiveActivityAttendanceCheckin, getActivityAttendanceCheckinState, getActivityAttendanceDeadline, getActivityAttendanceOpenAt } from "@/lib/activities/get-attendance-checkin";
 import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
-import { getMexicoCityToday } from "@/lib/activities/date-time";
 import { finalizeExpiredAttendance } from "@/lib/attendance/finalize-expired-attendance";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { qrSvgDataUri } from "@/lib/qr/qr-code";
@@ -37,7 +40,7 @@ const durationLabels = { one_hour: "1 hora", two_hours: "2 horas", custom: "Pers
 const publicationErrorMessages: Record<string, string> = {
   permission: "No tienes permiso para publicar esta actividad.",
   semester: "No fue posible publicar la actividad porque no hay un semestre válido para la fecha de inicio.",
-  schedule: "La fecha y hora de inicio deben ser posteriores a la hora actual de Ciudad de México.",
+  schedule: PUBLICATION_SCHEDULE_MESSAGE,
   validation: "La actividad permanece como borrador. Revisa que todos los datos requeridos estén completos y sean válidos.",
   generic: "No fue posible publicar la actividad. El borrador se conservó para que puedas revisarlo.",
 };
@@ -142,6 +145,9 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const published = param(query.published) === "1";
   const publicationErrorCode = param(query.publication_error);
   const publicationErrorMessage = publicationErrorCode ? publicationErrorMessages[publicationErrorCode] ?? publicationErrorMessages.generic : null;
+  const publicationFieldErrors = publicationErrorCode === "schedule"
+    ? getPublicationScheduleRejectionErrors(values)
+    : {};
   const deleteError = param(query.error) === "delete";
   const participantStatus = param(query.participant);
   const checkinStatus = param(query.checkin);
@@ -195,7 +201,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
 
     {canUpdateBaseData ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       {showAdministrativeCorrectionMode && <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Corrección administrativa de datos base habilitada.</div>}
-      <ActivityForm options={options} access={access} initialValues={values} today={getMexicoCityToday()} mode="edit" activityId={id} statusCode={activity.status_code} />
+      <ActivityForm options={options} access={access} initialValues={values} initialErrors={publicationFieldErrors} mode="edit" activityId={id} statusCode={activity.status_code} />
     </div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <h2 className="break-words text-2xl font-bold text-slate-900">{activity.title}</h2>
       {activity.description && <p className="mt-4 break-words leading-7 text-slate-600">{activity.description}</p>}

@@ -4,12 +4,16 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import { canManageActivityScope, getActivityScopeAccess } from "@/lib/activities/activity-scope-permissions";
+import {
+  getPublicationScheduleRejectionErrors,
+  PUBLICATION_SCHEDULE_MESSAGE,
+  validateActivityForm,
+} from "@/lib/activities/activity-form-validation";
 import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
-import { calculatePresetEnd, getMexicoCityCurrentTime, getMexicoCityToday, isValidDate, isValidTime, toMexicoCityTimestamp } from "@/lib/activities/date-time";
+import { isValidDate, isValidTime, toMexicoCityTimestamp } from "@/lib/activities/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { ActivityFormField, ActivityFormState, ActivityFormValues, DurationMode } from "@/types/activities";
+import type { ActivityFormField, ActivityFormState, ActivityFormValues } from "@/types/activities";
 
-const durationModes = new Set<DurationMode>(["one_hour", "two_hours", "custom"]);
 const ONLINE_MODALITY_CODE = "online";
 const ONLINE_LOCATION_TYPE_CODE = "online_space";
 
@@ -25,7 +29,7 @@ type PublicationErrorCode = "permission" | "semester" | "schedule" | "validation
 const publicationMessages: Record<PublicationErrorCode, string> = {
   permission: "No tienes permiso para publicar esta actividad.",
   semester: "No fue posible publicar la actividad porque no hay un semestre válido para la fecha de inicio.",
-  schedule: "La fecha y hora de inicio deben ser posteriores a la hora actual de Ciudad de México.",
+  schedule: PUBLICATION_SCHEDULE_MESSAGE,
   validation: "La actividad permanece como borrador. Revisa que todos los datos requeridos estén completos y sean válidos.",
   generic: "No fue posible publicar la actividad. El borrador se conservó para que puedas revisarlo.",
 };
@@ -114,58 +118,6 @@ function valuesFrom(formData: FormData): ActivityFormValues {
 function invalid(previous: ActivityFormState, values: ActivityFormValues, errors: ActivityFormState["errors"], message = "Revisa los campos marcados antes de continuar."): ActivityFormState {
   return { revision: previous.revision + 1, values, errors, message, confirmPublish: false };
 }
-function validate(values: ActivityFormValues, { enforceFutureStartDate, requireOperationalFields }: { enforceFutureStartDate: boolean; requireOperationalFields: boolean }) {
-  const errors: Partial<Record<ActivityFormField, string>> = {};
-  if (!values.title) errors.title = "Escribe el título de la actividad.";
-  else if (values.title.length > 200) errors.title = "El título no puede exceder 200 caracteres.";
-  if (values.description.length > 5000) errors.description = "La descripción no puede exceder 5000 caracteres.";
-  if (values.scope_type !== "program" && values.scope_type !== "division") errors.scope_type = "Selecciona el alcance de la actividad.";
-  if (values.scope_type === "program" && !values.program_id) errors.program_id = "Selecciona un programa académico.";
-
-  if (values.modality_code === ONLINE_MODALITY_CODE) values.location_type_code = ONLINE_LOCATION_TYPE_CODE;
-  else if (values.location_type_code === ONLINE_LOCATION_TYPE_CODE) values.location_type_code = "";
-
-  if (requireOperationalFields) {
-    if (!values.activity_type_code) errors.activity_type_code = "Selecciona un tipo de actividad.";
-    if (!values.service_type_code) errors.service_type_code = "Selecciona un tipo de servicio.";
-    if (!values.attention_category_code) errors.attention_category_code = "Selecciona una categoría de atención.";
-    if (!values.modality_code) errors.modality_code = "Selecciona una modalidad.";
-    if (!values.location_type_code) errors.location_type_code = "Selecciona un tipo de ubicación.";
-    if (!values.location_detail) errors.location_detail = "Indica el lugar, aula, enlace o detalle de acceso de la actividad.";
-    if (!isValidDate(values.start_date)) errors.start_date = "Indica una fecha de inicio válida.";
-    if (!isValidTime(values.start_time)) errors.start_time = "Indica una hora válida en formato de 24 horas.";
-    if (!durationModes.has(values.duration_mode as DurationMode)) errors.duration_mode = "Selecciona una duración.";
-  }
-  if (values.location_detail.length > 500) errors.location_detail = "El detalle no puede exceder 500 caracteres.";
-  if (requireOperationalFields && enforceFutureStartDate && isValidDate(values.start_date)) {
-    const today = getMexicoCityToday();
-    if (values.start_date < today) {
-      errors.start_date = "La fecha de inicio no puede ser anterior a hoy.";
-    } else if (values.start_date === today && isValidTime(values.start_time) && values.start_time <= getMexicoCityCurrentTime()) {
-      errors.start_time = "La hora de inicio debe ser posterior a la hora actual de Ciudad de México.";
-    }
-  }
-
-  let endDate = values.end_date;
-  let endTime = values.end_time;
-  const durationMode = values.duration_mode as DurationMode;
-  if (!requireOperationalFields && !durationModes.has(durationMode)) {
-    return { errors, endDate: "", endTime: "", durationMode: null };
-  }
-  if (durationMode === "custom") {
-    if (requireOperationalFields && !isValidDate(endDate)) errors.end_date = "Indica una fecha de término válida.";
-    if (requireOperationalFields && !isValidTime(endTime)) errors.end_time = "Indica una hora válida en formato de 24 horas.";
-    if (isValidDate(values.start_date) && isValidDate(endDate)) {
-      if (endDate < values.start_date) errors.end_date = "La fecha de término no puede ser anterior al inicio.";
-      else if (endDate === values.start_date && isValidTime(values.start_time) && isValidTime(endTime) && endTime <= values.start_time) errors.end_time = "La hora de término debe ser posterior a la hora de inicio.";
-    }
-  } else if (durationMode === "one_hour" || durationMode === "two_hours") {
-    const calculated = calculatePresetEnd(values.start_date, values.start_time, durationMode);
-    if (calculated) { endDate = calculated.endDate; endTime = calculated.endTime; }
-  }
-  return { errors, endDate, endTime, durationMode };
-}
-
 async function saveActivity(activityId: string | null, previous: ActivityFormState, formData: FormData): Promise<ActivityFormState> {
   const values = valuesFrom(formData);
   const intent = activityIntent(formData);
@@ -213,6 +165,8 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
 
   values.scope_type = "program";
   if (access.allowedPrograms.length === 1) values.program_id = access.allowedPrograms[0].id;
+  if (values.modality_code === ONLINE_MODALITY_CODE) values.location_type_code = ONLINE_LOCATION_TYPE_CODE;
+  else if (values.location_type_code === ONLINE_LOCATION_TYPE_CODE) values.location_type_code = "";
 
   const willPublish = intent === "publish" || intent === "validate_publish";
   if (willPublish && existingActivity && (existingActivity.status_code !== "draft" || existingActivity.created_by !== context.user.id)) {
@@ -220,7 +174,10 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
   }
   const willRemainDraft = !willPublish && (activityId ? existingActivity?.status_code === "draft" : true);
   const requireOperationalFields = !willRemainDraft;
-  const result = validate(values, { enforceFutureStartDate: !activityId, requireOperationalFields });
+  const result = validateActivityForm(values, {
+    enforceFutureStartDate: willPublish,
+    requireOperationalFields,
+  });
   if (Object.keys(result.errors).length) return invalid(previous, values, result.errors);
 
   const selectedProgram = options.programs.find((item) => item.id === values.program_id);
@@ -292,7 +249,12 @@ async function saveActivity(activityId: string | null, previous: ActivityFormSta
     if (error || !data) return invalid(previous, values, {}, "No fue posible actualizar la actividad. Verifica tus permisos e intenta nuevamente.");
     if (intent === "publish") {
       const errorResult = await publishDraft(supabase, activityId);
-      if (errorResult) return invalid(previous, values, {}, errorResult.message);
+      if (errorResult) {
+        const fieldErrors = errorResult.code === "schedule"
+          ? getPublicationScheduleRejectionErrors(values)
+          : {};
+        return invalid(previous, values, fieldErrors, errorResult.message);
+      }
       revalidatePath("/activities");
       revalidatePath(`/activities/${activityId}`);
       revalidatePath(`/activities/${activityId}`, "page");
@@ -330,4 +292,3 @@ export async function deleteActivity(activityId: string, formData: FormData) {
   if (error || !data) redirect(`/activities/${activityId}?error=delete`);
   revalidatePath("/activities"); redirect("/activities?deleted=1");
 }
-

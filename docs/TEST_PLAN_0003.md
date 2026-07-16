@@ -63,6 +63,24 @@ Abrir una actividad publicada cuyo término sea anterior a la hora actual de Ciu
 
 **Esperado:** `activity_has_ended` devuelve true; un responsable regular ve los datos base bloqueados y los usuarios de gestión conservan la corrección administrativa prevista.
 
+## Retroalimentación por campo al publicar
+
+Estas comprobaciones se realizan desde un borrador existente y deben conservar todos los valores capturados. La confirmación dentro de la página sólo aparece cuando la validación completa termina sin errores.
+
+| Caso | Resultado esperado |
+| --- | --- |
+| Ayer y cualquier hora | Sólo **Fecha de inicio** queda inválida con “La fecha de inicio no puede ser anterior a hoy.” |
+| Hoy y una hora pasada | Sólo **Hora de inicio** queda inválida con “La hora de inicio debe ser posterior a la hora actual.” |
+| Hoy y el minuto actual exacto | **Hora de inicio** queda inválida; la igualdad no se acepta. |
+| Hoy y una hora futura | Fecha y hora no presentan error de calendario. |
+| Mañana y una hora válida | Fecha y hora no presentan error de calendario. |
+| Fecha ausente | **Fecha de inicio** queda inválida con “Indica una fecha de inicio válida.” |
+| Hora ausente | **Hora de inicio** queda inválida con “Indica una hora válida en formato de 24 horas.” |
+| Término personalizado inválido | El error aparece bajo fecha u hora de término; una duración ausente o inválida se marca en **Duración**. |
+| La RPC rechaza el horario después de la prevalidación | Se reconstruye el error específico desde fecha y hora; si no puede determinarse, ambos campos muestran el mensaje general. El borrador y sus valores permanecen intactos. |
+
+En cada error, verificar borde rojo, `aria-invalid`, relación mediante `aria-describedby`, desplazamiento suave y foco en el primer campo inválido. Al corregir un campo debe desaparecer sólo su error o los errores temporales directamente relacionados. **Guardar cambios** debe continuar aceptando como borrador fechas pasadas y datos operativos incompletos, sin abrir la confirmación de publicación.
+
 ## Privacidad y recuperación
 
 ### 8. Creador del borrador

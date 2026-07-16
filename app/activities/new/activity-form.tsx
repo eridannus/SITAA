@@ -1,31 +1,53 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { useFormStatus } from "react-dom";
 import { createActivity, resolveAcademicSemester, updateActivity } from "@/app/activities/actions";
 import { calculatePresetEnd } from "@/lib/activities/date-time";
-import type { ActivityFormOptions, ActivityFormState, ActivityFormValues, ActivityScopeAccess, DurationMode } from "@/types/activities";
+import { validateActivityForm } from "@/lib/activities/activity-form-validation";
+import type { ActivityFormField, ActivityFormOptions, ActivityFormState, ActivityFormValues, ActivityScopeAccess, DurationMode } from "@/types/activities";
 import type { CatalogRow } from "@/types/catalogs";
 
 interface Props {
   options: ActivityFormOptions;
   access: ActivityScopeAccess;
   initialValues: ActivityFormValues;
-  today: string;
+  today?: string;
   mode?: "create" | "edit";
   activityId?: string;
   statusCode?: string;
+  initialErrors?: ActivityFormState["errors"];
 }
 function label(item: CatalogRow) { return item.label?.trim() || item.name?.trim() || item.code; }
 function displayDate(value: string) {
   const [year, month, day] = value.split("-");
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
-function FieldError({ message }: { message?: string }) {
-  return message ? <p className="mt-2 text-sm font-medium text-red-700">{message}</p> : null;
+function FieldError({ field, message }: { field: ActivityFormField; message?: string }) {
+  return message ? <p id={`${field}-error`} className="mt-2 text-sm font-medium text-red-700">{message}</p> : null;
 }
 const ONLINE_MODALITY_CODE = "online";
 const ONLINE_LOCATION_TYPE_CODE = "online_space";
+const publicationFieldOrder: ActivityFormField[] = [
+  "title", "description", "program_id", "activity_type_code", "service_type_code",
+  "attention_category_code", "modality_code", "location_type_code", "location_detail",
+  "start_date", "start_time", "duration_mode", "end_date", "end_time",
+];
+const scheduleFields: ActivityFormField[] = [
+  "start_date", "start_time", "duration_mode", "end_date", "end_time",
+];
+
+function focusFirstInvalid(errors: ActivityFormState["errors"]) {
+  const firstField = publicationFieldOrder.find((field) => Boolean(errors[field]));
+  if (!firstField) return;
+  requestAnimationFrame(() => {
+    const element = document.getElementById(firstField);
+    if (!element) return;
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.focus({ preventScroll: true });
+  });
+}
 function SubmitButtons({ mode, statusCode, confirmPublish, onCancelPublish }: { mode: "create" | "edit"; statusCode: string; confirmPublish: boolean; onCancelPublish: () => void }) {
   const { pending } = useFormStatus();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -59,19 +81,20 @@ function SubmitButtons({ mode, statusCode, confirmPublish, onCancelPublish }: { 
   </div>;
 }
 
-export function ActivityForm({ options, access, initialValues, today, mode = "create", activityId, statusCode = "draft" }: Props) {
+export function ActivityForm({ options, access, initialValues, mode = "create", activityId, statusCode = "draft", initialErrors = {} }: Props) {
   const action = mode === "edit" && activityId ? updateActivity.bind(null, activityId) : createActivity;
-  const [state, formAction] = useActionState<ActivityFormState, FormData>(action, { revision: 0, values: initialValues, errors: {}, message: null, confirmPublish: false });
-  return <form action={formAction} className="grid gap-6 sm:grid-cols-2" noValidate>
-    <Fields key={state.revision} state={state} options={options} access={access} today={today} mode={mode} statusCode={statusCode} />
-  </form>;
+  const [state, formAction] = useActionState<ActivityFormState, FormData>(action, { revision: 0, values: initialValues, errors: initialErrors, message: null, confirmPublish: false });
+  return <Fields key={state.revision} state={state} formAction={formAction} options={options} access={access} mode={mode} statusCode={statusCode} />;
 }
 
-function Fields({ state, options, access, today, mode, statusCode }: {
+function Fields({ state, formAction, options, access, mode, statusCode }: {
   state: ActivityFormState; options: ActivityFormOptions; access: ActivityScopeAccess;
-  today: string; mode: "create" | "edit"; statusCode: string;
+  mode: "create" | "edit"; statusCode: string;
+  formAction: (payload: FormData) => void;
 }) {
   const [liveValues, setLiveValues] = useState(state.values);
+  const [fieldErrors, setFieldErrors] = useState(state.errors);
+  const [clientMessage, setClientMessage] = useState<string | null>(null);
   const [showPublishConfirmation, setShowPublishConfirmation] = useState(Boolean(state.confirmPublish));
   const calculatedEnd = useMemo(
     () => calculatePresetEnd(liveValues.start_date, liveValues.start_time, liveValues.duration_mode as DurationMode),
@@ -104,40 +127,99 @@ function Fields({ state, options, access, today, mode, statusCode }: {
     }
     return { tone: "ok" as const, text: "Semestre: " + resolvedSemester.label };
   }, [liveValues.start_date, resolvedSemester]);
+  useEffect(() => {
+    focusFirstInvalid(state.errors);
+  }, [state.errors]);
+
+  const publicationValues = (values: ActivityFormValues): ActivityFormValues => ({
+    ...values,
+    scope_type: "program",
+    program_id: access.allowedPrograms.length === 1 ? access.allowedPrograms[0].id : values.program_id,
+    location_type_code: values.modality_code === ONLINE_MODALITY_CODE
+      ? ONLINE_LOCATION_TYPE_CODE
+      : values.location_type_code === ONLINE_LOCATION_TYPE_CODE ? "" : values.location_type_code,
+  });
+  const revalidateChangedFields = (
+    nextValues: ActivityFormValues,
+    changedFields: ActivityFormField[],
+  ) => {
+    const validation = validateActivityForm(publicationValues(nextValues), {
+      enforceFutureStartDate: true,
+      requireOperationalFields: true,
+    });
+    setFieldErrors((current) => {
+      const next = { ...current };
+      const isScheduleChange = changedFields.some((field) => scheduleFields.includes(field));
+      const fields = isScheduleChange ? scheduleFields : changedFields;
+      const groupWasInvalid = fields.some((field) => Boolean(current[field]));
+      for (const field of fields) {
+        if (!current[field] && !(groupWasInvalid && validation.errors[field])) continue;
+        if (validation.errors[field]) next[field] = validation.errors[field];
+        else delete next[field];
+      }
+      return next;
+    });
+  };
   const set = (field: keyof ActivityFormValues, value: string) => {
     setShowPublishConfirmation(false);
-    setLiveValues((current) => ({ ...current, [field]: value }));
+    const next = { ...liveValues, [field]: value };
+    setLiveValues(next);
+    revalidateChangedFields(next, [field]);
   };
   const handleModalityChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const value = event.target.value;
     setShowPublishConfirmation(false);
-    setLiveValues((current) => ({
-      ...current,
+    const next = {
+      ...liveValues,
       modality_code: value,
-      location_type_code: value === ONLINE_MODALITY_CODE ? ONLINE_LOCATION_TYPE_CODE : current.location_type_code === ONLINE_LOCATION_TYPE_CODE ? "" : current.location_type_code,
-    }));
+      location_type_code: value === ONLINE_MODALITY_CODE ? ONLINE_LOCATION_TYPE_CODE : liveValues.location_type_code === ONLINE_LOCATION_TYPE_CODE ? "" : liveValues.location_type_code,
+    };
+    setLiveValues(next);
+    revalidateChangedFields(next, ["modality_code", "location_type_code"]);
   };
   const isOnlineModality = liveValues.modality_code === ONLINE_MODALITY_CODE;
   const onlineLocationType = options.locationTypes.find((item) => item.code === ONLINE_LOCATION_TYPE_CODE);
   const onlineLocationLabel = onlineLocationType ? label(onlineLocationType) : "En línea";
   const nonOnlineLocationTypes = options.locationTypes.filter((item) => item.code !== ONLINE_LOCATION_TYPE_CODE);
-  const inputClass = (field: keyof ActivityFormValues) => `mt-2 w-full rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${state.errors[field] ? "border-red-400 focus:border-red-600 focus:ring-red-100" : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"}`;
-  const common = (field: keyof ActivityFormValues) => ({
+  const inputClass = (field: keyof ActivityFormValues) => `mt-2 w-full scroll-mt-24 rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${fieldErrors[field] ? "border-red-400 focus:border-red-600 focus:ring-red-100" : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"}`;
+  const common = (field: keyof ActivityFormValues, helperIds: string[] = []) => ({
     key: state.revision + ":" + field, defaultValue: state.values[field],
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => set(field, event.target.value),
-    "aria-invalid": Boolean(state.errors[field]), className: inputClass(field),
+    "aria-invalid": Boolean(fieldErrors[field]),
+    "aria-describedby": [...helperIds, ...(fieldErrors[field] ? [`${field}-error`] : [])].join(" ") || undefined,
+    className: inputClass(field),
   });
   const catalogSelect = (id: keyof ActivityFormValues, title: string, empty: string, items: CatalogRow[]) => <div>
     <label htmlFor={id} className="block text-sm font-semibold text-slate-700">{title}</label>
     <select id={id} name={id} required {...common(id)}><option value="">{empty}</option>{items.map((item) => <option key={item.id} value={item.code}>{label(item)}</option>)}</select>
-    <FieldError message={state.errors[id]} />
+    <FieldError field={id} message={fieldErrors[id]} />
   </div>;
 
-  return <>
-    {state.message && <div role="alert" className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"><p className="font-semibold">Revisa los campos señalados.</p><p>{state.message}</p></div>}
-    <div className={`sm:col-span-2 rounded-2xl border p-5 ${semesterInfo.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}><p className="text-sm font-semibold">{semesterInfo.text}</p><FieldError message={state.errors.academic_period_id} /></div>
-    <div className="sm:col-span-2"><label htmlFor="title" className="block text-sm font-semibold text-slate-700">Título</label><input id="title" name="title" required maxLength={200} {...common("title")} /><FieldError message={state.errors.title} /></div>
-    <div className="sm:col-span-2"><label htmlFor="description" className="block text-sm font-semibold text-slate-700">Descripción (opcional)</label><textarea id="description" name="description" rows={4} maxLength={5000} {...common("description")} /><FieldError message={state.errors.description} /></div>
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (submitter?.value !== "validate_publish") return;
+    const validation = validateActivityForm(publicationValues(liveValues), {
+      enforceFutureStartDate: true,
+      requireOperationalFields: true,
+    });
+    if (!Object.keys(validation.errors).length) return;
+    event.preventDefault();
+    setShowPublishConfirmation(false);
+    setFieldErrors(validation.errors);
+    setClientMessage("Corrige los campos indicados antes de confirmar la publicación.");
+    focusFirstInvalid(validation.errors);
+  };
+
+  const hasFieldErrors = Object.keys(fieldErrors).length > 0;
+  const summaryMessage = hasFieldErrors
+    ? clientMessage ?? state.message
+    : Object.keys(state.errors).length === 0 ? state.message : null;
+
+  return <form action={formAction} onSubmit={handleSubmit} className="grid gap-6 sm:grid-cols-2" noValidate>
+    {summaryMessage && <div role="alert" className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"><p className="font-semibold">Revisa los campos señalados.</p><p>{summaryMessage}</p></div>}
+    <div className={`sm:col-span-2 rounded-2xl border p-5 ${semesterInfo.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}><p className="text-sm font-semibold">{semesterInfo.text}</p><FieldError field="academic_period_id" message={fieldErrors.academic_period_id} /></div>
+    <div className="sm:col-span-2"><label htmlFor="title" className="block text-sm font-semibold text-slate-700">Título</label><input id="title" name="title" required maxLength={200} {...common("title")} /><FieldError field="title" message={fieldErrors.title} /></div>
+    <div className="sm:col-span-2"><label htmlFor="description" className="block text-sm font-semibold text-slate-700">Descripción (opcional)</label><textarea id="description" name="description" rows={4} maxLength={5000} {...common("description")} /><FieldError field="description" message={fieldErrors.description} /></div>
 
     {access.allowedPrograms.length === 1 ? <>
       <input type="hidden" name="scope_type" value="program" />
@@ -154,7 +236,7 @@ function Fields({ state, options, access, today, mode, statusCode }: {
           <option value="">Selecciona un programa</option>
           {access.allowedPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
         </select>
-        <FieldError message={state.errors.program_id} />
+        <FieldError field="program_id" message={fieldErrors.program_id} />
       </div>
     </>}
 
@@ -163,33 +245,33 @@ function Fields({ state, options, access, today, mode, statusCode }: {
     {catalogSelect("attention_category_code", "Categoría de atención", "Selecciona una categoría", options.attentionCategories)}
     <div>
       <label htmlFor="modality_code" className="block text-sm font-semibold text-slate-700">Modalidad</label>
-      <select id="modality_code" name="modality_code" required key={state.revision + ":modality_code"} defaultValue={state.values.modality_code} onChange={handleModalityChange} aria-invalid={Boolean(state.errors.modality_code)} className={inputClass("modality_code")}>
+      <select id="modality_code" name="modality_code" required key={state.revision + ":modality_code"} defaultValue={state.values.modality_code} onChange={handleModalityChange} aria-invalid={Boolean(fieldErrors.modality_code)} aria-describedby={fieldErrors.modality_code ? "modality_code-error" : undefined} className={inputClass("modality_code")}>
         <option value="">Selecciona una modalidad</option>
         {options.modalities.map((item) => <option key={item.id} value={item.code}>{label(item)}</option>)}
       </select>
-      <FieldError message={state.errors.modality_code} />
+      <FieldError field="modality_code" message={fieldErrors.modality_code} />
     </div>
     {isOnlineModality ? <div>
       <input type="hidden" name="location_type_code" value={ONLINE_LOCATION_TYPE_CODE} />
       <p className="block text-sm font-semibold text-slate-700">Tipo de ubicación</p>
       <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-semibold text-slate-900">{onlineLocationLabel}</p>
-      <FieldError message={state.errors.location_type_code} />
+      <FieldError field="location_type_code" message={fieldErrors.location_type_code} />
     </div> : <div>
       <label htmlFor="location_type_code" className="block text-sm font-semibold text-slate-700">Tipo de ubicación</label>
       <select id="location_type_code" name="location_type_code" required {...common("location_type_code")}>
         <option value="">Selecciona un tipo de ubicación</option>
         {nonOnlineLocationTypes.map((item) => <option key={item.id} value={item.code}>{label(item)}</option>)}
       </select>
-      <FieldError message={state.errors.location_type_code} />
+      <FieldError field="location_type_code" message={fieldErrors.location_type_code} />
     </div>}
-    <div><label htmlFor="location_detail" className="block text-sm font-semibold text-slate-700">Detalle de ubicación</label><input id="location_detail" name="location_detail" required maxLength={500} placeholder="Aula, edificio, enlace o datos de acceso" {...common("location_detail")} /><FieldError message={state.errors.location_detail} /></div>
-    <div><label htmlFor="start_date" className="block text-sm font-semibold text-slate-700">Fecha de inicio</label><input id="start_date" name="start_date" type="date" required min={mode === "create" ? today : undefined} {...common("start_date")} /><FieldError message={state.errors.start_date} /></div>
-    <div><label htmlFor="start_time" className="block text-sm font-semibold text-slate-700">Hora de inicio</label><input id="start_time" name="start_time" type="time" required step={60} lang="es-MX" {...common("start_time")} /><div className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError message={state.errors.start_time} /></div>
-    <div className="sm:col-span-2"><label htmlFor="duration_mode" className="block text-sm font-semibold text-slate-700">Duración</label><select id="duration_mode" name="duration_mode" required {...common("duration_mode")}><option value="one_hour">1 hora</option><option value="two_hours">2 horas</option><option value="custom">Personalizada</option></select><FieldError message={state.errors.duration_mode} /></div>
+    <div><label htmlFor="location_detail" className="block text-sm font-semibold text-slate-700">Detalle de ubicación</label><input id="location_detail" name="location_detail" required maxLength={500} placeholder="Aula, edificio, enlace o datos de acceso" {...common("location_detail")} /><FieldError field="location_detail" message={fieldErrors.location_detail} /></div>
+    <div><label htmlFor="start_date" className="block text-sm font-semibold text-slate-700">Fecha de inicio</label><input id="start_date" name="start_date" type="date" required {...common("start_date")} /><FieldError field="start_date" message={fieldErrors.start_date} /></div>
+    <div><label htmlFor="start_time" className="block text-sm font-semibold text-slate-700">Hora de inicio</label><input id="start_time" name="start_time" type="time" required step={60} lang="es-MX" {...common("start_time", ["start_time-help"])} /><div id="start_time-help" className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError field="start_time" message={fieldErrors.start_time} /></div>
+    <div className="sm:col-span-2"><label htmlFor="duration_mode" className="block text-sm font-semibold text-slate-700">Duración</label><select id="duration_mode" name="duration_mode" required {...common("duration_mode")}><option value="one_hour">1 hora</option><option value="two_hours">2 horas</option><option value="custom">Personalizada</option></select><FieldError field="duration_mode" message={fieldErrors.duration_mode} /></div>
     {liveValues.duration_mode === "custom" ? <>
-      <div><label htmlFor="end_date" className="block text-sm font-semibold text-slate-700">Fecha de término</label><input id="end_date" name="end_date" type="date" required min={liveValues.start_date || today} {...common("end_date")} /><FieldError message={state.errors.end_date} /></div>
-      <div><label htmlFor="end_time" className="block text-sm font-semibold text-slate-700">Hora de término</label><input id="end_time" name="end_time" type="time" required step={60} lang="es-MX" {...common("end_time")} /><div className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError message={state.errors.end_time} /></div>
+      <div><label htmlFor="end_date" className="block text-sm font-semibold text-slate-700">Fecha de término</label><input id="end_date" name="end_date" type="date" required min={liveValues.start_date || undefined} {...common("end_date")} /><FieldError field="end_date" message={fieldErrors.end_date} /></div>
+      <div><label htmlFor="end_time" className="block text-sm font-semibold text-slate-700">Hora de término</label><input id="end_time" name="end_time" type="time" required step={60} lang="es-MX" {...common("end_time", ["end_time-help"])} /><div id="end_time-help" className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError field="end_time" message={fieldErrors.end_time} /></div>
     </> : <div className="sm:col-span-2 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-700"><span className="font-semibold">Término calculado: </span>{calculatedEnd ? `${displayDate(calculatedEnd.endDate)} a las ${calculatedEnd.endTime}` : "Indica fecha y hora de inicio para calcularlo."}</div>}
     <div className="sm:col-span-2 pt-2"><SubmitButtons mode={mode} statusCode={statusCode} confirmPublish={showPublishConfirmation} onCancelPublish={() => setShowPublishConfirmation(false)} /></div>
-  </>;
+  </form>;
 }
