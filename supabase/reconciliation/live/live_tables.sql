@@ -1,0 +1,18 @@
+-- schema	table	relation_type	rls_enabled	rls_forced
+public	academic_periods	table	true	false
+public	academic_programs	table	true	false
+public	activities	table	true	false
+public	activity_checkin_tokens	table	true	false
+public	activity_modalities	table	true	false
+public	activity_participants	table	true	false
+public	activity_statuses	table	true	false
+public	activity_types	table	true	false
+public	attention_categories	table	true	false
+public	divisions	table	true	false
+public	location_types	table	true	false
+public	participant_roles	table	true	false
+public	profiles	table	true	false
+public	role_assignments	table	true	false
+public	roles	table	true	false
+public	service_types	table	true	false
+public	system_health	table	true	false

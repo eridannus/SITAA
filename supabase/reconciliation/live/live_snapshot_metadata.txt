@@ -1,6 +1,12 @@
 SITAA Supabase live snapshot metadata
-Generated at UTC: 2026-07-16T18:16:31Z
+Generated at UTC: 2026-07-16T18:41:41Z
+Status: SUCCESS
 Purpose: reconciliation only; no remote writes.
-SUPABASE_DB_URL: present; value intentionally not recorded.
-Supabase CLI: 2.109.1
-psql: psql (PostgreSQL) 18.4
+Schema tool selected: pg_dump
+pg_dump version: pg_dump (PostgreSQL) 18.4
+psql version: psql (PostgreSQL) 18.4
+Supabase CLI fallback: no evaluado; se seleccionaron herramientas nativas
+PostgreSQL client encoding: UTF8
+Connection credentials: provided at runtime and intentionally not recorded.
+Schema scope: public only; schema-only; ownership and privileges excluded.
+Catalog seed scope: controlled SITAA catalogs only; operational and personal data excluded.
