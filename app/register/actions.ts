@@ -4,11 +4,12 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSiteOrigin } from "@/lib/auth/site-url";
 import {
+  AUTH_NEXT_COOKIE,
   clearCallbackCookie,
   oauthCallbackCookieOptions,
   REGISTRATION_TYPE_COOKIE,
 } from "@/lib/auth/oauth-cookies";
-import { guardPublicRegistrationEntry } from "@/lib/auth/guard-public-registration";
+import { getPublicRegistrationRedirect } from "@/lib/auth/guard-public-registration";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   RegistrationField,
@@ -91,9 +92,15 @@ function mapRegistrationError(message: string, code?: string) {
 
 export async function startGoogleRegistration(formData: FormData) {
   const registrationType = normalizePersonType(text(formData, "registration_type"));
-  await guardPublicRegistrationEntry(
+  const authenticatedDestination = await getPublicRegistrationRedirect(
     registrationType ? `/complete-registration/${registrationType}` : "/complete-registration",
   );
+  if (authenticatedDestination) {
+    const cookieStore = await cookies();
+    clearCallbackCookie(cookieStore, REGISTRATION_TYPE_COOKIE);
+    clearCallbackCookie(cookieStore, AUTH_NEXT_COOKIE);
+    redirect(authenticatedDestination);
+  }
   if (!registrationType) redirect("/register?error=tipo-invalido");
 
   let oauthUrl: string | null = null;
