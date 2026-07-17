@@ -10,8 +10,9 @@ Validar un flujo completo para un periodo académico: configuración, planeació
 
 - Inicio de sesión con Supabase Auth.
 - Perfiles de identidad estable con nombres, apellidos, correo, tipo de persona, identificador institucional y programa principal cuando aplique.
-- Flujos diferenciados de registro o activación: alumnos con número de cuenta; trabajadores/profesores con número de trabajador.
-- Asignación inicial de alumno automatizable; roles de trabajadores y profesores sujetos a autorización.
+- Flujos públicos diferenciados: alumnos con número de cuenta y profesores con número de trabajador, ambos con verificación de correo.
+- Cuentas técnicas internas creadas administrativamente, sin reutilizar el registro institucional.
+- Activación de identidad básica sin privilegios académicos automáticos; tutoría par, tutoría, asesoría y responsabilidades de gestión requieren asignación autorizada.
 - El semestre no forma parte del perfil y solo se captura en contexto de actividad o formularios si existe acuerdo institucional.
 - Asignaciones múltiples de rol con vigencia, alcance y área de servicio.
 - Catálogos mínimos: semestres académicos con rangos oficiales, divisiones, programas, grupos, categorías y tipos de servicio.

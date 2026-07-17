@@ -2,7 +2,7 @@
 
 ## Propósito
 
-Este repositorio corresponde a **SITAA (Sistema Integral de Tutorías y Asesorías Académicas)**. En la etapa actual solo se define el producto, su alcance y sus reglas técnicas; todavía no existe una aplicación.
+Este repositorio corresponde a **SITAA (Sistema Integral de Tutorías y Asesorías Académicas)**. Contiene una aplicación Next.js en evolución, documentación funcional y migraciones Supabase reconciliadas.
 
 ## Fuente de verdad
 
@@ -14,6 +14,12 @@ Antes de proponer o implementar cambios, revisar:
 4. `docs/ROLES_AND_PERMISSIONS.md`
 5. `docs/SECURITY_NOTES.md`
 6. `docs/DECISIONS.md`
+7. `docs/IDENTITY_AND_REGISTRATION.md`
+8. `docs/ROLES_AND_PERMISSIONS_V2.md`
+9. `docs/USER_ACCOUNT_ADMINISTRATION.md`
+10. `docs/FILTERING_AND_VISIBILITY.md`
+
+Para preparar 0004 o cambios de identidad/autorización, revisar también `docs/IMPLEMENTATION_GAPS_0004.md`. `docs/ROLES_AND_PERMISSIONS.md` conserva reglas operativas implementadas, pero su catálogo futuro y matriz de asignación están parcialmente sustituidos por la versión V2.
 
 Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectura, actualizar primero la documentación relacionada y registrar la decisión en `docs/DECISIONS.md`.
 
@@ -22,7 +28,7 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 - Usar español en documentación, interfaz y mensajes dirigidos al usuario, salvo nombres técnicos inevitables.
 - Todo texto visible en español debe guardarse como UTF-8; no reemplazar acentos, eñes ni signos de apertura con `?`.
 - Después de editar textos de interfaz o documentación en español, ejecutar `npm run check:text`.
-- Mantener TypeScript en modo estricto cuando se inicialice el proyecto.
+- Mantener TypeScript en modo estricto.
 - Diseñar para Next.js con App Router, Tailwind CSS y Supabase.
 - Aplicar autorización en la base de datos mediante Row Level Security (RLS); ocultar controles en la interfaz no cuenta como autorización.
 - Tratar los datos académicos y personales como información sensible.
@@ -30,8 +36,8 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 - No incluir secretos, credenciales, datos reales de estudiantes ni archivos de entorno en Git.
 - No añadir dependencias, servicios de pago o complejidad arquitectónica sin justificarlo en `docs/DECISIONS.md`.
 
-## Estado inicial
+## Estado actual
 
-No crear código de aplicación, inicializar Next.js ni instalar dependencias hasta que se aprueben el alcance del MVP y las decisiones abiertas registradas en la documentación.
+La aplicación y las migraciones `0001`–`0003` ya existen. No modificar código, dependencias, migraciones aplicadas ni Supabase cuando el ticket sea exclusivamente documental. Las siguientes etapas de identidad y autorización deben partir de los documentos canónicos y del análisis de brechas de 0004.
 
 - Usar "sólo" con tilde cuando significa "solamente"; usar "solo" sin tilde únicamente cuando significa "sin compañía".

@@ -1,5 +1,7 @@
 # Modelo de datos
 
+> **Vigencia:** este documento describe el esquema implementado después de 0003. El modelo funcional aprobado para identidad, cuentas técnicas y roles futuros está en `IDENTITY_AND_REGISTRATION.md` y `ROLES_AND_PERMISSIONS_V2.md`; las diferencias que requieren 0004 o fases posteriores están en `IMPLEMENTATION_GAPS_0004.md`.
+
 ## Tablas implementadas
 
 La integración actual utiliza tablas institucionales y catálogos operativos públicos. Supabase Auth conserva la identidad de acceso; `profiles` y `role_assignments` contienen el contexto institucional.
@@ -25,16 +27,20 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 
 ### Reglas del perfil
 
-- `person_type`: `student` o `worker`.
+- Estado actual: `person_type` admite `student` o `worker`. Modelo aprobado: las cuentas institucionales usarán `student` o `professor`, de forma exclusiva; las técnicas internas usarán un `account_kind` explícito y no fingirán un tipo institucional.
 - `institutional_id_type`: `student_account` o `worker_number`.
-- Una persona `student` usa `student_account`; una persona `worker`, incluidos profesores, usa `worker_number`.
-- `institutional_id_value` almacena el número correspondiente y debe ser único dentro de su tipo.
-- `primary_program_id` es obligatorio para un perfil registrado completo. Los perfiles bootstrap pueden conservarlo temporalmente en `null` hasta completar su configuración.
+- El modelo aprobado exige `student_account` para alumnos y `worker_number` para profesores; ambos valores son texto de dígitos y conservan ceros iniciales.
+- La unicidad futura aprobada para `institutional_id_value` es global entre cuentas institucionales, no sólo dentro del tipo. El esquema actual todavía no la impone.
+- `primary_program_id` es obligatorio para una cuenta institucional completa y no concede permisos. Una cuenta `internal_technical` futura queda exenta de programa e identificador.
 - `full_name` es la representación normalizada de nombres y apellidos; no sustituye sus campos separados.
 - Los roles y responsabilidades se obtienen exclusivamente de `role_assignments`.
 - El semestre, cuando un comité lo requiera, se captura en el contexto de participación, la actividad o una respuesta de formulario versionada; nunca como atributo actual de `profiles`.
-- La edición propia se limita a nombres, apellidos, tipo de persona, identificador institucional y programa principal; no incluye roles ni estado de activación.
-- Guardar o completar un perfil requiere seleccionar un programa académico disponible.
+- La edición propia actual permite más campos de los previstos. En el modelo aprobado, clasificación, identificador, programa, correo y estado principal se corrigen mediante flujos controlados; el autoservicio se limita a datos no críticos que se definan en implementación.
+- El estado de cuenta debe distinguir verificación pendiente, activa e inactiva y formar parte de la autorización efectiva.
+
+### Evolución prevista de asignaciones
+
+`role_assignments` ya conserva cuenta, rol, alcance, servicio, programa/división, vigencia, activo, `assigned_by` y timestamps. Para cumplir el modelo V2 debe añadir o formalizar fecha de asignación, `revoked_by`, `revoked_at` y nota administrativa. Las asignaciones se revocan o desactivan, no se borran. La tabla `roles` requerirá códigos separados para profesor tutor, profesor asesor, coordinación, secretaría técnica de programa y secretaría auxiliar divisional.
 
 Los catálogos operativos se consultan por `code` y muestran `label` o `name`. Sólo los valores con `is_active = true` se presentan en la operación normal. Son datos controlados previos a la implementación de actividades; el visor actual es de solo lectura.
 

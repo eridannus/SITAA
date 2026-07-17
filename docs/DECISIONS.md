@@ -46,6 +46,10 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-032 | Temporalidad provisional de borradores | Aceptada |
 | DEC-033 | Cierre de reconciliación posterior a 0003 | Aceptada |
 | DEC-034 | Dominio canónico de producción | Aceptada |
+| DEC-035 | Identidad y registro institucional separados | Aceptada |
+| DEC-036 | Roles académicos V2 y autoridad de asignación | Aceptada |
+| DEC-037 | Administración confiable y filtrado posterior a autorización | Aceptada |
+| DEC-038 | Implementación por fases y check-in abierto posterior | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -360,5 +364,45 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión:** el origen público canónico es `https://www.sitaa.net`. `https://sitaa.net` redirige al origen canónico y `https://sitaa.vercel.app` permanece como respaldo técnico, no como URL pública principal. Vercel Production define `NEXT_PUBLIC_SITE_URL=https://www.sitaa.net`; Supabase Authentication usa ese mismo origen como Site URL y permite redirecciones bajo `https://www.sitaa.net/**` y `https://sitaa.vercel.app/**`.
 
 **Consecuencias:** QR y enlaces directos derivan de `NEXT_PUBLIC_SITE_URL` y fueron verificados manualmente con `https://www.sitaa.net/check-in/...`. Cloudflare administra DNS y los CNAME dirigidos a Vercel permanecen en modo DNS only. Los entornos Preview no deben heredar automáticamente el origen de producción salvo configuración deliberada. `NEXT_PUBLIC_SITE_URL` es configuración pública, pero su valor productivo no se fija en archivos locales con secretos.
+
+**Estado:** Aceptada.
+
+## DEC-035 — Identidad y registro institucional separados
+
+**Contexto:** el esquema actual usa `student|worker`, no distingue cuentas técnicas internas y sólo dispone de login. El acceso básico no debe confundirse con responsabilidades académicas.
+
+**Decisión:** SITAA tendrá rutas públicas distintas para alumnos y profesores, ambas con verificación de correo y activación básica automática. Las cuentas institucionales usan una clasificación exclusiva `student|professor`, identificador de dígitos almacenado como texto y programa principal obligatorio. El identificador será único globalmente entre cuentas institucionales. Las cuentas `internal_technical` se crean administrativamente y quedan exentas de identificador y programa. Perfil y asignaciones permanecen separados.
+
+**Consecuencias:** un profesor nuevo no es tutor ni asesor; un alumno nuevo no es tutor par. La persona desarrolladora puede tener una cuenta institucional ordinaria y otra técnica independiente. Corregir identidad principal corresponde a administración técnica auditada. La implementación requiere una migración a partir de 0004 y backfill verificado.
+
+**Estado:** Aceptada; detalles técnicos menores se registran en `IMPLEMENTATION_GAPS_0004.md`.
+
+## DEC-036 — Roles académicos V2 y autoridad de asignación
+
+**Contexto:** `professor` combina tutoría y asesoría, faltan responsabilidades organizacionales separadas y la tabla no conserva revocación completa.
+
+**Decisión:** tutor par, profesor tutor y profesor asesor son roles distintos, aditivos y revocables. Se formalizan coordinación y secretaría técnica por programa, jefatura, enlace y secretaría auxiliar divisional, y `technical_admin`. Sólo `technical_admin` administra roles críticos; el lead de tutorías delega profesor tutor/tutor par y el lead de asesorías delega profesor asesor dentro de su programa. Nadie se autoasigna. Toda asignación/revocación conserva historia y auditoría.
+
+**Consecuencias:** Mariana y Alejandra requieren códigos distintos aunque inicialmente compartan permisos. Los códigos vivos se migran con backfill y compatibilidad, no se renombran a ciegas. A-02 permanece como excepción transitoria hasta completar la administración y las pruebas de la fase E.
+
+**Estado:** Aceptada.
+
+## DEC-037 — Administración confiable y filtrado posterior a autorización
+
+**Contexto:** no existe panel de usuarios y las operaciones de Supabase Auth admin no pueden exponerse con una clave pública. Los filtros futuros tampoco deben convertirse en permisos implícitos.
+
+**Decisión:** las operaciones de activación, desactivación, identidad, Auth admin y roles críticos se ejecutan sólo en backend confiable o Edge Function, con autorización y auditoría; nunca con `service_role` en el cliente. Administradores no ven ni establecen contraseñas. RLS/RPC construyen primero el conjunto visible y los filtros sólo lo reducen, ordenan o paginan.
+
+**Consecuencias:** desactivar conserva historia y suspende autorización efectiva. El panel busca por identidad, cuenta, estado y asignaciones sin descargar directorios completos. Los estados de filtro serán reutilizables en actividades y reportes, pero sus opciones visibles son UX, no autorización.
+
+**Estado:** Aceptada.
+
+## DEC-038 — Implementación por fases y check-in abierto posterior
+
+**Contexto:** identidad, administración, roles, filtros y la eliminación de A-02 tienen dependencias de seguridad; el check-in abierto requiere una identidad estable.
+
+**Decisión:** implementar en orden: A) identidad/registro; B) administración básica/auditoría; C) roles; D) paneles/filtros/reportes; E) retirar acceso académico implícito de `technical_admin`; F) check-in abierto. La fase F sólo opera cuando la actividad lo habilita y, dentro de una transacción, agrega al usuario autenticado elegible como participante si falta y marca asistencia.
+
+**Consecuencias:** el check-in abierto no forma parte de 0004 inicial. Conserva el mensaje normal de éxito, valida cuenta/programa/elegibilidad y no cambia la ausencia normal de participantes registrados que no asisten. Cada fase puede usar una o más migraciones posteriores sin reescribir 0001–0003.
 
 **Estado:** Aceptada.

@@ -9,11 +9,22 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 ### Identidad y sesión
 
 - Usar Supabase Auth y exigir correo institucional cuando sea viable.
-- Mantener deshabilitado el registro público; las cuentas iniciales se crean mediante un proceso administrativo.
+- Mantener deshabilitado el registro público hasta implementar y probar las dos rutas canónicas. Después, permitir registro separado de alumnos y profesores con verificación obligatoria de correo y activación básica automática; las cuentas técnicas internas siguen siendo exclusivamente administrativas.
 - Gestionar la sesión con clientes SSR y cookies seguras; validar al usuario en el servidor antes de servir rutas protegidas.
 - Configurar redirecciones autorizadas y cookies seguras.
 - No revelar si un correo está registrado mediante mensajes de error diferenciados.
 - Revocar acceso al desactivar perfiles o vencer asignaciones.
+- No permitir que el usuario cambie por autoservicio tipo de cuenta/persona, identificador, programa principal, estado o roles.
+
+### Administración de cuentas y roles
+
+- Ejecutar `auth.admin`, correcciones de identidad y administración de roles sólo en backend confiable o Edge Function; nunca exponer `service_role` al navegador.
+- Los administradores no ven ni establecen contraseñas; inician enlaces seguros de recuperación.
+- Validar elegibilidad, alcance, servicio, programa, vigencia y actor distinto del beneficiario antes de asignar un rol.
+- Revocar asignaciones sin borrar historia y registrar actor, fecha y motivo.
+- Desactivar una cuenta en Auth y en la autorización SITAA sin eliminar perfil, autoría, actividades o asistencia.
+- Mantener un log administrativo append-only y sanitizado para cambios críticos.
+- No incorporar nombres, correos ni identificadores personales a semillas SQL.
 
 ### Autorización y base de datos
 
@@ -22,6 +33,7 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - Probar políticas con cada rol y con usuarios fuera del alcance autorizado.
 - Reservar `service_role` para procesos de servidor estrictamente controlados.
 - Validar datos y transiciones de estado en servidor o base de datos, no solo en formularios.
+- Aplicar filtros sólo después de construir mediante RLS/RPC el conjunto visible; ningún query param o selector puede ampliar acceso.
 
 ### QR y asistencia
 

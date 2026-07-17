@@ -25,14 +25,14 @@ Una persona puede tener varias asignaciones activas o históricas. Los permisos 
 
 ## Identidad y registro
 
-El perfil conserva nombres, apellidos, correo, tipo de persona, identificador institucional y programa principal cuando aplique. No conserva un rol ni semestre actual.
+El modelo canónico de esta materia se define en `docs/IDENTITY_AND_REGISTRATION.md`. El perfil conserva nombres, apellidos, correo, tipo de persona, identificador institucional y programa principal cuando aplique. No conserva un rol ni semestre actual.
 
-SITAA deberá ofrecer flujos diferenciados:
+SITAA deberá ofrecer dos flujos institucionales diferenciados:
 
 - **Alumno:** nombres, apellidos, programa, correo y número de cuenta.
-- **Trabajador o profesor:** nombres, apellidos, programa o afiliación, correo y número de trabajador.
+- **Profesor:** nombres, apellidos, programa principal, correo y número de trabajador.
 
-La asignación inicial `student` puede automatizarse tras las validaciones institucionales. Los roles de trabajadores y profesores requieren autorización según su responsabilidad.
+Las cuentas técnicas internas son una excepción administrativa: no usan el registro público ni requieren identificador o programa académico. Verificar el correo institucional activa una cuenta básica, pero no concede funciones académicas: el alumno no se vuelve tutor par y el profesor no se vuelve tutor o asesor sin una asignación autorizada.
 
 ## Alcance funcional
 

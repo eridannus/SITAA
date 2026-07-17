@@ -1,8 +1,10 @@
 # Roles y permisos
 
+> **Documento parcialmente sustituido:** `ROLES_AND_PERMISSIONS_V2.md` es canónico para catálogo futuro, elegibilidad, autoridad de asignación y administración. Este archivo conserva las reglas operativas ya implementadas de actividades, borradores, participantes y asistencia hasta que una migración o cambio de aplicación las sustituya expresamente.
+
 Los permisos se aplicarán con RLS en Supabase. No existe un rol fijo en `profiles`: el acceso efectivo se calcula a partir de asignaciones activas, vigencia, alcance y área de servicio.
 
-## Catálogo de roles
+## Catálogo de roles V1 implementado
 
 | Clave | Nombre | Responsabilidad principal |
 | --- | --- | --- |
@@ -92,9 +94,9 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 
 Cada política comprobará identidad, asignación vigente, alcance, programa o división, área de servicio y operación permitida. Los reportes y exportaciones aplicarán las mismas restricciones que las vistas de origen.
 
-## Pendientes de definición
+## Pendientes y decisiones trasladadas
 
-- Quién puede otorgar o revocar cada asignación.
+- La autoridad para otorgar o revocar roles ya está aprobada en `ROLES_AND_PERMISSIONS_V2.md`.
 - Procedimiento de suplencias temporales.
 - Flujo colegiado para aprobar campos obligatorios y publicar versiones.
 - Nivel de detalle y umbrales de agregación para jefaturas.
