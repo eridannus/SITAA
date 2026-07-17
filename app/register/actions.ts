@@ -8,6 +8,7 @@ import {
   oauthCallbackCookieOptions,
   REGISTRATION_TYPE_COOKIE,
 } from "@/lib/auth/oauth-cookies";
+import { guardPublicRegistrationEntry } from "@/lib/auth/guard-public-registration";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   RegistrationField,
@@ -90,6 +91,9 @@ function mapRegistrationError(message: string, code?: string) {
 
 export async function startGoogleRegistration(formData: FormData) {
   const registrationType = normalizePersonType(text(formData, "registration_type"));
+  await guardPublicRegistrationEntry(
+    registrationType ? `/complete-registration/${registrationType}` : "/complete-registration",
+  );
   if (!registrationType) redirect("/register?error=tipo-invalido");
 
   let oauthUrl: string | null = null;

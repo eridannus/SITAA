@@ -16,6 +16,12 @@ const errorMessages: Record<string, string> = {
   "sesion-requerida": "Inicia sesión para continuar.",
   "verificacion-pendiente": "Confirma tu correo antes de iniciar sesión.",
   google: "No fue posible iniciar sesión con Google. Intenta nuevamente.",
+  "google-cancelado": "Se canceló el acceso con Google. Puedes intentarlo nuevamente.",
+  "google-cuenta": "Google no pudo crear o vincular la cuenta. Intenta nuevamente.",
+  "google-codigo": "La respuesta de Google no incluyó la autorización necesaria.",
+  "google-intercambio": "No fue posible completar el intercambio de sesión con Google.",
+  "google-sesion": "Google respondió, pero no fue posible recuperar la sesión autenticada.",
+  "google-temporal": "Ocurrió un error temporal de autenticación. Intenta nuevamente.",
   "enlace-heredado": "El enlace de acceso heredado no es válido o ya expiró.",
 };
 

@@ -54,13 +54,13 @@ La clave `anon` es pública y está sujeta a las políticas RLS. No agregues cla
 
 ## Autenticación
 
-El acceso público usa Google OAuth con cookies SSR; correo/contraseña permanece sólo para cuentas heredadas. El registro no restringe dominios ni requiere SMTP. Antes de producción se debe configurar Google según `docs/GOOGLE_AUTH_SETUP.md`, aplicar/verificar 0004 y autorizar `https://www.sitaa.net/auth/callback` junto con callbacks locales o técnicos deliberados.
+El acceso público usa Google OAuth con cookies SSR; correo/contraseña permanece sólo para cuentas heredadas. El registro no restringe dominios ni requiere SMTP. Google y 0004 ya están configurados/aplicados; 0005 permanece pendiente para corregir el orden real del alta. El callback autorizado de producción es `https://www.sitaa.net/auth/callback`.
 
 El registro autentica primero con Google y sólo después solicita identidad institucional. No existe escritura anónima ni consulta de disponibilidad de identificadores; tampoco asigna tutoría, asesoría, tutoría par o administración. Las cuentas técnicas no usan formularios públicos.
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 
-La aplicación y 0004 se liberan coordinadamente: aprobar el preflight, aplicar la migración manualmente, desplegar inmediatamente esta versión compatible, ejecutar el verificador y regenerar el snapshot. No se deben mantener por tiempo prolongado una base con `student|professor` y una versión de aplicación que aún interprete `worker`.
+La corrección 0005 se libera coordinadamente: aprobar el preflight, aplicar la migración manualmente, desplegar esta versión con guardas, ejecutar el verificador y regenerar el snapshot.
 
 ## Alcance actual
 

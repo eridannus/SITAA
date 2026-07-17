@@ -70,7 +70,7 @@ El siguiente número permitido es `0004`. Todo cambio futuro debe:
 
 Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliación, no migraciones ejecutables.
 
-## 0004_identity_registration_foundation.sql — creada, no aplicada
+## 0004_identity_registration_foundation.sql — aplicada
 
 - Fecha de creación: 2026-07-17.
 - Propósito: formalizar `institutional|technical`, `student|professor`, estados `pending_registration|active|inactive`, identificadores como texto y registro público Google OAuth.
@@ -85,4 +85,14 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Rollback manual: `supabase/reconciliation/0004_identity_registration_rollback.sql`, exige revisión explícita.
 - Plan: `docs/TEST_PLAN_0004.md`.
 - Aplicación coordinada: aprobar preflight, aplicar 0004, desplegar inmediatamente la aplicación compatible, verificar y regenerar snapshot.
-- Estado: preflight anterior aprobado; pendiente repetirlo contra esta revisión Google, configurar proveedor, aplicar manualmente, verificar y regenerar snapshot.
+- Estado: aplicada. La prueba OAuth posterior reveló el contrato prematuro de `email_confirmed_at`, corregido por la 0005 pendiente.
+
+## 0005_fix_google_oauth_user_creation.sql — creada, no aplicada
+
+- Fecha de creación: 2026-07-17.
+- Estado previo: 0004 ya aplicada; Google Cloud y Supabase configurados.
+- Evidencia: Supabase registró SQLSTATE `23514`, `sitaa_google_email_not_verified`, durante el `INSERT` real de `auth.users`. El `25P02` posterior fue consecuencia. La reversión no dejó Auth users, identities, profiles ni enlaces que limpiar.
+- Corrección: el trigger Google admite `email_confirmed_at=null` durante el alta temprana y crea sólo el perfil pendiente, inactivo e incompleto.
+- Frontera final: `complete_own_google_registration` exige identidad Google enlazada, correo coincidente y verificación final antes de activar.
+- Aplicación: las rutas y el server action de registro rechazan cuentas ya autenticadas; el callback incorpora diagnósticos sanitizados por etapa.
+- Artefactos: preflight read-only, verificador transaccional, rollback manual y `docs/TEST_PLAN_0005.md`.

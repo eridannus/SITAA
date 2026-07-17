@@ -71,8 +71,9 @@ Los nueve resultados del verificador de 0003 fueron verdaderos y la prueba termi
 ## Pendientes conocidos
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- La Fase A Google está implementada localmente en `0004_identity_registration_foundation.sql`, pero **0004 no está aplicada** y el snapshot vivo sigue representando `0001 + 0002 + 0003`. El preflight aprobado debe volver a ejecutarse antes de aplicar; Google OAuth y sus redirects son prerrequisitos operativos.
-- 0004 añadirá `pending_registration`, triggers Google y un RPC autenticado de finalización. No agrega intents ni escrituras anónimas de registro. Usuarios correo/contraseña existentes permanecen compatibles y no necesitan identidad Google.
+- **0004 está aplicada** y Google OAuth está configurado. El snapshot versionado aún no debe presentarse como evidencia post-0004 hasta regenerarlo.
+- La prueba productiva confirmó `sitaa_google_email_not_verified` durante el `INSERT` de `auth.users`; no quedaron Auth users, identities, profiles ni enlaces accidentales. `0005_fix_google_oauth_user_creation.sql` está creada y no aplicada.
+- 0005 conserva el perfil Google `pending_registration` inactivo durante el alta temprana y traslada la verificación fuerte a la finalización autenticada. También excluye cuentas autenticadas de las rutas públicas de registro.
 - Administración de cuentas (Fase B), roles V2 (Fase C), filtros (Fase D), retiro de A-02 (Fase E) y check-in abierto (Fase F) siguen pendientes.
 - Permanecen siete hallazgos medios y cuatro bajos de la auditoría; 0002 y 0003 no pretendían resolverlos.
 - El check-in abierto sigue pendiente. En una capacidad futura, un usuario autenticado de SITAA no preinscrito podrá ser agregado como participante y marcado `attended` en una sola operación transaccional, únicamente cuando la actividad habilite check-in abierto.
@@ -80,6 +81,6 @@ Los nueve resultados del verificador de 0003 fueron verdaderos y la prueba termi
 
 ## Inmutabilidad y siguiente migración
 
-`0001`, `0002` y `0003` forman historia cerrada. `0004` es la siguiente migración creada y permanece pendiente de aplicación; no debe marcarse como parte del estado vivo hasta ejecutarla, verificarla y regenerar el snapshot.
+`0001`, `0002`, `0003` y `0004` forman historia aplicada y no se reescriben. `0005` es la siguiente migración creada y permanece pendiente de aplicación; el snapshot vivo debe regenerarse después de verificarla.
 
 Todo trabajo futuro de base de datos debe revisar la cadena completa, crear una nueva migración numerada, incluir verificación y rollback cuando corresponda, aplicarse manualmente a Supabase, regenerar el snapshot después de cambios significativos, comparar el estado vivo contra la cadena y actualizar `docs/DATABASE_CHANGELOG.md`.

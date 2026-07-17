@@ -18,11 +18,14 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - Configurar redirecciones autorizadas y cookies seguras.
 - No se recibe ni almacena PII institucional antes de Google. La selección pública guarda sólo `student` o `professor` en una cookie breve `HttpOnly` limitada al callback.
 - No existe RPC anónimo para crear registros o consultar disponibilidad. El conflicto de identificador sólo se revela al usuario autenticado que completa su propio perfil.
+- Desde 0005, el trigger de alta Google no confía en el valor temporal de `email_confirmed_at` durante el `INSERT`. El perfil queda pendiente, inactivo y sin permisos; la activación exige después una fila Google de `auth.identities`, correo coincidente y evidencia final de verificación.
+- Las rutas públicas de registro y `startGoogleRegistration` repiten guardas de servidor: cuentas activas, pendientes, inactivas o sin perfil no pueden iniciar otra alta.
+- El callback registra sólo etapa, código/mensaje sanitizados y timestamp. Nunca registra código OAuth, state, verifier, access/refresh tokens, cookies o secretos del proveedor.
 - No revelar si un correo está registrado mediante mensajes de error diferenciados.
 - Revocar acceso al desactivar perfiles o vencer asignaciones.
 - No permitir que el usuario cambie por autoservicio tipo de cuenta/persona, identificador, programa principal, estado o roles.
 - El autoservicio activo de Fase A permite únicamente `profiles.full_name`; el correo cambia por Google/Supabase Auth y nunca sobrescribe identidad institucional o nombre canónico.
-- La aplicación bloquea perfiles pendientes o inactivos. La revocación coordinada de sesiones Auth y la administración de bajas se completan en Fase B/0005.
+- La aplicación bloquea perfiles pendientes o inactivos. La revocación coordinada de sesiones Auth y la administración de bajas permanecen para una migración posterior de Fase B.
 
 ### Administración de cuentas y roles
 

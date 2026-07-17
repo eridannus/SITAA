@@ -41,3 +41,5 @@ La vinculación automática de identidades por correo verificado se administra e
 - Confirmar que cancelar consentimiento vuelve con error sanitizado.
 - Confirmar que cuentas activas, inactivas y pendientes siguen rutas distintas.
 - Confirmar que una cuenta compartida muestra advertencia, pero no se detecta ni bloquea automáticamente.
+- La configuración External/Testing debe incluir expresamente las cuentas Gmail y `pc.puma` usadas como test users.
+- 0005 permite que Supabase complete su secuencia OAuth aunque `email_confirmed_at` sea nulo durante el `INSERT`; la verificación final ocurre contra la identidad Google enlazada al completar el perfil.

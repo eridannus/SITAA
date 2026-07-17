@@ -1,6 +1,6 @@
 # Identidad y registro
 
-**Estado funcional:** Fase A implementada localmente; migración 0004 pendiente de aplicación y Google pendiente de configuración.
+**Estado funcional:** 0004 aplicada. Google configurado. 0005 creada y pendiente de aplicación para corregir el orden real del alta OAuth.
 
 ## Principio
 
@@ -41,10 +41,10 @@ Google autentica la cuenta. SITAA conserva identidad institucional y autorizaci�
 
 1. `/register/student` o `/register/professor` inicia Google OAuth sin solicitar PII institucional.
 2. El servidor guarda sólo `student` o `professor` en una cookie breve `HttpOnly`, `SameSite=Lax` y segura en producción. Es una pista de UX, no autorización.
-3. El trigger crea exactamente un perfil mínimo `pending_registration` para un Google nuevo.
+3. El trigger crea exactamente un perfil mínimo `pending_registration` para un Google nuevo, aunque `email_confirmed_at` todavía sea nulo durante el `INSERT` inicial de Auth.
 4. `/auth/callback` intercambia PKCE y dirige a `/complete-registration/student`, `/complete-registration/professor` o al selector `/complete-registration`.
 5. El usuario autenticado captura nombre, identificador y programa en un formulario de tipo fijo.
-6. `complete_own_google_registration` valida Google, perfil pendiente, formato, programa y unicidad; actualiza el mismo perfil transaccionalmente y no crea roles.
+6. `complete_own_google_registration` exige una identidad `auth.identities` Google enlazada, correo coincidente y verificación final; después valida perfil pendiente, formato, programa y unicidad, actualiza el mismo perfil transaccionalmente y no crea roles.
 
 No existe tabla de intents, escritura anónima de registro, consulta pública de disponibilidad ni PII institucional antes de Google. La duplicidad del identificador sólo se comunica al usuario autenticado que completa su propio perfil.
 
@@ -68,6 +68,6 @@ Sólo un proceso administrativo confiable puede fijar `app_metadata.sitaa_accoun
 - No se envían identificadores, programa o nombre a Google, URLs, `state` o `localStorage`.
 - No se almacenan secretos OAuth en Git, variables públicas ni navegador.
 
-## Aplicación de 0004
+## Corrección 0005
 
-0004 permanece sin aplicar. El preflight debe regresar cero en categorías bloqueantes; usuarios heredados por contraseña y OAuth existentes son informativos. Tras configurar Google según `GOOGLE_AUTH_SETUP.md`: aplicar 0004 manualmente, desplegar la aplicación compatible, ejecutar el verificador y regenerar el snapshot.
+0004 ya está aplicada. Las primeras pruebas reales confirmaron `sitaa_google_email_not_verified` durante el `INSERT` de `auth.users`: Supabase aún no había fijado `email_confirmed_at`. La transacción se revirtió completamente y no dejó usuarios, identidades ni perfiles que limpiar. 0005 elimina esa comprobación sólo del trigger Google y la hace más fuerte durante la finalización autenticada. Antes de aplicarla: aprobar preflight, revisar migración/rollback, aplicar manualmente, ejecutar verificador y regenerar snapshot.

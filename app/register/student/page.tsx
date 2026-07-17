@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GoogleRegistrationStart } from "@/components/google-registration-start";
+import { guardPublicRegistrationEntry } from "@/lib/auth/guard-public-registration";
 
 export const metadata: Metadata = { title: "Registro de alumno" };
 
 type Props = { searchParams: Promise<{ error?: string | string[] }> };
 
 export default async function StudentRegistrationPage({ searchParams }: Props) {
+  await guardPublicRegistrationEntry("/complete-registration/student");
   const params = await searchParams;
   const hasError = Boolean(Array.isArray(params.error) ? params.error[0] : params.error);
   return (

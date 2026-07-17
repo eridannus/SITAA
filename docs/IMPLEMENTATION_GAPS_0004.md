@@ -1,6 +1,6 @@
 # Brechas de implementación para 0004 y fases posteriores
 
-**Estado:** Fase A Google implementada localmente; 0004 no aplicada.
+**Estado:** Fase A y 0004 aplicadas; corrección incremental 0005 creada y no aplicada.
 
 ## Incluido en 0004
 
@@ -42,4 +42,4 @@ No existe tabla de intents, escritura anónima de registro ni endpoint público 
 - **Fase E:** retirar acceso académico transitorio de `technical_admin`.
 - **Fase F:** check-in abierto.
 
-No forman parte de 0004: Azure, SMTP, dominio obligatorio, scopes Google elevados, panel administrativo, roles V2, filtros o migración 0005.
+No forman parte de 0004 ni de su corrección 0005: Azure, SMTP, dominio obligatorio, scopes Google elevados, panel administrativo, roles V2 o filtros.

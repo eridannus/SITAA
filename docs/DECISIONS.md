@@ -385,7 +385,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Consecuencias:** no se necesita SMTP ni se envía identidad institucional a Google. Una cookie breve `HttpOnly` guarda sólo la ruta `student|professor`; no contiene PII ni funciona como autorización. La duplicidad se informa únicamente después de autenticar. La aplicación nunca recibe `service_role`. Administración y auditoría completa continúan en Fase B.
 
-**Estado:** Implementada en código y migración 0004; migración pendiente de aplicación y preflight.
+**Estado:** Implementada y aplicada en 0004; la corrección de secuencia OAuth queda en 0005 pendiente.
 
 ## DEC-040 — Contrato de aplicación coordinada de identidad 0004
 
@@ -395,7 +395,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Consecuencias:** perfiles activos existentes permanecen activos aunque usen sólo contraseña. El rollback no elimina Auth users, profiles ni identidades Google y se bloquea ante perfiles `pending_registration` o técnicos incompatibles. La ventana entre DDL y despliegue debe minimizarse.
 
-**Estado:** Aceptada; endurecimiento preaplicación de 0004 pendiente de revisión y aplicación manual.
+**Estado:** Aceptada y aplicada con 0004. La migración 0005 mantiene el mismo contrato coordinado para su corrección incremental.
 
 ## DEC-036 — Roles académicos V2 y autoridad de asignación
 
@@ -426,3 +426,13 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** el check-in abierto no forma parte de 0004 inicial. Conserva el mensaje normal de éxito, valida cuenta/programa/elegibilidad y no cambia la ausencia normal de participantes registrados que no asisten. Cada fase puede usar una o más migraciones posteriores sin reescribir 0001–0003.
 
 **Estado:** Aceptada.
+
+## DEC-041 — Verificación Google diferida hasta la finalización institucional
+
+**Contexto:** con 0004 aplicada, Supabase confirmó Google pero insertó inicialmente `auth.users.email_confirmed_at=null`. El trigger lanzó `sitaa_google_email_not_verified` y revirtió toda la operación; no quedaron filas que limpiar.
+
+**Decisión:** 0005 permite que el trigger cree únicamente un perfil institucional `pending_registration`, inactivo e incompleto, cuando metadata confiable identifica Google. La activación se traslada al RPC autenticado, que exige una identidad Google enlazada al mismo Auth user, correo coincidente con Auth/profile y verificación final. Las rutas y el action de alta impiden reiniciar registro desde una cuenta autenticada.
+
+**Consecuencias:** quitar la verificación temprana no concede acceso. Se conserva el rechazo atómico de proveedores no soportados y signup por contraseña, mientras los diagnósticos del callback distinguen etapas sin registrar secretos. 0005 debe aprobar preflight y verificador antes de aplicarse.
+
+**Estado:** Aceptada; migración 0005 creada y pendiente de aplicación.

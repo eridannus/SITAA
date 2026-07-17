@@ -15,20 +15,21 @@ El dump se obtuvo con `--no-privileges`, pero los grants y ACL vivos se capturan
 - `0001_baseline_current_schema.sql`: baseline reconciliada.
 - `0002_database_security_and_integrity.sql`: aplicada y verificada en Supabase el 2026-07-16.
 - `0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
-- `0004_identity_registration_foundation.sql`: reescrita para Google OAuth y finalización institucional autenticada, sin intents; pendiente de preflight, configuración, revisión y aplicación manual.
+- `0004_identity_registration_foundation.sql`: aplicada; introduce Google OAuth y finalización institucional autenticada, sin intents.
+- `0005_fix_google_oauth_user_creation.sql`: creada, no aplicada; corrige la secuencia temprana de `email_confirmed_at` y endurece la verificación final.
 - Snapshot posterior: `2026-07-17T00:21:06Z`, reconciliado sin deriva inexplicada.
-- Siguiente número permitido después de aplicar/verificar 0004: `0005`.
+- Siguiente número permitido después de aplicar/verificar 0005: `0006`.
 
-## Aplicación pendiente de 0004
+## Aplicación pendiente de 0005
 
-1. Configurar Google OAuth siguiendo `docs/GOOGLE_AUTH_SETUP.md`, sin guardar secretos en Git o Vercel público.
-2. Ejecutar el preflight de sólo lectura y aprobar cero categorías bloqueantes; usuarios email/password y OAuth existentes son informativos.
-3. Comprometer migración y aplicación compatible, sin desplegar todavía.
-4. Aplicar manualmente `migrations/0004_identity_registration_foundation.sql`.
-5. Desplegar inmediatamente la aplicación `pending_registration` + Google callback.
-6. Ejecutar el verificador y `docs/TEST_PLAN_0004.md`; regenerar el snapshot.
+1. Ejecutar `0005_fix_google_oauth_user_creation_preflight.sql` en modo read-only y aprobar cero bloqueos.
+2. Revisar migración y rollback; no modificar 0001–0004.
+3. Aplicar manualmente `migrations/0005_fix_google_oauth_user_creation.sql`.
+4. Desplegar la aplicación con guardas de registro y callback diagnosticado.
+5. Ejecutar el verificador, `docs/TEST_PLAN_0005.md` y smoke tests Gmail/`pc.puma`.
+6. Regenerar y reconciliar el snapshot.
 
-El rollback es exclusivamente de emergencia, bloquea perfiles pendientes/técnicos incompatibles y nunca borra Auth users, profiles ni identidades Google.
+El rollback de 0005 es exclusivamente de emergencia: no transforma datos, pero reintroduce el defecto prematuro de 0004. Nunca borra Auth users, profiles ni identidades Google.
 
 ## Historial futuro
 
@@ -36,7 +37,7 @@ Después de esta reconciliación:
 
 - `0001_baseline_current_schema.sql` no se reescribe, excepto para corregir un defecto comprobado de la baseline.
 - `0001`, `0002` y `0003` no se reescriben, salvo para corregir un artefacto histórico comprobado y documentado.
-- El siguiente cambio usa `0004_short_description.sql` y continúa incrementalmente.
+- Cada cambio posterior usa el siguiente número libre y continúa incrementalmente; las migraciones aplicadas no se reescriben.
 - Una migración se crea antes o junto con cualquier SQL aplicado a Supabase.
 - Si el SQL se aplica manualmente desde Supabase SQL Editor, el mismo archivo debe quedar comprometido en Git.
 - Los cambios de modelo, permisos o arquitectura también actualizan la documentación correspondiente.

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { guardPublicRegistrationEntry } from "@/lib/auth/guard-public-registration";
 
 export const metadata: Metadata = { title: "Registro" };
 
@@ -18,7 +19,8 @@ const choices = [
   },
 ];
 
-export default function RegisterPage() {
+export default async function RegisterPage() {
+  await guardPublicRegistrationEntry();
   return (
     <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
       <div className="max-w-2xl">
