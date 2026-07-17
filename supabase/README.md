@@ -8,17 +8,28 @@ Este directorio contiene la baseline reconciliada y el historial versionado de c
 
 La baseline incluye tablas, columnas, llaves y demás constraints, índices, triggers, funciones, configuración RLS, políticas y semillas de catálogos controlados. Está destinada a instalaciones nuevas. No debe ejecutarse a ciegas contra la base actual de producción/prototipo porque ese entorno ya contiene los objetos y datos por cambios manuales históricos.
 
-El dump se obtuvo con `--no-privileges`; por ello, los grants administrados por Supabase no pudieron reconstruirse desde los artefactos disponibles y están señalados como TODO verificable en la baseline.
+El dump se obtuvo con `--no-privileges`, pero los grants y ACL vivos se capturan por separado en los cuatro artefactos especializados de reconciliación. La baseline conserva la estructura histórica y 0002 materializa el contrato mínimo de privilegios verificado.
+
+## Estado de la cadena
+
+- `0001_baseline_current_schema.sql`: baseline reconciliada.
+- `0002_database_security_and_integrity.sql`: aplicada y verificada en Supabase el 2026-07-16.
+- `0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
+- Snapshot posterior: `2026-07-17T00:21:06Z`, reconciliado sin deriva inexplicada.
+- Siguiente número permitido: `0004`.
 
 ## Historial futuro
 
 Después de esta reconciliación:
 
 - `0001_baseline_current_schema.sql` no se reescribe, excepto para corregir un defecto comprobado de la baseline.
-- El siguiente cambio usa `0002_short_description.sql`, después `0003_short_description.sql` y así sucesivamente.
+- `0001`, `0002` y `0003` no se reescriben, salvo para corregir un artefacto histórico comprobado y documentado.
+- El siguiente cambio usa `0004_short_description.sql` y continúa incrementalmente.
 - Una migración se crea antes o junto con cualquier SQL aplicado a Supabase.
 - Si el SQL se aplica manualmente desde Supabase SQL Editor, el mismo archivo debe quedar comprometido en Git.
 - Los cambios de modelo, permisos o arquitectura también actualizan la documentación correspondiente.
+- La verificación y el rollback se versionan cuando el riesgo o el alcance lo requieren.
+- Después de cambios significativos se regenera el snapshot, se compara contra toda la cadena y se actualiza `docs/DATABASE_CHANGELOG.md`.
 
 ## Generación de snapshots
 
@@ -31,6 +42,8 @@ powershell -ExecutionPolicy Bypass -File scripts/pull-supabase-snapshot.ps1
 El entorno proporciona `SUPABASE_DB_URL` como secreto. El script prefiere `pg_dump` y `psql` nativos, genera todos los archivos en un directorio temporal y sólo publica el conjunto completo cuando termina correctamente. No imprime ni guarda la URI y no ejecuta escrituras remotas.
 
 Los resultados se almacenan en `supabase/reconciliation/live/`. Son artefactos para comparar el estado vivo y construir migraciones; no son migraciones para ejecutar directamente.
+
+La reconciliación cerrada el 2026-07-16 comparó el snapshot regenerado contra `0001 + 0002 + 0003`. Las diferencias fueron efectos esperados de 0002/0003 o metadata inocua de `pg_dump`; no se detectó deriva inexplicada.
 
 ## Reglas de seguridad
 

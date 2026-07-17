@@ -44,6 +44,8 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-030 | Migraciones SQL versionadas en repositorio | Aceptada |
 | DEC-031 | Consolidación inicial de seguridad e integridad | Aceptada |
 | DEC-032 | Temporalidad provisional de borradores | Aceptada |
+| DEC-033 | Cierre de reconciliación posterior a 0003 | Aceptada |
+| DEC-034 | Dominio canónico de producción | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -339,4 +341,24 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Consecuencias:** 0003 corrige las funciones sin reescribir filas, por lo que los borradores atrapados se recuperan al aplicarla. `publish_activity(uuid)` sigue rechazando campos incompletos, inicio pasado, semestre inválido y cualquier inconsistencia del contrato programado. Los controles de asistencia y QR no se muestran mientras la actividad siga en borrador.
 
-**Estado:** Aceptada en repositorio; 0003 creada y pendiente de aplicación.
+**Estado:** Aceptada; 0003 aplicada y verificada en Supabase el 2026-07-16.
+
+## DEC-033 — Cierre de reconciliación posterior a 0003
+
+**Contexto:** 0002 y 0003 fueron aplicadas y verificadas en Supabase. El snapshot vivo se regeneró después de ambas migraciones y conserva evidencia especializada de estructura, funciones, políticas, privilegios y ACL.
+
+**Decisión:** la cadena `0001 + 0002 + 0003` queda reconciliada con el snapshot generado en `2026-07-17T00:21:06Z`, sin deriva inexplicada. `0001`, `0002` y `0003` no se reescriben desde este punto salvo para corregir un artefacto histórico comprobado. El siguiente número permitido es `0004`.
+
+**Consecuencias:** todo cambio futuro debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos, comparar el estado vivo contra la cadena completa y actualizar el changelog. La restricción de `technical_admin` permanece diferida y el check-in abierto sigue fuera del alcance implementado.
+
+**Estado:** Aceptada.
+
+## DEC-034 — Dominio canónico de producción
+
+**Contexto:** los enlaces de check-in deben ser estables y coincidir con la configuración de Vercel y Supabase Auth.
+
+**Decisión:** el origen público canónico es `https://www.sitaa.net`. `https://sitaa.net` redirige al origen canónico y `https://sitaa.vercel.app` permanece como respaldo técnico, no como URL pública principal. Vercel Production define `NEXT_PUBLIC_SITE_URL=https://www.sitaa.net`; Supabase Authentication usa ese mismo origen como Site URL y permite redirecciones bajo `https://www.sitaa.net/**` y `https://sitaa.vercel.app/**`.
+
+**Consecuencias:** QR y enlaces directos derivan de `NEXT_PUBLIC_SITE_URL` y fueron verificados manualmente con `https://www.sitaa.net/check-in/...`. Cloudflare administra DNS y los CNAME dirigidos a Vercel permanecen en modo DNS only. Los entornos Preview no deben heredar automáticamente el origen de producción salvo configuración deliberada. `NEXT_PUBLIC_SITE_URL` es configuración pública, pero su valor productivo no se fija en archivos locales con secretos.
+
+**Estado:** Aceptada.

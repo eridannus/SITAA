@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict o8oNhIYDIC6HbL2PK2nAqlL4Y7Iodwj9CsvhLrfb2apeeJfofDNbQw2XVB61xjb
+\restrict pL6rdjKsBYhdCnvAv9lA6xc4mwP0lvZZt4XOjxgqBDPEvnjyrMyvmd8k9xhhmpx
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -86,13 +86,16 @@ CREATE FUNCTION public.activity_has_ended(target_activity_id uuid) RETURNS boole
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-  select coalesce(
-    (
-      coalesce(a.end_date, a.start_date)::timestamp
-      + coalesce(a.end_time, a.start_time, time '23:59:59')
-    ) < (now() at time zone 'America/Mexico_City'),
-    false
-  )
+  select case
+    when a.status_code = 'draft' then false
+    else coalesce(
+      (
+        coalesce(a.end_date, a.start_date)::timestamp
+        + coalesce(a.end_time, a.start_time, time '23:59:59')
+      ) < (now() at time zone 'America/Mexico_City'),
+      false
+    )
+  end
   from public.activities a
   where a.id = target_activity_id;
 $$;
@@ -255,24 +258,13 @@ CREATE FUNCTION public.can_delete_activity(target_activity_id uuid) RETURNS bool
     from public.activities a
     where a.id = target_activity_id
       and (
-        -- Roles de gestión pueden eliminar si corresponde.
-        public.can_manage_activity(
-          a.scope_type,
-          a.program_id,
-          a.division_id,
-          a.service_type_code
-        )
-
-        or
-
-        -- Responsable / creador normal sólo elimina borradores no ocurridos.
         (
-          (
-            a.created_by = auth.uid()
-            or a.responsible_profile_id = auth.uid()
-          )
-          and a.status_code = 'draft'
-          and not public.activity_has_ended(a.id)
+          a.status_code = 'draft'
+          and a.created_by = auth.uid()
+        )
+        or (
+          a.status_code <> 'draft'
+          and public.can_manage_activity(a.scope_type, a.program_id, a.division_id, a.service_type_code)
         )
       )
   );
@@ -288,17 +280,17 @@ CREATE FUNCTION public.can_edit_activity(target_activity_id uuid) RETURNS boolea
     SET search_path TO 'public'
     AS $$
   select exists (
-    select 1
-    from public.activities a
+    select 1 from public.activities a
     where a.id = target_activity_id
       and (
-        a.created_by = auth.uid()
-        or a.responsible_profile_id = auth.uid()
-        or public.can_manage_activity(
-          a.scope_type,
-          a.program_id,
-          a.division_id,
-          a.service_type_code
+        (a.status_code = 'draft' and a.created_by = auth.uid())
+        or (
+          a.status_code <> 'draft'
+          and (
+            a.created_by = auth.uid()
+            or a.responsible_profile_id = auth.uid()
+            or public.can_manage_activity(a.scope_type, a.program_id, a.division_id, a.service_type_code)
+          )
         )
       )
   );
@@ -400,17 +392,17 @@ CREATE FUNCTION public.can_read_activity(target_activity_id uuid) RETURNS boolea
     SET search_path TO 'public'
     AS $$
   select exists (
-    select 1
-    from public.activities a
+    select 1 from public.activities a
     where a.id = target_activity_id
       and (
-        a.created_by = auth.uid()
-        or a.responsible_profile_id = auth.uid()
-        or public.can_manage_activity(
-          a.scope_type,
-          a.program_id,
-          a.division_id,
-          a.service_type_code
+        (a.status_code = 'draft' and a.created_by = auth.uid())
+        or (
+          a.status_code <> 'draft'
+          and (
+            a.created_by = auth.uid()
+            or a.responsible_profile_id = auth.uid()
+            or public.can_manage_activity(a.scope_type, a.program_id, a.division_id, a.service_type_code)
+          )
         )
       )
   );
@@ -430,25 +422,13 @@ CREATE FUNCTION public.can_update_activity_base(target_activity_id uuid) RETURNS
     from public.activities a
     where a.id = target_activity_id
       and (
-        -- Roles de gestión pueden corregir datos base.
-        public.can_manage_activity(
-          a.scope_type,
-          a.program_id,
-          a.division_id,
-          a.service_type_code
-        )
-
-        or
-
-        -- Responsable / creador normal sólo puede editar datos base
-        -- mientras siga en borrador y no haya ocurrido.
         (
-          (
-            a.created_by = auth.uid()
-            or a.responsible_profile_id = auth.uid()
-          )
-          and a.status_code = 'draft'
-          and not public.activity_has_ended(a.id)
+          a.status_code = 'draft'
+          and a.created_by = auth.uid()
+        )
+        or (
+          a.status_code <> 'draft'
+          and public.can_manage_activity(a.scope_type, a.program_id, a.division_id, a.service_type_code)
         )
       )
   );
@@ -1045,6 +1025,31 @@ $$;
 
 
 --
+-- Name: guard_activity_participant_pending_deadline(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_activity_participant_pending_deadline() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  natural_deadline timestamptz;
+begin
+  if new.attendance_status = 'pending'
+     and new.attendance_status is distinct from old.attendance_status then
+    natural_deadline := public.activity_attendance_deadline(new.activity_id);
+    if natural_deadline is null or natural_deadline <= now() then
+      raise exception 'La ventana de asistencia ya terminó; el estado Pendiente ya no está disponible.'
+        using errcode = 'P0001';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+
+--
 -- Name: has_active_role(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1194,6 +1199,77 @@ $$;
 
 
 --
+-- Name: publish_activity(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.publish_activity(target_activity_id uuid) RETURNS TABLE(activity_id uuid, status_code text, academic_period_id uuid, semester_label text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  target_activity public.activities%rowtype;
+  target_period_id uuid;
+  target_semester_label text;
+  start_value timestamp;
+begin
+  if auth.uid() is null then
+    raise exception 'Debes iniciar sesión para publicar una actividad.' using errcode = '42501';
+  end if;
+
+  select a.* into target_activity
+  from public.activities a
+  where a.id = target_activity_id
+  for update;
+
+  if not found then
+    raise exception 'La actividad no existe o no está disponible.' using errcode = 'P0001';
+  end if;
+  if target_activity.created_by is distinct from auth.uid() then
+    raise exception 'Sólo el creador puede publicar esta actividad.' using errcode = '42501';
+  end if;
+  if target_activity.status_code <> 'draft' then
+    raise exception 'Sólo pueden publicarse actividades en borrador.' using errcode = 'P0001';
+  end if;
+  if public.can_create_activity(
+    target_activity.scope_type,
+    target_activity.program_id,
+    target_activity.division_id,
+    target_activity.service_type_code
+  ) is distinct from true then
+    raise exception 'Tus asignaciones actuales no permiten publicar esta actividad.'
+      using errcode = '42501';
+  end if;
+  if target_activity.start_date is null or target_activity.start_time is null then
+    raise exception 'Indica una fecha y hora de inicio válidas.' using errcode = '23514';
+  end if;
+
+  start_value := target_activity.start_date + target_activity.start_time;
+  if (start_value at time zone 'America/Mexico_City') <= now() then
+    raise exception 'La fecha y hora de inicio deben ser posteriores a la hora actual de Ciudad de México.'
+      using errcode = '23514';
+  end if;
+
+  select period.id, period.name into target_period_id, target_semester_label
+  from public.get_academic_period_for_date(target_activity.start_date) period limit 1;
+  if target_period_id is null then
+    raise exception 'No hay semestre registrado para la fecha de inicio.' using errcode = '23514';
+  end if;
+
+  -- El trigger valida el contrato completo en esta misma sentencia. Cualquier
+  -- fallo revierte también la asignación de semestre y el cambio de estado.
+  update public.activities a
+  set academic_period_id = target_period_id,
+      status_code = 'scheduled',
+      updated_by = auth.uid()
+  where a.id = target_activity_id;
+
+  return query
+  select target_activity_id, 'scheduled'::text, target_period_id, target_semester_label;
+end;
+$$;
+
+
+--
 -- Name: remove_activity_participant(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1305,39 +1381,40 @@ CREATE FUNCTION public.update_activity_participant_attendance(target_participant
     AS $$
 declare
   target_activity_id uuid;
+  natural_deadline timestamptz;
 begin
   if new_attendance_status not in ('pending', 'attended', 'absent', 'justified') then
-    raise exception 'El estado de asistencia no es válido.'
-      using errcode = 'P0001';
+    raise exception 'El estado de asistencia no es válido.' using errcode = 'P0001';
   end if;
 
-  select ap.activity_id
-  into target_activity_id
+  select ap.activity_id into target_activity_id
   from public.activity_participants ap
   where ap.id = target_participant_id;
 
   if target_activity_id is null then
-    raise exception 'El participante no existe.'
-      using errcode = 'P0001';
+    raise exception 'El participante no existe.' using errcode = 'P0001';
   end if;
-
   if not public.can_edit_activity(target_activity_id) then
     raise exception 'No tienes permiso para modificar la asistencia de esta actividad.'
       using errcode = '42501';
   end if;
 
+  if new_attendance_status = 'pending' then
+    natural_deadline := public.activity_attendance_deadline(target_activity_id);
+    if natural_deadline is null or natural_deadline <= now() then
+      raise exception 'La ventana de asistencia ya terminó; el estado Pendiente ya no está disponible.'
+        using errcode = 'P0001';
+    end if;
+  end if;
+
   update public.activity_participants
-  set
-    attendance_status = new_attendance_status,
-    attendance_source = 'manual',
-    attendance_updated_by = auth.uid(),
-    attendance_updated_at = now(),
-    attendance_notes = nullif(trim(coalesce(new_attendance_notes, '')), ''),
-    checked_in_at = case
-      when new_attendance_status = 'attended' then checked_in_at
-      else null
-    end,
-    updated_at = now()
+  set attendance_status = new_attendance_status,
+      attendance_source = 'manual',
+      attendance_updated_by = auth.uid(),
+      attendance_updated_at = now(),
+      attendance_notes = nullif(trim(coalesce(new_attendance_notes, '')), ''),
+      checked_in_at = case when new_attendance_status = 'attended' then checked_in_at else null end,
+      updated_at = now()
   where id = target_participant_id;
 end;
 $$;
@@ -1353,40 +1430,179 @@ CREATE FUNCTION public.update_activity_participants_attendance_bulk(target_activ
     AS $$
 declare
   updated_count integer;
+  natural_deadline timestamptz;
 begin
   if new_attendance_status not in ('pending', 'attended', 'absent', 'justified') then
-    raise exception 'El estado de asistencia no es válido.'
-      using errcode = 'P0001';
+    raise exception 'El estado de asistencia no es válido.' using errcode = 'P0001';
   end if;
-
   if not public.can_edit_activity(target_activity_id) then
     raise exception 'No tienes permiso para modificar la asistencia de esta actividad.'
       using errcode = '42501';
   end if;
-
   if target_participant_ids is null or array_length(target_participant_ids, 1) is null then
-    raise exception 'No se seleccionaron participantes.'
-      using errcode = 'P0001';
+    raise exception 'No se seleccionaron participantes.' using errcode = 'P0001';
+  end if;
+
+  if new_attendance_status = 'pending' then
+    natural_deadline := public.activity_attendance_deadline(target_activity_id);
+    if natural_deadline is null or natural_deadline <= now() then
+      raise exception 'La ventana de asistencia ya terminó; el estado Pendiente ya no está disponible.'
+        using errcode = 'P0001';
+    end if;
   end if;
 
   update public.activity_participants ap
-  set
-    attendance_status = new_attendance_status,
-    attendance_source = 'manual',
-    attendance_updated_by = auth.uid(),
-    attendance_updated_at = now(),
-    attendance_notes = nullif(trim(coalesce(new_attendance_notes, '')), ''),
-    checked_in_at = case
-      when new_attendance_status = 'attended' then coalesce(ap.checked_in_at, now())
-      else null
-    end,
-    updated_at = now()
+  set attendance_status = new_attendance_status,
+      attendance_source = 'manual',
+      attendance_updated_by = auth.uid(),
+      attendance_updated_at = now(),
+      attendance_notes = nullif(trim(coalesce(new_attendance_notes, '')), ''),
+      checked_in_at = case
+        when new_attendance_status = 'attended' then coalesce(ap.checked_in_at, now())
+        else null
+      end,
+      updated_at = now()
   where ap.activity_id = target_activity_id
     and ap.id = any(target_participant_ids);
 
   get diagnostics updated_count = row_count;
-
   return updated_count;
+end;
+$$;
+
+
+--
+-- Name: validate_activity_scheduled_state(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_activity_scheduled_state() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  expected_period_id uuid;
+  start_value timestamp;
+  end_value timestamp;
+  require_future_start boolean := false;
+  trusted_database_role boolean := current_user in ('postgres', 'service_role');
+begin
+  if tg_op = 'UPDATE' and not trusted_database_role then
+    if new.created_by is distinct from old.created_by then
+      raise exception 'No se puede cambiar el creador de una actividad.'
+        using errcode = '23514';
+    end if;
+
+    if old.status_code <> 'draft' and new.status_code = 'draft' then
+      raise exception 'Una actividad publicada no puede volver a borrador.'
+        using errcode = '23514';
+    end if;
+
+    if old.status_code = 'draft' and new.status_code = 'scheduled' then
+      if auth.uid() is null
+         or new.created_by is distinct from auth.uid()
+         or public.can_create_activity(
+           new.scope_type,
+           new.program_id,
+           new.division_id,
+           new.service_type_code
+         ) is distinct from true then
+        raise exception 'No tienes permiso para publicar esta actividad.'
+          using errcode = '42501';
+      end if;
+    end if;
+  end if;
+
+  if new.status_code <> 'scheduled' then return new; end if;
+
+  if nullif(btrim(new.title), '') is null then
+    raise exception 'Escribe el título de la actividad.' using errcode = '23514';
+  end if;
+  if length(new.title) > 200 then
+    raise exception 'El título no puede exceder 200 caracteres.' using errcode = '23514';
+  end if;
+  if length(coalesce(new.description, '')) > 5000 then
+    raise exception 'La descripción no puede exceder 5000 caracteres.' using errcode = '23514';
+  end if;
+
+  if new.scope_type = 'program' then
+    if new.program_id is null or new.division_id is null or not exists (
+      select 1 from public.academic_programs ap
+      where ap.id = new.program_id and ap.division_id = new.division_id
+    ) then
+      raise exception 'El programa y la división no corresponden al alcance de la actividad.'
+        using errcode = '23514';
+    end if;
+  elsif new.scope_type = 'division' then
+    if new.division_id is null or new.program_id is not null then
+      raise exception 'El alcance divisional requiere una división y no admite programa.'
+        using errcode = '23514';
+    end if;
+  else
+    raise exception 'El alcance de la actividad no es válido.' using errcode = '23514';
+  end if;
+
+  if new.activity_type_code is null then raise exception 'Selecciona un tipo de actividad.' using errcode = '23514'; end if;
+  if new.service_type_code is null then raise exception 'Selecciona un tipo de servicio.' using errcode = '23514'; end if;
+  if new.attention_category_code is null then raise exception 'Selecciona una categoría de atención.' using errcode = '23514'; end if;
+  if new.modality_code is null then raise exception 'Selecciona una modalidad.' using errcode = '23514'; end if;
+  if new.location_type_code is null then raise exception 'Selecciona un tipo de ubicación.' using errcode = '23514'; end if;
+  if nullif(btrim(new.location_detail), '') is null then
+    raise exception 'Indica el lugar, aula, enlace o detalle de acceso de la actividad.' using errcode = '23514';
+  end if;
+  if length(new.location_detail) > 500 then
+    raise exception 'El detalle de ubicación no puede exceder 500 caracteres.' using errcode = '23514';
+  end if;
+  if new.modality_code = 'online' and new.location_type_code <> 'online_space' then
+    raise exception 'Una actividad en línea debe usar la ubicación En línea.' using errcode = '23514';
+  end if;
+  if new.modality_code <> 'online' and new.location_type_code = 'online_space' then
+    raise exception 'La ubicación En línea sólo corresponde a la modalidad En línea.' using errcode = '23514';
+  end if;
+
+  if new.start_date is null then raise exception 'Indica una fecha de inicio válida.' using errcode = '23514'; end if;
+  if new.start_time is null then raise exception 'Indica una hora válida en formato de 24 horas.' using errcode = '23514'; end if;
+  if new.duration_mode not in ('one_hour', 'two_hours', 'custom') or new.duration_mode is null then
+    raise exception 'Selecciona una duración.' using errcode = '23514';
+  end if;
+  if new.end_date is null then raise exception 'Indica una fecha de término válida.' using errcode = '23514'; end if;
+  if new.end_time is null then raise exception 'Indica una hora de término válida en formato de 24 horas.' using errcode = '23514'; end if;
+
+  start_value := new.start_date + new.start_time;
+  end_value := new.end_date + new.end_time;
+  if end_value <= start_value then
+    raise exception 'El término de la actividad debe ser posterior al inicio.' using errcode = '23514';
+  end if;
+  if new.duration_mode = 'one_hour' and end_value <> start_value + interval '1 hour' then
+    raise exception 'La duración de 1 hora no coincide con la fecha y hora de término.' using errcode = '23514';
+  end if;
+  if new.duration_mode = 'two_hours' and end_value <> start_value + interval '2 hours' then
+    raise exception 'La duración de 2 horas no coincide con la fecha y hora de término.' using errcode = '23514';
+  end if;
+
+  if new.responsible_profile_id is null then
+    raise exception 'La actividad requiere una persona responsable.' using errcode = '23514';
+  end if;
+
+  select period.id into expected_period_id
+  from public.get_academic_period_for_date(new.start_date) period limit 1;
+  if expected_period_id is null then
+    raise exception 'No hay semestre registrado para la fecha de inicio.' using errcode = '23514';
+  end if;
+  if new.academic_period_id is distinct from expected_period_id then
+    raise exception 'El semestre asignado no corresponde a la fecha de inicio.' using errcode = '23514';
+  end if;
+
+  if tg_op = 'INSERT' then
+    require_future_start := true;
+  elsif old.status_code = 'draft' then
+    require_future_start := true;
+  end if;
+  if require_future_start and (start_value at time zone 'America/Mexico_City') <= now() then
+    raise exception 'La fecha y hora de inicio deben ser posteriores a la hora actual de Ciudad de México.'
+      using errcode = '23514';
+  end if;
+
+  return new;
 end;
 $$;
 
@@ -1990,6 +2206,13 @@ CREATE INDEX activity_participants_role_idx ON public.activity_participants USIN
 
 
 --
+-- Name: activity_participants guard_activity_participants_pending_deadline; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER guard_activity_participants_pending_deadline BEFORE UPDATE OF attendance_status ON public.activity_participants FOR EACH ROW EXECUTE FUNCTION public.guard_activity_participant_pending_deadline();
+
+
+--
 -- Name: activities set_activities_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2015,6 +2238,13 @@ CREATE TRIGGER set_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH
 --
 
 CREATE TRIGGER set_role_assignments_updated_at BEFORE UPDATE ON public.role_assignments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: activities validate_activities_scheduled_state; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER validate_activities_scheduled_state BEFORE INSERT OR UPDATE ON public.activities FOR EACH ROW EXECUTE FUNCTION public.validate_activity_scheduled_state();
 
 
 --
@@ -2370,7 +2600,7 @@ CREATE POLICY "Users can read own role assignments" ON public.role_assignments F
 -- Name: activities Users can read permitted activities; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can read permitted activities" ON public.activities FOR SELECT TO authenticated USING (((created_by = auth.uid()) OR (responsible_profile_id = auth.uid()) OR public.is_activity_participant(id) OR public.can_manage_activity(scope_type, program_id, division_id, service_type_code)));
+CREATE POLICY "Users can read permitted activities" ON public.activities FOR SELECT TO authenticated USING ((((status_code = 'draft'::text) AND (created_by = auth.uid())) OR ((status_code <> 'draft'::text) AND ((created_by = auth.uid()) OR (responsible_profile_id = auth.uid()) OR public.is_activity_participant(id) OR public.can_manage_activity(scope_type, program_id, division_id, service_type_code)))));
 
 
 --
@@ -2500,5 +2730,5 @@ ALTER TABLE public.system_health ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict o8oNhIYDIC6HbL2PK2nAqlL4Y7Iodwj9CsvhLrfb2apeeJfofDNbQw2XVB61xjb
+\unrestrict pL6rdjKsBYhdCnvAv9lA6xc4mwP0lvZZt4XOjxgqBDPEvnjyrMyvmd8k9xhhmpx
 

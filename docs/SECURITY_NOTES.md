@@ -48,6 +48,17 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - Separar, si los límites lo permiten, proyectos de desarrollo y producción.
 - Revisar encabezados de seguridad, dependencias y alertas antes de cada entrega.
 
+### Contrato de dominio de producción
+
+- Origen canónico: `https://www.sitaa.net`.
+- El dominio raíz `https://sitaa.net` redirige al origen canónico.
+- `https://sitaa.vercel.app` es respaldo técnico y no la URL pública canónica.
+- Vercel Production configura `NEXT_PUBLIC_SITE_URL=https://www.sitaa.net`. Es configuración pública, no un secreto; Preview no debe recibir ese valor automáticamente salvo decisión explícita.
+- Supabase Authentication configura Site URL en `https://www.sitaa.net` y permite actualmente `https://www.sitaa.net/**` y `https://sitaa.vercel.app/**` como Redirect URLs.
+- Los enlaces QR y directos de asistencia derivan de `NEXT_PUBLIC_SITE_URL`; se verificó manualmente que usan `https://www.sitaa.net/check-in/...`.
+- Cloudflare administra DNS. Los registros CNAME dirigidos a Vercel deben permanecer en modo **DNS only**, sin proxy de Cloudflare.
+- Los archivos de ejemplo sólo declaran `NEXT_PUBLIC_SITE_URL=` vacío; el valor productivo se mantiene en Vercel y no se registra en archivos locales con secretos.
+
 ## Auditoría y operación
 
 - Auditar cambios de rol, correcciones de asistencia, cierres, exportaciones y acciones administrativas.

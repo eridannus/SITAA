@@ -4,7 +4,7 @@ Este directorio contiene snapshots de sólo lectura usados para comparar la base
 
 ## Artefactos del snapshot vivo
 
-El flujo genera el siguiente conjunto. Los diez artefactos originales fueron reconciliados el 16 de julio de 2026; las cuatro capturas de privilegios son obligatorias a partir de la próxima regeneración con `SUPABASE_DB_URL` disponible.
+El flujo genera el siguiente conjunto. Todos los artefactos, incluidas las cuatro capturas de privilegios, son obligatorios para considerar completo un snapshot.
 
 - `live_schema.sql`: esquema `public` obtenido con `pg_dump --schema-only --no-owner --no-privileges`.
 - `live_tables.sql`: tablas, tipo de relación y estado RLS.
@@ -21,7 +21,9 @@ El flujo genera el siguiente conjunto. Los diez artefactos originales fueron rec
 - `live_seed_catalogs.sql`: filas JSON de catálogos controlados.
 - `live_snapshot_metadata.txt`: fecha UTC, versiones y estado de generación.
 
-La validación de reconciliación confirmó 17 tablas, 151 columnas, 61 constraints, 37 índices, 4 triggers, 30 funciones, 23 políticas y 51 filas de semillas. No se encontraron inconsistencias entre el esquema principal y los snapshots especializados. Los índices de PK y UNIQUE se consideran representados por sus constraints aunque no aparezcan como sentencias `CREATE INDEX` independientes en el dump.
+El snapshot posterior a 0003 fue generado en `2026-07-17T00:21:06Z`. La reconciliación confirmó 17 tablas, 151 columnas, 61 constraints, 37 índices, 6 triggers, 33 funciones, 23 políticas y 51 filas de semillas. Los privilegios suman 99 grants de rutina, 262 de tabla, 6 de secuencia y 401 entradas ACL expandidas. No se encontraron inconsistencias entre el esquema principal y los snapshots especializados. Los índices de PK y UNIQUE se consideran representados por sus constraints aunque no aparezcan como sentencias `CREATE INDEX` independientes en el dump.
+
+La comparación contra `0001 + 0002 + 0003` no encontró deriva inexplicada. Las diferencias estructurales observadas corresponden a los helpers, RPC, triggers, política y grants de 0002, así como a las tres definiciones corregidas por 0003. El timestamp del snapshot y el valor aleatorio `\restrict` de `pg_dump` son diferencias ambientales inocuas.
 
 Los antiguos snapshots JSON de columnas, funciones y políticas quedan conservados como antecedente, pero fueron sustituidos como fuente autoritativa por este conjunto completo bajo `supabase/reconciliation/live/`.
 
@@ -69,4 +71,6 @@ No se exportan usuarios, perfiles, asignaciones de rol, actividades, participant
 - Si un comando falla, incluido cualquiera de los cuatro snapshots de privilegios, el temporal se elimina, el metadata registra `FAILURE` y no se publican archivos parciales.
 - El flujo no aplica migraciones, no modifica la base viva y no repara historial remoto.
 
-Después de generar un snapshot, se valida su integridad y se usa para preparar una migración numerada revisable. Los archivos de privilegios son evidencia para definir grants mínimos; no contienen ni ejecutan sentencias `GRANT` o `REVOKE`. Aplicar SQL a Supabase permanece como un paso separado y manual.
+Después de generar un snapshot, se valida su integridad y se compara con `0001` y todas las migraciones posteriores. Los archivos de privilegios son evidencia para definir o verificar grants mínimos; no contienen ni ejecutan sentencias `GRANT` o `REVOKE`. Aplicar SQL a Supabase permanece como un paso separado y manual.
+
+La cadena cerrada actual es `0001 + 0002 + 0003`; el siguiente cambio debe comenzar en `0004`, acompañarse de verificación y rollback cuando corresponda, aplicarse manualmente y registrarse en `docs/DATABASE_CHANGELOG.md`. Las migraciones cerradas no se reescriben salvo corrección de un artefacto histórico comprobado.

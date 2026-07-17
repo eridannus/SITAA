@@ -1,122 +1,82 @@
 # Estado reconciliado de la base de datos
 
-**Estado:** reconciliado contra el snapshot vivo completo de Supabase generado el 16 de julio de 2026.
+**Fecha de cierre documental:** 2026-07-16.
 
-La fuente autoritativa es `supabase/reconciliation/live/live_schema.sql`, verificada con los snapshots especializados de tablas, columnas, constraints, índices, triggers, funciones, políticas y semillas. La baseline resultante es `supabase/migrations/0001_baseline_current_schema.sql`.
+**Snapshot vivo comparado:** `2026-07-17T00:21:06Z`, estado `SUCCESS`.
 
-## Resultado de validación
+La fuente de verdad histórica y evolutiva es la cadena:
 
-- 14 archivos estructurales y de privilegios esperados, presentes y no vacíos.
-- 17 tablas públicas.
-- 151 columnas.
-- 61 constraints PK, FK, UNIQUE o CHECK.
-- 37 índices, incluidos los respaldados implícitamente por constraints.
-- 4 triggers.
-- 30 funciones públicas.
-- 23 políticas RLS.
-- 17 tablas con RLS habilitado.
-- 51 filas de semillas en 11 catálogos controlados.
-- Sin diferencias estructurales entre `live_schema.sql` y los snapshots especializados.
-- Sin credenciales, mojibake ni datos personales u operativos en las semillas.
+1. `supabase/migrations/0001_baseline_current_schema.sql`: baseline reconciliada.
+2. `supabase/migrations/0002_database_security_and_integrity.sql`: aplicada y verificada en Supabase el 2026-07-16.
+3. `supabase/migrations/0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
 
-## Tablas públicas reconciliadas
+El snapshot regenerado bajo `supabase/reconciliation/live/` fue comparado localmente contra esa cadena. No se conectó a Supabase durante esta reconciliación documental.
 
-- `academic_periods`
-- `academic_programs`
-- `activities`
-- `activity_checkin_tokens`
-- `activity_modalities`
-- `activity_participants`
-- `activity_statuses`
-- `activity_types`
-- `attention_categories`
-- `divisions`
-- `location_types`
-- `participant_roles`
-- `profiles`
-- `role_assignments`
-- `roles`
-- `service_types`
-- `system_health`
+## Inventario posterior a 0003
 
-## Funciones reconciliadas
+| Categoría | Cantidad |
+| --- | ---: |
+| Tablas públicas | 17 |
+| Columnas | 151 |
+| Restricciones PK, FK, UNIQUE o CHECK | 61 |
+| Índices, incluidos los respaldados por restricciones | 37 |
+| Triggers | 6 |
+| Funciones y firmas públicas | 33 |
+| Políticas RLS | 23 |
+| Tablas con RLS habilitado | 17 |
+| Filas de semillas en catálogos controlados | 51 |
+| Grants de rutinas | 99 |
+| Grants de tablas | 262 |
+| Grants de secuencia | 6 |
+| Entradas ACL expandidas | 401 |
 
-Se preservaron las 30 firmas vivas:
+Las tablas, columnas, restricciones, índices y semillas coinciden con 0001. Las diferencias del snapshot regenerado se limitan a funciones, políticas, triggers y privilegios previstos por 0002 y a las tres definiciones de temporalidad de borradores reemplazadas por 0003.
 
-- `activity_attendance_deadline(uuid)`
-- `activity_attendance_open_at(uuid)`
-- `activity_has_ended(uuid)`
-- `add_activity_participant(uuid,uuid,text)`
-- `can_create_activity(text,uuid,uuid,text)`
-- `can_create_activity(uuid,text)`
-- `can_delete_activity(uuid)`
-- `can_edit_activity(uuid)`
-- `can_manage_activity(text,uuid,uuid,text)`
-- `can_manage_activity(uuid,text)`
-- `can_read_activity(uuid)`
-- `can_update_activity_base(uuid)`
-- `check_in_activity(text)`
-- `close_activity_attendance_checkin(uuid)`
-- `finalize_expired_attendance()`
-- `generate_three_word_code()`
-- `get_academic_period_for_date(date)`
-- `get_active_activity_attendance_checkin(uuid)`
-- `get_activity_attendance_checkin_state(uuid)`
-- `get_activity_participants(uuid)`
-- `get_visible_activity_cards()`
-- `has_active_role(text)`
-- `has_any_active_role(text[])`
-- `is_activity_participant(uuid)`
-- `open_activity_attendance_checkin(uuid)`
-- `remove_activity_participant(uuid)`
-- `search_profiles_for_participation(uuid,text)`
-- `set_updated_at()`
-- `update_activity_participant_attendance(uuid,text,text)`
-- `update_activity_participants_attendance_bulk(uuid,uuid[],text,text)`
+## Efectos verificados de 0002
 
-## Triggers y políticas
+- Los borradores sólo son visibles para `created_by`; responsable, participante, gestor y `technical_admin` no amplían la lectura de borradores ajenos.
+- `can_read_activity(uuid)` y `can_edit_activity(uuid)` distinguen `draft` de estados publicados.
+- `publish_activity(uuid)` publica dentro de una transacción y exige sesión, creador, autorización vigente, semestre y contrato programado completo.
+- `validate_activity_scheduled_state()` y `validate_activities_scheduled_state` protegen filas `scheduled`, hacen inmutable `created_by` para sesiones cliente y prohíben `scheduled → draft`.
+- `guard_activity_participant_pending_deadline()` y su trigger, junto con las RPC individual y masiva, rechazan restaurar `pending` en la frontera natural o después.
+- `PUBLIC` y `anon` no tienen `EXECUTE` sobre funciones SITAA.
+- `anon` conserva únicamente `SELECT` sobre `system_health`.
+- `authenticated` conserva el contrato directo mínimo documentado y no tiene acceso directo a `activity_checkin_tokens` ni a `system_health_id_seq`.
+- `technical_admin` conserva intencionalmente acceso amplio sobre contenido publicado durante desarrollo y pruebas, pero no sobre borradores ajenos.
 
-Los triggers reconciliados son:
+La verificación SQL de 0002 terminó sin desviaciones. Los smoke tests manuales de borradores, publicación, bloqueo, participantes, asistencia y QR/código también pasaron.
 
-- `activities.set_activities_updated_at`
-- `activity_participants.set_activity_participants_updated_at`
-- `profiles.set_profiles_updated_at`
-- `role_assignments.set_role_assignments_updated_at`
+## Efectos verificados de 0003
 
-Las 23 políticas RLS cubren `academic_periods`, `academic_programs`, `activities`, `activity_modalities`, `activity_participants`, `activity_statuses`, `activity_types`, `attention_categories`, `divisions`, `location_types`, `participant_roles`, `profiles`, `role_assignments`, `roles`, `service_types` y `system_health`.
+- `activity_has_ended(uuid)` devuelve `false` para cualquier borrador.
+- `can_update_activity_base(uuid)` permite al creador editar su borrador aunque la fecha u hora provisional sea pasada, nula o incompleta.
+- `can_delete_activity(uuid)` aplica la misma regla al borrado del borrador propio.
+- El comportamiento temporal y administrativo de actividades publicadas permanece sin cambios.
+- La privacidad de borradores establecida por 0002 permanece intacta.
 
-## Catálogos reproducibles
+Los nueve resultados del verificador de 0003 fueron verdaderos y la prueba terminó con el `ROLLBACK` transaccional esperado. Los smoke tests manuales confirmaron edición y eliminación de borradores atrapados y rechazo de publicación con horarios inválidos.
 
-La baseline incluye semillas verificadas para `divisions`, `academic_programs`, `roles`, `academic_periods`, `activity_types`, `service_types`, `attention_categories`, `activity_modalities`, `activity_statuses`, `location_types` y `participant_roles`. La inserción respeta primero la dependencia de `academic_programs` hacia `divisions`.
+## Resultado de reconciliación
 
-## Alcance y pendiente verificable
+| Diferencia observada | Clasificación |
+| --- | --- |
+| Tres funciones nuevas, dos triggers nuevos y cambios de helpers/RPC | Efecto esperado de 0002 |
+| Política SELECT de `activities` separada por estado `draft` | Efecto esperado de 0002 |
+| Grants reducidos para `PUBLIC`, `anon` y `authenticated` | Efecto esperado de 0002 |
+| Definiciones finales de `activity_has_ended`, `can_update_activity_base` y `can_delete_activity` | Efecto esperado de 0003 |
+| Nuevo valor aleatorio `\restrict` de `pg_dump` y nueva fecha UTC de metadata | Diferencia ambiental inocua |
 
-El esquema vivo depende de `extensions.unaccent`, por lo que la baseline crea esa extensión en el esquema `extensions`. `gen_random_uuid()` forma parte del PostgreSQL vivo capturado.
+**Deriva inexplicada:** ninguna en esquema, funciones, triggers, políticas, grants, ACL, catálogos o restricciones.
 
-Aunque el dump de esquema se produjo con `--no-privileges`, los snapshots especializados `live_routine_privileges.sql`, `live_table_privileges.sql`, `live_sequence_privileges.sql` y `live_acl.sql` reconciliaron posteriormente los grants vivos. Confirmaron privilegios explícitos excesivos para `PUBLIC`, `anon` y `authenticated`; `docs/DATABASE_PRIVILEGES.md` conserva la matriz verificable. `0001` permanece sin grants inventados porque representa la baseline estructural previa a la consolidación.
+## Pendientes conocidos
 
-## Migración 0002 aplicada y verificada
+- **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
+- Permanecen siete hallazgos medios y cuatro bajos de la auditoría; 0002 y 0003 no pretendían resolverlos.
+- El check-in abierto sigue pendiente. En una capacidad futura, un usuario autenticado de SITAA no preinscrito podrá ser agregado como participante y marcado `attended` en una sola operación transaccional, únicamente cuando la actividad habilite check-in abierto.
+- Overloads heredados, `activities.updated_by`, `starts_at`/`ends_at`, alcance divisional y `token_type = 'registration'` permanecen reservados o pendientes de análisis.
 
-`0002_database_security_and_integrity.sql` estableció:
+## Inmutabilidad y siguiente migración
 
-- privacidad de borradores exclusivamente por `created_by` en RLS y helpers;
-- autorización vigente, creador inmutable y transición irreversible para cualquier `draft → scheduled` de cliente;
-- rechazo de `pending` en la frontera natural o después;
-- guard de tabla que impide restaurar `pending` vencido mediante `UPDATE` directo;
-- `publish_activity(uuid)` y un trigger que validan transaccionalmente las filas `scheduled`;
-- privilegios directos mínimos para `anon` y `authenticated`, sin cambiar `postgres` ni `service_role`.
+`0001`, `0002` y `0003` forman historia cerrada y no deben reescribirse, salvo para corregir un artefacto histórico comprobado y documentado. El siguiente número permitido es **0004**.
 
-La migración contiene un preflight que aborta si una actividad programada viva incumple el contrato completo. La frontera de asistencia es inclusiva: cuando `activity_attendance_deadline(id) <= now()`, `pending` ya expiró tanto por RPC como por escritura directa. `technical_admin` conserva intencionalmente su alcance amplio sobre creación y contenido publicado durante desarrollo y pruebas, pero no puede leer borradores ajenos. Overloads heredados, `activities.updated_by`, alcance divisional reservado, tokens de registro y `starts_at`/`ends_at` permanecen.
-
-**Estado operativo:** migración aplicada y verificada en Supabase.
-
-## Migración 0003 creada y pendiente de aplicación
-
-`0003_fix_draft_temporal_lifecycle.sql` corrige el ciclo temporal de borradores:
-
-- `activity_has_ended(uuid)` devuelve false para `draft` y conserva la comparación de Ciudad de México para estados publicados;
-- `can_update_activity_base(uuid)` y `can_delete_activity(uuid)` autorizan al creador del borrador sin evaluar fechas u horas provisionales;
-- contenido publicado conserva bloqueo temporal, corrección administrativa y alcance amplio diferido de `technical_admin`;
-- no modifica filas: un borrador atrapado vuelve a ser editable en cuanto se aplican las nuevas definiciones.
-
-**Estado operativo:** migración creada en repositorio; no aplicada a Supabase.
+Todo trabajo futuro de base de datos debe revisar la cadena completa, crear una nueva migración numerada, incluir verificación y rollback cuando corresponda, aplicarse manualmente a Supabase, regenerar el snapshot después de cambios significativos, comparar el estado vivo contra la cadena y actualizar `docs/DATABASE_CHANGELOG.md`.

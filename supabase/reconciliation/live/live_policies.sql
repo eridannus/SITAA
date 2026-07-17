@@ -4,7 +4,7 @@ public	academic_programs	Authenticated users can read academic programs	PERMISSI
 public	activities	Authorized users can create activities	PERMISSIVE	authenticated	INSERT		((created_by = auth.uid()) AND can_create_activity(scope_type, program_id, division_id, service_type_code))
 public	activities	Authorized users can delete activities	PERMISSIVE	authenticated	DELETE	can_delete_activity(id)	
 public	activities	Authorized users can update activities	PERMISSIVE	authenticated	UPDATE	can_update_activity_base(id)	can_update_activity_base(id)
-public	activities	Users can read permitted activities	PERMISSIVE	authenticated	SELECT	((created_by = auth.uid()) OR (responsible_profile_id = auth.uid()) OR is_activity_participant(id) OR can_manage_activity(scope_type, program_id, division_id, service_type_code))	
+public	activities	Users can read permitted activities	PERMISSIVE	authenticated	SELECT	(((status_code = 'draft'::text) AND (created_by = auth.uid())) OR ((status_code <> 'draft'::text) AND ((created_by = auth.uid()) OR (responsible_profile_id = auth.uid()) OR is_activity_participant(id) OR can_manage_activity(scope_type, program_id, division_id, service_type_code))))	
 public	activity_modalities	Authenticated users can read activity modalities	PERMISSIVE	authenticated	SELECT	true	
 public	activity_participants	Users can add permitted activity participants	PERMISSIVE	authenticated	INSERT		can_edit_activity(activity_id)
 public	activity_participants	Users can delete permitted activity participants	PERMISSIVE	authenticated	DELETE	can_edit_activity(activity_id)	
