@@ -32,7 +32,9 @@ export default async function NewActivityPage() {
       <h1 className="text-3xl font-bold">{needsPrimaryProgram ? "Programa académico requerido" : "No tienes permiso para crear actividades"}</h1>
       <p className="mt-4">{needsPrimaryProgram
         ? "Tu perfil no tiene un programa académico principal. Debes asignarlo antes de crear actividades."
-        : "Tus asignaciones actuales no permiten crear actividades. Los usuarios con rol únicamente de alumno no tienen acceso a este registro."}</p>
+        : context.profile.person_type === "student"
+          ? "Tu cuenta está registrada como alumno. Necesitas una asignación institucional elegible para crear actividades."
+          : "Tu cuenta está registrada, pero no tiene una asignación institucional elegible para crear actividades."}</p>
       <Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link>
     </section>;
   }

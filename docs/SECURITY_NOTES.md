@@ -9,8 +9,11 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 ### Identidad y sesión
 
 - Usar Supabase Auth y exigir correo institucional cuando sea viable.
-- 0004 implementa registro separado de alumnos y profesores con verificación obligatoria de correo y activación básica automática. No habilitarlo en producción hasta aplicar/verificar la migración, aprobar el preflight y configurar redirects.
+- 0004 implementa registro separado de alumnos y profesores con verificación obligatoria de correo y activación básica automática. No habilitarlo en producción hasta aplicar/verificar la migración, aprobar el preflight y configurar redirects. Un perfil activo con correo Auth sin confirmar bloquea 0004: se confirma administrativamente, se desactiva explícitamente si es desechable o se recrea; nunca se inventa una fecha de confirmación.
 - Las cuentas `technical` siguen siendo exclusivamente administrativas: sólo `app_metadata` confiable puede originarlas; el formulario público no controla tipo de cuenta, estado ni roles.
+- SITAA no permite cuentas que existan sólo en Auth. Cada alta debe resolver exactamente un camino institucional o técnico y crear exactamente un perfil; metadata ausente, no soportada o ambigua aborta la transacción completa sin dejar un Auth user huérfano.
+- El preflight de 0004 bloquea por separado perfiles sin Auth y Auth users sin perfil. La conciliación de estos casos se realiza con acceso privado: no se inventan nombres, programas ni identificadores y no se elimina una cuenta salvo confirmación explícita de que es sintética y desechable.
+- La base limita los identificadores institucionales a 1–50 dígitos como texto, el nombre normalizado a 2–200 caracteres y el correo normalizado a 254 caracteres. El trigger de alta aplica los mismos límites antes de crear el perfil.
 - Gestionar la sesión con clientes SSR y cookies seguras; validar al usuario en el servidor antes de servir rutas protegidas.
 - Configurar redirecciones autorizadas y cookies seguras.
 - No revelar si un correo está registrado mediante mensajes de error diferenciados.

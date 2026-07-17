@@ -51,11 +51,13 @@ La clave `anon` es pública y está sujeta a las políticas RLS. No agregues cla
 
 ## Autenticación
 
-El acceso usa Supabase Auth con correo, contraseña y cookies SSR. La Fase A incorpora registros públicos separados para alumnos y profesores y exige confirmación de correo. Antes de habilitarlos en producción se debe aplicar y verificar manualmente la migración 0004, configurar `NEXT_PUBLIC_SITE_URL` y autorizar `/auth/confirm` en los Redirect URLs de Supabase.
+El acceso usa Supabase Auth con correo, contraseña y cookies SSR. La Fase A incorpora registros públicos separados para alumnos y profesores y exige confirmación de correo. Antes de habilitarlos en producción se debe aplicar y verificar manualmente la migración 0004, habilitar **Confirm email**, configurar `NEXT_PUBLIC_SITE_URL=https://www.sitaa.net` y autorizar `https://www.sitaa.net/auth/confirm` junto con el fallback técnico autorizado `https://sitaa.vercel.app/auth/confirm` en los Redirect URLs de Supabase.
 
 El registro crea únicamente identidad básica; no asigna tutoría, asesoría, tutoría par ni administración. Las cuentas técnicas no usan formularios públicos.
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
+
+La aplicación y 0004 se liberan coordinadamente: aprobar el preflight, aplicar la migración manualmente, desplegar inmediatamente esta versión compatible, ejecutar el verificador y regenerar el snapshot. No se deben mantener por tiempo prolongado una base con `student|professor` y una versión de aplicación que aún interprete `worker`.
 
 ## Alcance actual
 

@@ -6,10 +6,13 @@ const PROGRAM_ROLES = new Set(["program_tutoring_lead", "program_advising_lead",
 const CREATION_ROLES = new Set(["professor", "peer_tutor", "program_tutoring_lead", "program_advising_lead", "program_head", "division_tutoring_liaison", "technical_admin"]);
 
 export function isStudentOnlyUser(context: AuthenticatedUserContext) {
-  return (
-    context.profile?.person_type === "student" &&
-    context.activeRoleAssignments.every((item) => item.role_code === "student")
-  );
+  // La identidad procede del perfil. Las asignaciones sólo pueden ampliar las
+  // capacidades de un alumno, nunca convertir por sí solas a alguien en alumno.
+  if (context.profile?.account_kind !== "institutional" || context.profile.person_type !== "student") {
+    return false;
+  }
+
+  return !context.activeRoleAssignments.some((item) => item.role_code !== "student");
 }
 
 export function hasActivityCreationRole(context: AuthenticatedUserContext) {

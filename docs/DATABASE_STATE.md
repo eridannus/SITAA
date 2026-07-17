@@ -71,7 +71,7 @@ Los nueve resultados del verificador de 0003 fueron verdaderos y la prueba termi
 ## Pendientes conocidos
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- La Fase A está implementada en `0004_identity_registration_foundation.sql`, pero **0004 no está aplicada** y el snapshot vivo sigue representando `0001 + 0002 + 0003`. El preflight debe resolver identificadores inválidos/duplicados y perfiles incompletos antes de aplicar.
+- La Fase A está implementada en `0004_identity_registration_foundation.sql`, pero **0004 no está aplicada** y el snapshot vivo sigue representando `0001 + 0002 + 0003`. El preflight debe resolver identificadores inválidos/duplicados, perfiles incompletos, perfiles activos sin correo Auth confirmado y triggers no documentados sobre `auth.users` antes de aplicar.
 - Administración de cuentas (Fase B), roles V2 (Fase C), filtros (Fase D), retiro de A-02 (Fase E) y check-in abierto (Fase F) siguen pendientes.
 - Permanecen siete hallazgos medios y cuatro bajos de la auditoría; 0002 y 0003 no pretendían resolverlos.
 - El check-in abierto sigue pendiente. En una capacidad futura, un usuario autenticado de SITAA no preinscrito podrá ser agregado como participante y marcado `attended` en una sola operación transaccional, únicamente cuando la actividad habilite check-in abierto.

@@ -25,6 +25,9 @@ begin
 end;
 $operator_review$;
 
+-- 0004 bloquea la aplicación si auth.users tenía triggers no internos; por ello
+-- el estado post-0003 documentado para estos dos nombres es la ausencia de
+-- triggers. Nunca se elimina ni intenta reconstruir un trigger heredado.
 drop trigger if exists on_sitaa_auth_user_created on auth.users;
 drop trigger if exists on_sitaa_auth_user_verified on auth.users;
 drop trigger if exists enforce_sitaa_profile_identity on public.profiles;
@@ -44,6 +47,9 @@ grant select, update on table public.profiles to authenticated;
 drop index if exists public.profiles_institutional_identifier_pair_key;
 alter table public.profiles drop constraint if exists profiles_account_lifecycle_check;
 alter table public.profiles drop constraint if exists profiles_account_identity_check;
+alter table public.profiles drop constraint if exists profiles_email_check;
+alter table public.profiles drop constraint if exists profiles_full_name_check;
+alter table public.profiles drop constraint if exists profiles_identifier_length_check;
 alter table public.profiles drop constraint if exists profiles_identifier_digits_check;
 alter table public.profiles drop constraint if exists profiles_institutional_id_type_check;
 alter table public.profiles drop constraint if exists profiles_person_type_check;
@@ -85,7 +91,7 @@ create or replace function public.add_activity_participant(
 ) returns void
 language plpgsql
 security definer
-set search_path = pg_catalog, public
+set search_path = public
 as $function$
 declare
   target_program_id uuid;

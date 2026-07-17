@@ -21,11 +21,12 @@ El dump se obtuvo con `--no-privileges`, pero los grants y ACL vivos se capturan
 
 ## Aplicación pendiente de 0004
 
-1. Ejecutar el preflight de sólo lectura `reconciliation/0004_identity_registration_preflight.sql`.
-2. Remediar manualmente identificadores no numéricos/duplicados, perfiles incompletos o inconsistencias Auth/profile. No limpiar caracteres ni inventar identificadores con SQL.
-3. Revisar y aplicar manualmente `migrations/0004_identity_registration_foundation.sql`.
-4. Ejecutar `reconciliation/0004_identity_registration_verify.sql` en un entorno de prueba y completar `docs/TEST_PLAN_0004.md`.
-5. Regenerar el snapshot vivo, reconciliarlo y sólo entonces marcar 0004 como aplicada.
+1. Ejecutar el preflight de sólo lectura `reconciliation/0004_identity_registration_preflight.sql` y aprobar sus conteos; si lista triggers no internos sobre `auth.users`, detenerse y documentar/restaurar cualquier trigger heredado antes de continuar.
+2. Remediar manualmente identificadores no numéricos/duplicados, perfiles incompletos, inconsistencias Auth/profile y perfiles activos cuyo correo Auth no está confirmado. Para estos últimos: confirmar administrativamente, desactivar explícitamente una cuenta desechable o recrearla. No limpiar caracteres, inventar identificadores ni inventar fechas de confirmación con SQL.
+3. Comprometer la migración y la aplicación compatible, pero no desplegar todavía.
+4. Revisar y aplicar manualmente `migrations/0004_identity_registration_foundation.sql`.
+5. Desplegar inmediatamente la aplicación compatible con `student|professor` y `account_status`; mantener corta esta ventana para evitar semánticas mezcladas.
+6. Ejecutar `reconciliation/0004_identity_registration_verify.sql` en un entorno de prueba, completar `docs/TEST_PLAN_0004.md` y regenerar el snapshot vivo antes de marcar 0004 como aplicada.
 
 El rollback es exclusivamente de emergencia y exige revisión explícita de cuentas creadas bajo 0004; nunca borra Auth users ni profiles.
 

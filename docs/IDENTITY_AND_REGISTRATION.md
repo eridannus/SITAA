@@ -51,6 +51,7 @@ Los formularios pueden capturar nombres y apellidos por separado para derivar `f
 - `student` exige `student_account`; `professor` exige `worker_number`.
 - El número de trabajador permanece asociado a la persona aunque cambie su responsabilidad o adscripción institucional.
 - La unicidad se aplica al par (`institutional_id_type`, `institutional_id_value`). Un número de cuenta y un número de trabajador pueden compartir la misma cadena de dígitos; dos identificadores del mismo tipo no pueden repetirla.
+- El identificador se conserva como texto de 1 a 50 dígitos, incluidos ceros iniciales. El nombre completo se normaliza a espacios simples y admite de 2 a 200 caracteres. El correo se normaliza en minúsculas, no puede quedar vacío y admite hasta 254 caracteres.
 - Corregir tipo o valor requiere validación de unicidad y una acción auditada de `technical_admin`.
 - Desactivar una cuenta no libera el identificador para otra persona.
 
@@ -79,7 +80,9 @@ Estados implementados por 0004:
 - `active`: correo confirmado, perfil completo y cuenta habilitada.
 - `inactive`: cuenta desactivada administrativamente; no puede iniciar sesión ni operar.
 
-La transición de verificación debe ser idempotente. No debe crear duplicados de perfil o asignaciones.
+La transición de verificación debe ser idempotente. No debe crear duplicados de perfil o asignaciones. El ciclo de vida conserva estos invariantes: `active` tiene `is_active=true`, `activated_at` y ningún `deactivated_at`; `pending_verification` no tiene ambos timestamps; `inactive` tiene `is_active=false` y `deactivated_at`, aunque puede conservar su activación histórica.
+
+SITAA no admite cuentas genéricas que existan sólo en Auth. Cada inserción en `auth.users` debe corresponder exactamente a un alta institucional (`student|professor`) o a un bootstrap técnico confiable, y debe producir exactamente un `profiles`. Metadata ausente, incompleta, no soportada o simultáneamente institucional y técnica aborta atómicamente el alta; no queda una fila Auth ni un perfil parcial.
 
 ## Cuenta técnica interna
 
@@ -130,6 +133,6 @@ Supabase Auth puede resumir un fallo de trigger como error genérico de alta. La
 
 `0004_identity_registration_foundation.sql` reutiliza `person_type`, `institutional_id_type`, `institutional_id_value` y `primary_program_id`; transforma determinísticamente `worker` en `professor` y añade `account_kind`, `account_status`, `activated_at` y `deactivated_at`. La migración está creada pero no aplicada.
 
-El alta usa metadata de registro limitada y un trigger auditado sobre `auth.users`. El trigger deriva `account_kind`, tipo de identificador y estado, valida programa activo, no crea roles y falla la transacción Auth ante identidad inválida. Las cuentas técnicas sólo pueden originarse mediante `app_metadata` de un proceso administrativo confiable; 0004 no crea ninguna.
+El alta usa metadata de registro limitada y un trigger auditado sobre `auth.users`. El trigger deriva `account_kind`, tipo de identificador y estado, valida programa activo, no crea roles y falla la transacción Auth ante identidad inválida. Las cuentas técnicas sólo pueden originarse mediante `app_metadata` de un proceso administrativo confiable; 0004 no crea ninguna. Si no se selecciona exactamente uno de los dos caminos soportados, el trigger lanza una excepción estable de constraint y revierte la misma transacción Auth.
 
-Antes de aplicar 0004 es obligatorio ejecutar el preflight. Identificadores de prototipo no numéricos, duplicados, perfiles incompletos o inconsistencias Auth/profile detienen la migración y requieren remediación humana.
+Antes de aplicar 0004 es obligatorio ejecutar el preflight. Identificadores no numéricos, duplicados o de más de 50 dígitos; nombres/correos fuera de contrato; perfiles incompletos; huérfanos `profile_without_auth_user` o `auth_user_without_profile`; triggers personalizados no documentados sobre `auth.users`; o un perfil activo sin correo Auth confirmado detienen la migración y requieren remediación humana. Un Auth user sin perfil se elimina sólo si se confirma que es una cuenta sintética desechable; de lo contrario se reconstruye desde evidencia institucional verificada, sin inferir persona, programa o identificador. Nunca se inventa una fecha de confirmación ni se degrada acceso de forma silenciosa.

@@ -79,7 +79,9 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Auth: trigger atómico para registro institucional, activación por correo y soporte confiable de cuentas técnicas; nunca crea roles.
 - Autoservicio: UPDATE directo de `profiles` limitado a `full_name`.
 - Preflight: `supabase/reconciliation/0004_identity_registration_preflight.sql`.
-- Verificación: `supabase/reconciliation/0004_identity_registration_verify.sql` con fixtures sintéticas y `ROLLBACK`.
+- Preflight reforzado: bloquea perfiles activos sin correo Auth confirmado, huérfanos en ambos sentidos Auth/profile, límites de identidad incompatibles y triggers no internos no documentados sobre `auth.users`; también valida la proyección real del ciclo de vida y reporta perfiles inactivos sin timestamps.
+- Verificación: `supabase/reconciliation/0004_identity_registration_verify.sql` con fixtures sintéticas, excepciones/SQLSTATE de contrato, límites, programas y orfandad bidireccional; termina con `ROLLBACK`.
 - Rollback manual: `supabase/reconciliation/0004_identity_registration_rollback.sql`, exige revisión explícita.
 - Plan: `docs/TEST_PLAN_0004.md`.
+- Aplicación coordinada: aprobar preflight, aplicar 0004, desplegar inmediatamente la aplicación compatible, verificar y regenerar snapshot.
 - Estado: pendiente de preflight, revisión, aplicación manual, verificación y nuevo snapshot.

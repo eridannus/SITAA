@@ -381,11 +381,21 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** el registro público debe crear el perfil sin exponer credenciales administrativas ni confiar en metadata editable para privilegios.
 
-**Decisión:** 0004 usa triggers `SECURITY DEFINER` de `auth.users`. `signUp` envía sólo tipo de registro, nombre, programa e identificador; la base deriva tipo de cuenta, tipo de identificador y estado. La confirmación activa únicamente perfiles pendientes. La creación no genera `role_assignments`. Las cuentas técnicas requieren `app_metadata` de un proceso confiable.
+**Decisión:** 0004 usa triggers `SECURITY DEFINER` de `auth.users`. `signUp` envía sólo tipo de registro, nombre, programa e identificador; la base deriva tipo de cuenta, tipo de identificador y estado. La confirmación activa únicamente perfiles pendientes. La creación no genera `role_assignments`. Las cuentas técnicas requieren `app_metadata` de un proceso confiable. Toda inserción Auth debe elegir exactamente un camino institucional o técnico y crear un perfil; metadata ausente, no soportada o ambigua revierte atómicamente el alta. Identificador, nombre normalizado y correo normalizado se limitan respectivamente a 1–50 dígitos, 2–200 y 1–254 caracteres.
 
 **Consecuencias:** un fallo de identidad revierte la creación Auth; la aplicación nunca recibe `service_role`. El autoservicio de `profiles` se limita a `full_name`. El panel administrativo, revocación de sesiones y auditoría completa continúan en Fase B.
 
 **Estado:** Implementada en código y migración 0004; migración pendiente de aplicación y preflight.
+
+## DEC-040 — Contrato de aplicación coordinada de identidad 0004
+
+**Contexto:** 0004 introduce semántica de `profiles` distinta de la aplicación post-0003: `worker` pasa a `professor`, el acceso depende de `account_status` y Auth crea/sincroniza perfiles mediante triggers. Separar la migración de la versión compatible de la aplicación durante demasiado tiempo puede mostrar etiquetas incompatibles o bloquear de forma inesperada a una cuenta.
+
+**Decisión:** antes de cualquier DDL se ejecuta un preflight bloqueante. Detiene límites o perfiles incompatibles, huérfanos en ambos sentidos entre `auth.users` y `profiles`, cuentas activas con correo Auth no confirmado y cualquier trigger no interno no documentado sobre `auth.users`. El despliegue se coordina así: 1) aprobar preflight; 2) comprometer aplicación y migración sin desplegar; 3) aplicar 0004 manualmente; 4) desplegar inmediatamente la versión compatible; 5) ejecutar verificador y pruebas de registro; 6) regenerar snapshot. No se inventan identidades ni fechas de confirmación, ni se reemplazan triggers heredados sin restauración exacta.
+
+**Consecuencias:** perfiles activos sin correo confirmado deben confirmarse administrativamente, desactivarse explícitamente si son descartables o recrearse. El rollback sólo restaura el estado post-0003 cuando el preflight constató ausencia de triggers personalizados; no elimina Auth users ni profiles. La breve ventana entre DDL y despliegue debe minimizarse y comunicarse como riesgo operativo.
+
+**Estado:** Aceptada; endurecimiento preaplicación de 0004 pendiente de revisión y aplicación manual.
 
 ## DEC-036 — Roles académicos V2 y autoridad de asignación
 

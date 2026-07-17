@@ -96,16 +96,29 @@ export async function searchParticipationProfiles(activityId: string, _previous:
   const programIds = [...new Set(rows.map((row) => row.primary_program_id ?? row.program_id).filter((id): id is string => Boolean(id)))];
   const programsResult = programIds.length ? await editor.supabase.from("academic_programs").select("id, name").in("id", programIds) : { data: [] as { id: string; name: string }[], error: null };
   const programMap = new Map((programsResult.data ?? []).map((program) => [program.id, program.name]));
-  const results: ParticipationProfileSearchResult[] = rows.map((row) => ({
-    profile_id: row.profile_id ?? row.id ?? "",
-    full_name: row.full_name?.trim() || "Perfil sin nombre",
-    email: row.email?.trim() || "Correo no disponible",
-    person_type: normalizePersonType(row.person_type) ?? "student",
-    institutional_id_type: normalizeInstitutionalIdType(row.institutional_id_type) ?? "student_account",
-    institutional_id_value: row.institutional_id_value?.trim() || "No disponible",
-    primary_program_id: row.primary_program_id ?? null,
-    program_name: row.program_name?.trim() || (row.primary_program_id ? programMap.get(row.primary_program_id) ?? "Programa no disponible" : "Programa no asignado"),
-  })).filter((row) => Boolean(row.profile_id));
+  const results: ParticipationProfileSearchResult[] = rows.flatMap((row) => {
+    const personType = normalizePersonType(row.person_type);
+    const institutionalIdType = normalizeInstitutionalIdType(row.institutional_id_type);
+    const profileId = row.profile_id ?? row.id ?? "";
+
+    // El RPC sólo debe devolver perfiles institucionales válidos. Si una fila
+    // heredada llega incompleta, no se infiere que sea alumno ni se ofrecen
+    // controles de participación con identidad inventada.
+    if (!profileId || !personType || !institutionalIdType) {
+      return [];
+    }
+
+    return [{
+      profile_id: profileId,
+      full_name: row.full_name?.trim() || "Perfil sin nombre",
+      email: row.email?.trim() || "Correo no disponible",
+      person_type: personType,
+      institutional_id_type: institutionalIdType,
+      institutional_id_value: row.institutional_id_value?.trim() || "No disponible",
+      primary_program_id: row.primary_program_id ?? null,
+      program_name: row.program_name?.trim() || (row.primary_program_id ? programMap.get(row.primary_program_id) ?? "Programa no disponible" : "Programa no asignado"),
+    }];
+  });
   return { query, results, error: null };
 }
 
