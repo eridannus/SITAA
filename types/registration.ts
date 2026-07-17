@@ -1,16 +1,13 @@
 export type RegistrationPersonType = "student" | "professor";
 
 export interface RegistrationFormValues {
+  person_type: RegistrationPersonType | "";
   full_name: string;
-  email: string;
   institutional_id_value: string;
   primary_program_id: string;
 }
 
-export type RegistrationField =
-  | keyof RegistrationFormValues
-  | "password"
-  | "password_confirmation";
+export type RegistrationField = keyof RegistrationFormValues;
 
 export interface RegistrationState {
   status: "idle" | "error";

@@ -10,7 +10,7 @@ import type {
   AccountStatus,
 } from "@/types/sitaa";
 
-export type UserContextError = "profile" | "assignments" | "account_pending" | "account_inactive" | null;
+export type UserContextError = "profile" | "assignments" | "account_pending_registration" | "account_inactive" | null;
 
 export interface AuthenticatedUserContext {
   user: User;
@@ -100,7 +100,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
       primaryProgram: null,
       activeRoleAssignments: [],
       accountStatus,
-      error: accountStatus === "inactive" ? "account_inactive" : "account_pending",
+      error: accountStatus === "inactive" ? "account_inactive" : "account_pending_registration",
     };
   }
 

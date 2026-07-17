@@ -10,7 +10,8 @@ Validar un flujo completo para un periodo académico: configuración, planeació
 
 - Inicio de sesión con Supabase Auth.
 - Perfiles de identidad estable con nombres, apellidos, correo, tipo de persona, identificador institucional y programa principal cuando aplique.
-- Flujos públicos diferenciados: alumnos con número de cuenta y profesores con número de trabajador, ambos con verificación de correo.
+- Flujos públicos diferenciados: alumnos con número de cuenta y profesores con número de trabajador; ambos continúan con Google OAuth y completan su identidad sin correo/contraseña públicos.
+- Login principal con Google sin restricción de dominio; acceso correo/contraseña sólo para cuentas heredadas.
 - Cuentas técnicas internas creadas administrativamente, sin reutilizar el registro institucional.
 - Activación de identidad básica sin privilegios académicos automáticos; tutoría par, tutoría, asesoría y responsabilidades de gestión requieren asignación autorizada.
 - El semestre no forma parte del perfil y solo se captura en contexto de actividad o formularios si existe acuerdo institucional.

@@ -71,7 +71,7 @@ export default async function ProfilePage({ searchParams }: Props) {
 
         <form action={updateProfile} className="mt-7">
           <label htmlFor="full_name" className="block text-sm font-semibold text-slate-700">Nombre completo</label>
-          <input id="full_name" name="full_name" autoComplete="name" defaultValue={profile.full_name} required minLength={2} maxLength={200} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
+          <input id="full_name" name="full_name" autoComplete="name" defaultValue={profile.full_name ?? ""} required minLength={2} maxLength={200} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <button type="submit" className="cursor-pointer rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Guardar nombre</button>
             <Link href="/dashboard" className="cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800">Volver al panel</Link>

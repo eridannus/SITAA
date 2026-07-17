@@ -1,138 +1,87 @@
 # Identidad y registro
 
-**Estado funcional:** Fase A implementada en código y migración 0004; migración pendiente de aplicación.
+**Estado funcional:** Fase A implementada localmente; migración 0004 pendiente de aplicación y Google pendiente de configuración.
 
-**Documento canónico:** esta especificación sustituye las reglas de identidad y registro incompatibles o incompletas de documentos anteriores. No crea SQL ni habilita todavía el registro público.
+## Principio
 
-## Principio central
+Google autentica la cuenta. SITAA conserva la identidad institucional y la autorización. La llave común es `auth.users.id`; no se usa el correo como llave primaria ni se duplica el `sub` de Google en `profiles`. Los proveedores vinculados permanecen en `auth.identities`.
 
-La identidad responde «¿quién es la persona o cuenta?». La autorización responde «¿qué puede hacer, para qué servicio y dentro de qué alcance?». `profiles` describe identidad; `role_assignments` describe permisos. Cambiar una responsabilidad nunca cambia la identidad base.
+## Acceso público y heredado
 
-## Categorías de cuenta
+- El registro público usa exclusivamente Google OAuth mediante Supabase Auth.
+- Se aceptan Gmail personal, Google Workspace, `pc.puma` y cuentas institucionales de oficina.
+- No se restringen dominios ni se inspecciona `hd`.
+- Sólo se usa la identidad básica `openid`, `email`, `profile`; no se solicitan Gmail, Drive, Calendar ni otros scopes.
+- La interfaz recomienda una cuenta personal controlada individualmente. Una cuenta compartida reduce trazabilidad, pero no se bloquea automáticamente.
+- El login con correo y contraseña permanece como acceso secundario heredado para usuarios existentes. No existe alta pública por contraseña ni dependencia SMTP en esta fase.
+- Supabase puede vincular Google automáticamente a una identidad existente con el mismo correo verificado; SITAA no crea otro perfil ni sobrescribe identidad institucional.
 
-| `account_kind` | Registro | `person_type` | Identificador institucional | Programa principal |
-| --- | --- | --- | --- | --- |
-| `institutional` | Público, con verificación de correo | `student` o `professor`, exclusivos | Obligatorio | Obligatorio |
-| `technical` | Sólo administrativo | No aplica | No aplica | No aplica |
+## Categorías y estados
 
-Una cuenta institucional normal no puede ser simultáneamente alumno y profesor. Una cuenta técnica interna no debe fingir ser alumno o profesor ni recibir identificador o programa ficticios.
+| Cuenta | Estados | Identidad institucional |
+| --- | --- | --- |
+| `institutional` | `pending_registration`, `active`, `inactive` | Obligatoria al activar |
+| `technical` | `active`, `inactive` | No aplica |
 
-## Dos flujos públicos separados
+`pending_registration` significa que Google creó un Auth user y un perfil mínimo, pero aún faltan tipo de persona, identificador y programa. Conserva `is_active=false` y timestamps de activación/desactivación nulos. No puede entrar a paneles normales.
 
-SITAA ofrecerá dos rutas principales; no se usará un selector alumno/profesor como experiencia principal:
+`active` exige perfil completo, `is_active=true`, `activated_at` y ningún `deactivated_at`. `inactive` conserva la historia, usa `is_active=false` y requiere `deactivated_at`. Una cuenta inactiva no se reactiva al volver a Google.
 
-### `/register/student`
+## Identidad institucional
 
-- nombre completo;
-- correo electrónico;
-- número de cuenta UNAM;
-- programa académico;
-- contraseña y confirmación según las reglas de Supabase Auth.
+- `student` deriva `student_account`.
+- `professor` deriva `worker_number`.
+- El identificador se guarda como texto de 1–50 dígitos y conserva ceros iniciales.
+- `full_name` normalizado admite 2–200 caracteres.
+- El correo verificado de Google se normaliza en minúsculas y admite hasta 254 caracteres.
+- El programa principal debe existir y estar activo.
+- La unicidad es por `(institutional_id_type, institutional_id_value)`.
+- Alumno/profesor, identificador, programa y roles no provienen de Google.
+- Un nuevo alumno o profesor no recibe roles; `role_assignments` permanece separado.
 
-El perfil se crea como `account_kind = institutional`, `person_type = student` e `institutional_id_type = student_account`. El alta básica no concede `peer_tutor`.
+## Registration intent
 
-### `/register/professor`
+Antes de enviar al usuario a Google, SITAA valida nombre, tipo, identificador y programa mediante `create_registration_intent`. Guarda únicamente una huella SHA-256 del token opaco, con expiración de 15 minutos y consumo único. El token crudo:
 
-- nombre completo;
-- correo electrónico;
-- número de trabajador UNAM;
-- programa académico principal;
-- contraseña y confirmación según las reglas de Supabase Auth.
+- se entrega sólo al servidor Next.js;
+- se guarda temporalmente en cookie `HttpOnly`, `SameSite=Lax`, segura en producción;
+- no contiene PII;
+- no aparece en query params ni `localStorage`;
+- nunca se persiste en texto claro.
 
-El perfil se crea como `account_kind = institutional`, `person_type = professor` e `institutional_id_type = worker_number`. El alta básica no concede tutoría, asesoría, coordinación ni jefatura.
+`registration_intents` tiene RLS habilitado y ningún acceso directo para `anon` o `authenticated`. El callback consume el intent mediante `complete_own_google_registration`, que vuelve a validar identidad, programa, unicidad, vigencia, Google verificado y perfil pendiente dentro de una transacción.
 
-Los formularios pueden capturar nombres y apellidos por separado para derivar `full_name`, pero la experiencia debe explicar claramente el nombre completo esperado.
+## Flujos
 
-## Identificadores institucionales
+### Registro nuevo
 
-- Se almacenan como texto y sólo admiten dígitos ASCII (`0–9`).
-- Nunca se convierten a número; deben conservar ceros iniciales.
-- El valor normalizado elimina espacios exteriores, pero no modifica los dígitos.
-- `student` exige `student_account`; `professor` exige `worker_number`.
-- El número de trabajador permanece asociado a la persona aunque cambie su responsabilidad o adscripción institucional.
-- La unicidad se aplica al par (`institutional_id_type`, `institutional_id_value`). Un número de cuenta y un número de trabajador pueden compartir la misma cadena de dígitos; dos identificadores del mismo tipo no pueden repetirla.
-- El identificador se conserva como texto de 1 a 50 dígitos, incluidos ceros iniciales. El nombre completo se normaliza a espacios simples y admite de 2 a 200 caracteres. El correo se normaliza en minúsculas, no puede quedar vacío y admite hasta 254 caracteres.
-- Corregir tipo o valor requiere validación de unicidad y una acción auditada de `technical_admin`.
-- Desactivar una cuenta no libera el identificador para otra persona.
+1. `/register/student` o `/register/professor` captura sólo datos institucionales.
+2. El servidor crea el intent y su cookie.
+3. Supabase inicia Google OAuth con callback `/auth/callback`.
+4. El trigger crea exactamente un perfil mínimo `pending_registration` para un Auth user Google nuevo.
+5. El callback intercambia el código y consume el intent.
+6. El perfil se completa y activa sin crear roles.
 
-La aplicación no ofrece un endpoint público para comprobar disponibilidad. Los conflictos se resuelven durante el alta y se presentan con un mensaje sanitizado.
+Si el OAuth se abandona o el intent expira, el perfil permanece pendiente. `/complete-registration` permite capturar nuevamente los datos y completar el mismo perfil sin repetir Google.
 
-## Programa principal
+### Login Google
 
-- El alumno pertenece a un programa académico.
-- El profesor tiene una afiliación principal o predeterminada.
-- `primary_program_id` sirve para identidad, valores predeterminados y presentación; por sí solo no concede gestión académica.
-- Una asignación autorizada puede tener un programa distinto del principal cuando la matriz de permisos lo permita explícitamente.
-- La cuenta técnica interna no requiere programa.
+No requiere intent. Perfil activo va al panel; inactivo va al estado de cuenta; pendiente va a completar registro. Un intent obsoleto nunca modifica un perfil activo.
 
-## Verificación y activación
+### Cuenta técnica
 
-1. El usuario completa uno de los dos formularios.
-2. Supabase Auth crea la identidad con correo sin confirmar.
-3. SITAA conserva un perfil pendiente sin roles elevados.
-4. El usuario confirma el correo mediante el enlace seguro.
-5. La cuenta institucional pasa automáticamente a `active`; no requiere aprobación administrativa para acceso básico.
-6. El acceso básico se deriva de `person_type`; las responsabilidades adicionales se asignan después.
+Sólo un proceso administrativo confiable puede fijar `app_metadata.sitaa_account_kind=technical`. Requiere correo confirmado y nombre válido, no crea identidad académica ni rol automático. Metadata pública no puede solicitarla.
 
-Estados implementados por 0004:
+## Invariantes de seguridad
 
-- `pending_verification`: Auth aún no confirma el correo; no puede operar.
-- `active`: correo confirmado, perfil completo y cuenta habilitada.
-- `inactive`: cuenta desactivada administrativamente; no puede iniciar sesión ni operar.
+- Cada Auth user tiene exactamente un perfil SITAA.
+- Google nuevo, bootstrap técnico o rechazo atómico son los únicos caminos futuros.
+- Signup público con correo/contraseña, OAuth no soportado, metadata ausente o ambigua abortan sin huérfanos.
+- Cambios de correo Auth sincronizan sólo `profiles.email`; no cambian nombre canónico, persona, programa, identificador o roles.
+- El callback no confía en identidad recibida por query params.
+- No se envían identificadores institucionales a Google.
+- No se almacenan secretos OAuth en Git, Vercel público ni el navegador.
 
-La transición de verificación debe ser idempotente. No debe crear duplicados de perfil o asignaciones. El ciclo de vida conserva estos invariantes: `active` tiene `is_active=true`, `activated_at` y ningún `deactivated_at`; `pending_verification` no tiene ambos timestamps; `inactive` tiene `is_active=false` y `deactivated_at`, aunque puede conservar su activación histórica.
+## Aplicación de 0004
 
-SITAA no admite cuentas genéricas que existan sólo en Auth. Cada inserción en `auth.users` debe corresponder exactamente a un alta institucional (`student|professor`) o a un bootstrap técnico confiable, y debe producir exactamente un `profiles`. Metadata ausente, incompleta, no soportada o simultáneamente institucional y técnica aborta atómicamente el alta; no queda una fila Auth ni un perfil parcial.
-
-## Cuenta técnica interna
-
-La cuenta `technical`:
-
-- se crea mediante un proceso administrativo confiable;
-- usa un correo verificable, pero no registro público;
-- no tiene número de cuenta, número de trabajador ni programa;
-- puede recibir `technical_admin` mediante asignación auditada;
-- puede activarse, desactivarse y transferirse a otra persona sin reutilizar identidades;
-- no obtiene acceso académico implícito en el modelo final.
-
-Durante desarrollo, `technical_admin` conserva temporalmente el acceso académico amplio documentado en A-02. Es una excepción de transición, no el objetivo de seguridad.
-
-Bootstrap controlado pendiente de operación: una persona autorizada crea el usuario Auth mediante una herramienta administrativa confiable, fija `app_metadata.sitaa_account_kind = technical`, verifica que el perfil resultante no tenga identidad institucional y asigna `technical_admin` mediante el procedimiento auditado de la fase correspondiente. Nunca se ejecuta desde un formulario público, nunca se autoasigna y 0004 no incorpora ninguna cuenta concreta.
-
-## Separación de cuentas del desarrollador
-
-El modelo admite dos cuentas independientes para una misma persona responsable del desarrollo:
-
-- cuenta institucional: `institutional + professor`, correo institucional, número de trabajador, programa principal y acceso básico de profesor;
-- cuenta personal técnica: `technical`, sin identidad institucional ni programa, con asignación `technical_admin`.
-
-La cuenta institucional no recibe permisos de comité por el hecho de desarrollar SITAA. La cuenta técnica no debe presentarse como profesor.
-
-## Corrección de identidad
-
-En la fase administrativa inicial, sólo `technical_admin` puede corregir:
-
-- clasificación alumno/profesor;
-- identificador y tipo institucional;
-- programa principal;
-- estado activo/inactivo.
-
-El usuario puede mantener datos personales no críticos que se definan posteriormente, pero no debe cambiar por autoservicio su clasificación, identificador principal, programa o roles. Toda corrección conserva auditoría de actor, fecha, motivo y valores de control; los logs no deben copiar innecesariamente el identificador completo.
-
-## Reglas de privacidad
-
-- Los identificadores no aparecen en URLs, QR ni listas generales de actividades.
-- Sólo gestores autorizados del padrón pueden ver nombres e identificadores de participantes.
-- Los mensajes de registro, recuperación y reenvío no deben revelar si un correo o identificador ya existe.
-- Ningún nombre, correo o identificador personal se incorpora a semillas SQL.
-- Auth y perfil deben permanecer sincronizados sin exponer llaves administrativas al navegador.
-
-Supabase Auth puede resumir un fallo de trigger como error genérico de alta. La aplicación reconoce causas específicas cuando el SDK las conserva y, en caso contrario, muestra un fallo sanitizado. No se añade una consulta anónima de disponibilidad porque permitiría enumerar identificadores; la confirmación definitiva de unicidad siempre ocurre en la transacción de registro.
-
-## Implementación de Fase A
-
-`0004_identity_registration_foundation.sql` reutiliza `person_type`, `institutional_id_type`, `institutional_id_value` y `primary_program_id`; transforma determinísticamente `worker` en `professor` y añade `account_kind`, `account_status`, `activated_at` y `deactivated_at`. La migración está creada pero no aplicada.
-
-El alta usa metadata de registro limitada y un trigger auditado sobre `auth.users`. El trigger deriva `account_kind`, tipo de identificador y estado, valida programa activo, no crea roles y falla la transacción Auth ante identidad inválida. Las cuentas técnicas sólo pueden originarse mediante `app_metadata` de un proceso administrativo confiable; 0004 no crea ninguna. Si no se selecciona exactamente uno de los dos caminos soportados, el trigger lanza una excepción estable de constraint y revierte la misma transacción Auth.
-
-Antes de aplicar 0004 es obligatorio ejecutar el preflight. Identificadores no numéricos, duplicados o de más de 50 dígitos; nombres/correos fuera de contrato; perfiles incompletos; huérfanos `profile_without_auth_user` o `auth_user_without_profile`; triggers personalizados no documentados sobre `auth.users`; o un perfil activo sin correo Auth confirmado detienen la migración y requieren remediación humana. Un Auth user sin perfil se elimina sólo si se confirma que es una cuenta sintética desechable; de lo contrario se reconstruye desde evidencia institucional verificada, sin inferir persona, programa o identificador. Nunca se inventa una fecha de confirmación ni se degrada acceso de forma silenciosa.
+0004 permanece sin aplicar. El preflight debe seguir en cero para categorías bloqueantes. Usuarios heredados por correo/contraseña y OAuth existentes son informativos; no se exige Google a perfiles actuales. Tras configurar Google según `GOOGLE_AUTH_SETUP.md`: aplicar 0004 manualmente, desplegar la aplicación compatible, ejecutar el verificador y regenerar el snapshot.

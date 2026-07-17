@@ -26,7 +26,7 @@ export default async function ProfessorRegistrationPage() {
         <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Profesor</p>
         <h1 className="mt-3 text-3xl font-bold text-emerald-950">Crear cuenta de profesor</h1>
         <p className="mt-4 leading-7 text-slate-600">
-          Después de verificar tu correo tendrás acceso básico. No recibirás permisos de tutoría o asesoría sin una asignación autorizada.
+          Google verificará tu cuenta. No recibirás permisos de tutoría o asesoría sin una asignación autorizada.
         </p>
         <RegistrationForm personType="professor" programs={programs} />
       </div>

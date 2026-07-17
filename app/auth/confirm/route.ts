@@ -28,20 +28,24 @@ export async function GET(request: NextRequest) {
         type: rawType as EmailOtpType,
       }));
     } else {
-      return NextResponse.redirect(new URL("/register/confirmation", url.origin));
+      return NextResponse.redirect(new URL("/login?error=enlace-heredado", url.origin));
     }
 
     if (error) {
-      return NextResponse.redirect(new URL("/register/confirmation", url.origin));
+      return NextResponse.redirect(new URL("/login?error=enlace-heredado", url.origin));
     }
 
-    const { error: activationError } = await supabase.rpc("activate_own_verified_profile");
-    if (activationError) {
-      return NextResponse.redirect(new URL("/account-status?state=pending_verification", url.origin));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.redirect(new URL("/login?error=credenciales", url.origin));
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    if (profile?.account_status === "inactive") {
+      return NextResponse.redirect(new URL("/account-status?state=inactive", url.origin));
     }
-
-    return NextResponse.redirect(new URL("/dashboard?verified=1", url.origin));
+    if (profile?.account_status === "pending_registration") {
+      return NextResponse.redirect(new URL("/complete-registration", url.origin));
+    }
+    return NextResponse.redirect(new URL("/dashboard", url.origin));
   } catch {
-    return NextResponse.redirect(new URL("/register/confirmation", url.origin));
+    return NextResponse.redirect(new URL("/login?error=enlace-heredado", url.origin));
   }
 }

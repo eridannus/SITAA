@@ -73,15 +73,16 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 ## 0004_identity_registration_foundation.sql — creada, no aplicada
 
 - Fecha de creación: 2026-07-17.
-- Propósito: formalizar `institutional|technical`, `student|professor`, estados de cuenta, identificadores numéricos como texto y registro Auth separado.
+- Propósito: formalizar `institutional|technical`, `student|professor`, estados `pending_registration|active|inactive`, identificadores como texto y registro público Google OAuth.
 - Reutiliza las columnas actuales de identidad; añade `account_kind`, `account_status`, `activated_at`, `deactivated_at` e `academic_programs.is_active`.
 - Unicidad: par `(institutional_id_type, institutional_id_value)`; se permiten valores iguales entre tipos diferentes.
-- Auth: trigger atómico para registro institucional, activación por correo y soporte confiable de cuentas técnicas; nunca crea roles.
+- Auth: trigger atómico para Google nuevo, sincronización de correo y soporte confiable de cuentas técnicas; signup público por contraseña queda rechazado y nunca se crean roles.
+- Intents: tabla privada con huella SHA-256, vigencia de 15 minutos y RPC de creación/consumo transaccional.
 - Autoservicio: UPDATE directo de `profiles` limitado a `full_name`.
 - Preflight: `supabase/reconciliation/0004_identity_registration_preflight.sql`.
-- Preflight reforzado: bloquea perfiles activos sin correo Auth confirmado, huérfanos en ambos sentidos Auth/profile, límites de identidad incompatibles y triggers no internos no documentados sobre `auth.users`; también valida la proyección real del ciclo de vida y reporta perfiles inactivos sin timestamps.
-- Verificación: `supabase/reconciliation/0004_identity_registration_verify.sql` con fixtures sintéticas, excepciones/SQLSTATE de contrato, límites, programas y orfandad bidireccional; termina con `ROLLBACK`.
+- Preflight Google: bloquea huérfanos Auth/profile, límites incompatibles, dependencias de `pending_verification` y triggers no documentados; email/password y OAuth existentes se reportan como informativos.
+- Verificación: fixtures Google, proveedores rechazados, intents, consumo, expiración, duplicados, estados, roles y regresiones; termina con `ROLLBACK`.
 - Rollback manual: `supabase/reconciliation/0004_identity_registration_rollback.sql`, exige revisión explícita.
 - Plan: `docs/TEST_PLAN_0004.md`.
 - Aplicación coordinada: aprobar preflight, aplicar 0004, desplegar inmediatamente la aplicación compatible, verificar y regenerar snapshot.
-- Estado: pendiente de preflight, revisión, aplicación manual, verificación y nuevo snapshot.
+- Estado: preflight anterior aprobado; pendiente repetirlo contra esta revisión Google, configurar proveedor, aplicar manualmente, verificar y regenerar snapshot.

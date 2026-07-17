@@ -14,10 +14,10 @@ function effectiveStatus(profile: Profile | null): AccountStatus | "missing" {
 }
 
 const content = {
-  pending_verification: {
-    eyebrow: "Verificación pendiente",
-    title: "Confirma tu correo para entrar a SITAA",
-    message: "Tu cuenta fue registrada, pero todavía debes abrir el enlace de verificación enviado a tu correo.",
+  pending_registration: {
+    eyebrow: "Registro pendiente",
+    title: "Completa tu identidad institucional",
+    message: "Google ya autenticó tu cuenta. Completa los datos institucionales para entrar a SITAA.",
   },
   inactive: {
     eyebrow: "Cuenta inactiva",
@@ -39,6 +39,7 @@ export default async function AccountStatusPage() {
   const { data } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
   const status = effectiveStatus((data as Profile | null) ?? null);
   if (status === "active") redirect("/dashboard");
+  if (status === "pending_registration") redirect("/complete-registration");
   const state = content[status];
 
   return (

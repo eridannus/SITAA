@@ -29,9 +29,11 @@ npm run start  # Inicia la compilación de producción
 - `/`: página principal.
 - `/health`: comprobación básica del servicio; muestra `SITAA OK`.
 - `/supabase-test`: verifica la configuración y consulta `public.system_health`.
-- `/login`: inicio de sesión con correo y contraseña.
+- `/login`: Google como acceso principal y correo/contraseña heredado como opción secundaria.
 - `/register`: elección de registro de alumno o profesor.
-- `/register/student` y `/register/professor`: altas separadas con verificación de correo.
+- `/register/student` y `/register/professor`: identidad institucional y continuación con Google.
+- `/auth/callback`: intercambio PKCE y finalización segura del registro.
+- `/complete-registration`: recuperación para perfiles Google con registro pendiente.
 - `/dashboard`: panel protegido con perfil institucional y asignaciones de rol activas.
 - `/catalogs`: visor protegido de catálogos operativos activos.
 - `/profile`: edición protegida de identidad institucional básica.
@@ -51,7 +53,7 @@ La clave `anon` es pública y está sujeta a las políticas RLS. No agregues cla
 
 ## Autenticación
 
-El acceso usa Supabase Auth con correo, contraseña y cookies SSR. La Fase A incorpora registros públicos separados para alumnos y profesores y exige confirmación de correo. Antes de habilitarlos en producción se debe aplicar y verificar manualmente la migración 0004, habilitar **Confirm email**, configurar `NEXT_PUBLIC_SITE_URL=https://www.sitaa.net` y autorizar `https://www.sitaa.net/auth/confirm` junto con el fallback técnico autorizado `https://sitaa.vercel.app/auth/confirm` en los Redirect URLs de Supabase.
+El acceso público usa Google OAuth con cookies SSR; correo/contraseña permanece sólo para cuentas heredadas. El registro no restringe dominios ni requiere SMTP. Antes de producción se debe configurar Google según `docs/GOOGLE_AUTH_SETUP.md`, aplicar/verificar 0004 y autorizar `https://www.sitaa.net/auth/callback` junto con callbacks locales o técnicos deliberados.
 
 El registro crea únicamente identidad básica; no asigna tutoría, asesoría, tutoría par ni administración. Las cuentas técnicas no usan formularios públicos.
 

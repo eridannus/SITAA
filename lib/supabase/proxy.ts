@@ -49,8 +49,9 @@ export async function updateSession(request: NextRequest) {
     .maybeSingle();
   const accountStatus = profile?.account_status ?? (profile?.is_active === false ? "inactive" : "active");
   const isStatusPage = request.nextUrl.pathname === "/account-status";
+  const isCompletionPage = request.nextUrl.pathname === "/complete-registration";
 
-  if (profileError || !profile || accountStatus !== "active") {
+  if (profileError || !profile) {
     if (!isStatusPage) {
       const statusUrl = new URL("/account-status", request.url);
       return NextResponse.redirect(statusUrl);
@@ -58,7 +59,17 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
-  if (isStatusPage) {
+  if (accountStatus === "pending_registration") {
+    if (!isCompletionPage) return NextResponse.redirect(new URL("/complete-registration", request.url));
+    return response;
+  }
+
+  if (accountStatus === "inactive") {
+    if (!isStatusPage) return NextResponse.redirect(new URL("/account-status", request.url));
+    return response;
+  }
+
+  if (isStatusPage || isCompletionPage) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

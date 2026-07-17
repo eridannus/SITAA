@@ -1,8 +1,12 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSiteOrigin } from "@/lib/auth/site-url";
+import {
+  oauthCookieOptions,
+  REGISTRATION_INTENT_COOKIE,
+} from "@/lib/auth/oauth-cookies";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   RegistrationField,
@@ -11,7 +15,6 @@ import type {
   RegistrationState,
 } from "@/types/registration";
 
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const digitsPattern = /^[0-9]+$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -20,10 +23,14 @@ function text(formData: FormData, name: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function valuesFrom(formData: FormData): RegistrationFormValues {
+function personType(value: string): RegistrationPersonType | "" {
+  return value === "student" || value === "professor" ? value : "";
+}
+
+function registrationValuesFrom(formData: FormData): RegistrationFormValues {
   return {
+    person_type: personType(text(formData, "person_type")),
     full_name: text(formData, "full_name").replace(/\s+/g, " "),
-    email: text(formData, "email").toLowerCase(),
     institutional_id_value: text(formData, "institutional_id_value"),
     primary_program_id: text(formData, "primary_program_id"),
   };
@@ -37,136 +44,124 @@ function validationError(
   return { status: "error", message, fieldErrors, values };
 }
 
-function validate(
-  values: RegistrationFormValues,
-  password: string,
-  passwordConfirmation: string,
-) {
+function validateRegistration(values: RegistrationFormValues) {
   const errors: Partial<Record<RegistrationField, string>> = {};
-
+  if (!values.person_type) errors.person_type = "Selecciona si eres alumno o profesor.";
   if (values.full_name.length < 2 || values.full_name.length > 200) {
-    errors.full_name = "Escribe tu nombre completo (máximo 200 caracteres).";
+    errors.full_name = "Escribe tu nombre completo (de 2 a 200 caracteres).";
   }
-  if (!emailPattern.test(values.email) || values.email.length > 254) {
-    errors.email = "Escribe un correo electrónico válido.";
-  }
-  if (!digitsPattern.test(values.institutional_id_value) || values.institutional_id_value.length > 50) {
+  if (!digitsPattern.test(values.institutional_id_value)) {
     errors.institutional_id_value = "Usa únicamente dígitos, sin espacios, letras ni signos.";
+  } else if (values.institutional_id_value.length > 50) {
+    errors.institutional_id_value = "El identificador no puede exceder 50 dígitos.";
   }
   if (!uuidPattern.test(values.primary_program_id)) {
     errors.primary_program_id = "Selecciona un programa académico.";
   }
-  if (password.length < 8) {
-    errors.password = "La contraseña debe tener al menos 8 caracteres.";
-  }
-  if (password !== passwordConfirmation) {
-    errors.password_confirmation = "Las contraseñas no coinciden.";
-  }
-
   return errors;
 }
 
-function mapSignUpError(message: string, code?: string): { field?: RegistrationField; message: string } {
+function mapRegistrationError(message: string, code?: string) {
   const normalized = message.toLowerCase();
-
-  if (normalized.includes("password") || normalized.includes("contraseña")) {
-    return { field: "password", message: "La contraseña no cumple los requisitos de seguridad." };
-  }
-  if (normalized.includes("email") && (normalized.includes("invalid") || normalized.includes("inválid"))) {
-    return { field: "email", message: "El correo electrónico no es válido." };
-  }
-  if (normalized.includes("already") || normalized.includes("registered") || normalized.includes("exists")) {
+  if (code === "23505" || normalized.includes("sitaa_identifier_conflict")) {
     return {
-      field: "email",
-      message: "No fue posible registrar ese correo. Si ya tienes una cuenta, inicia sesión.",
-    };
-  }
-  if (
-    code === "23505" ||
-    normalized.includes("sitaa_identifier_conflict") ||
-    normalized.includes("institutional identifier")
-  ) {
-    return {
-      field: "institutional_id_value",
+      field: "institutional_id_value" as RegistrationField,
       message: "No fue posible usar ese identificador institucional. Verifica el dato capturado.",
     };
   }
-  if (normalized.includes("program") || normalized.includes("programa")) {
-    return { field: "primary_program_id", message: "El programa seleccionado no está disponible." };
+  if (normalized.includes("program")) {
+    return {
+      field: "primary_program_id" as RegistrationField,
+      message: "El programa seleccionado no está disponible.",
+    };
   }
-
+  if (normalized.includes("full_name")) {
+    return { field: "full_name" as RegistrationField, message: "El nombre completo no es válido." };
+  }
+  if (normalized.includes("identifier")) {
+    return {
+      field: "institutional_id_value" as RegistrationField,
+      message: "El identificador institucional no es válido.",
+    };
+  }
   return { message: "El registro no está disponible temporalmente. Intenta más tarde." };
 }
 
-export async function registerInstitutionalAccount(
-  personType: RegistrationPersonType,
+async function createIntent(values: RegistrationFormValues) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("create_registration_intent", {
+    requested_person_type: values.person_type,
+    requested_full_name: values.full_name,
+    requested_institutional_id_value: values.institutional_id_value,
+    requested_primary_program_id: values.primary_program_id,
+  });
+  return { supabase, token: typeof data === "string" ? data : null, error };
+}
+
+export async function startGoogleRegistration(
   _previous: RegistrationState,
   formData: FormData,
 ): Promise<RegistrationState> {
-  if (personType !== "student" && personType !== "professor") {
-    return validationError(valuesFrom(formData), {}, "El tipo de registro no es válido.");
-  }
+  const values = registrationValuesFrom(formData);
+  const fieldErrors = validateRegistration(values);
+  if (Object.keys(fieldErrors).length) return validationError(values, fieldErrors);
 
-  const values = valuesFrom(formData);
-  const password = formData.get("password");
-  const passwordConfirmation = formData.get("password_confirmation");
-  const safePassword = typeof password === "string" ? password : "";
-  const safePasswordConfirmation =
-    typeof passwordConfirmation === "string" ? passwordConfirmation : "";
-  const fieldErrors = validate(values, safePassword, safePasswordConfirmation);
-
-  if (Object.keys(fieldErrors).length > 0) {
-    return validationError(values, fieldErrors);
-  }
-
-  let supabase;
+  let oauthUrl: string;
   try {
-    supabase = await createSupabaseServerClient();
+    const { supabase, token, error } = await createIntent(values);
+    if (error || !token) {
+      const mapped = mapRegistrationError(error?.message ?? "intent_unavailable", error?.code);
+      return validationError(values, mapped.field ? { [mapped.field]: mapped.message } : {}, mapped.message);
+    }
+
+    const cookieStore = await cookies();
+    cookieStore.set(REGISTRATION_INTENT_COOKIE, token, oauthCookieOptions());
+
+    const requestHeaders = await headers();
+    const origin = getSiteOrigin(
+      requestHeaders.get("origin"),
+      requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host"),
+      requestHeaders.get("x-forwarded-proto"),
+    );
+    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: new URL("/auth/callback", origin).toString() },
+    });
+    if (oauthError || !data.url) {
+      cookieStore.delete(REGISTRATION_INTENT_COOKIE);
+      return validationError(values, {}, "No fue posible iniciar el acceso con Google.");
+    }
+    oauthUrl = data.url;
   } catch {
     return validationError(values, {}, "El registro no está configurado temporalmente.");
   }
+  redirect(oauthUrl);
+}
 
-  const { data: program, error: programError } = await supabase
-    .from("academic_programs")
-    .select("*")
-    .eq("id", values.primary_program_id)
-    .maybeSingle();
+export async function completeGoogleRegistration(
+  _previous: RegistrationState,
+  formData: FormData,
+): Promise<RegistrationState> {
+  const values = registrationValuesFrom(formData);
+  const fieldErrors = validateRegistration(values);
+  if (Object.keys(fieldErrors).length) return validationError(values, fieldErrors);
 
-  if (programError || !program || program.is_active === false) {
-    return validationError(values, {
-      primary_program_id: "El programa seleccionado no está disponible.",
+  try {
+    const { supabase, token, error } = await createIntent(values);
+    if (error || !token) {
+      const mapped = mapRegistrationError(error?.message ?? "intent_unavailable", error?.code);
+      return validationError(values, mapped.field ? { [mapped.field]: mapped.message } : {}, mapped.message);
+    }
+    const { error: completionError } = await supabase.rpc("complete_own_google_registration", {
+      raw_intent_token: token,
     });
+    if (completionError) {
+      const mapped = mapRegistrationError(completionError.message, completionError.code);
+      return validationError(values, mapped.field ? { [mapped.field]: mapped.message } : {}, mapped.message);
+    }
+    (await cookies()).delete(REGISTRATION_INTENT_COOKIE);
+  } catch {
+    return validationError(values, {}, "No fue posible completar el registro. Intenta nuevamente.");
   }
-
-  const requestHeaders = await headers();
-  const origin = getSiteOrigin(
-    requestHeaders.get("origin"),
-    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host"),
-    requestHeaders.get("x-forwarded-proto"),
-  );
-  const emailRedirectTo = new URL("/auth/confirm", origin).toString();
-  const { error } = await supabase.auth.signUp({
-    email: values.email,
-    password: safePassword,
-    options: {
-      emailRedirectTo,
-      data: {
-        sitaa_registration_type: personType,
-        full_name: values.full_name,
-        primary_program_id: values.primary_program_id,
-        institutional_id_value: values.institutional_id_value,
-      },
-    },
-  });
-
-  if (error) {
-    const mapped = mapSignUpError(error.message, error.code);
-    return validationError(
-      values,
-      mapped.field ? { [mapped.field]: mapped.message } : {},
-      mapped.message,
-    );
-  }
-
-  redirect("/register/check-email");
+  redirect("/dashboard?registration=completed");
 }

@@ -36,7 +36,15 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 - Los roles y responsabilidades se obtienen exclusivamente de `role_assignments`.
 - El semestre, cuando un comité lo requiera, se captura en el contexto de participación, la actividad o una respuesta de formulario versionada; nunca como atributo actual de `profiles`.
 - Desde 0004, el autoservicio directo de `profiles` se limita a `full_name`; clasificación, identificador, programa, correo, estado y timestamps quedan protegidos por privilegios de columna y trigger.
-- `account_status` distingue `pending_verification|active|inactive`; `is_active` se conserva como compatibilidad y refleja únicamente `active`.
+- `account_status` distingue `pending_registration|active|inactive`; `is_active` se conserva como compatibilidad y refleja únicamente `active`.
+- `pending_registration` admite temporalmente identidad institucional incompleta para el Auth user Google; no concede acceso operativo.
+
+### `registration_intents` (0004 pendiente)
+
+- Conserva sólo `token_hash`, tipo de persona, nombre, identificador, programa, expiración y consumo.
+- El token crudo nunca se almacena; expira a los 15 minutos y es de un solo uso.
+- No almacena correo antes de Google y no tiene acceso directo para `anon` o `authenticated`.
+- `create_registration_intent` valida datos y devuelve el token opaco; `complete_own_google_registration` lo consume transaccionalmente para completar el mismo profile pendiente.
 
 ### Evolución prevista de asignaciones
 
@@ -149,7 +157,7 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 
 ## Estado de implementación
 
-La Fase A de identidad está implementada en aplicación y en la migración 0004, todavía no aplicada. Las tablas `activities` y `activity_participants`, la asistencia y el check-in existentes permanecen sin cambios funcionales. Formularios dinámicos y reportes continúan pendientes.
+La Fase A de identidad Google está implementada localmente en aplicación y migración 0004, todavía no aplicada. Requiere configurar el proveedor Google. Las tablas operativas, asistencia y check-in permanecen sin cambios funcionales.
 ### Accesos de asistencia por QR, enlace y código
 
 `activity_checkin_tokens` representa el acceso temporal para confirmar asistencia de participantes ya registrados. El enlace directo usa `secret_token`; el código manual usa `three_word_code`. Ambos actualizan los mismos campos de asistencia de `activity_participants` mediante `check_in_activity`.

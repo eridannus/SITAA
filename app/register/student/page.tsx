@@ -26,7 +26,7 @@ export default async function StudentRegistrationPage() {
         <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Alumno</p>
         <h1 className="mt-3 text-3xl font-bold text-emerald-950">Crear cuenta de alumno</h1>
         <p className="mt-4 leading-7 text-slate-600">
-          Después de verificar tu correo tendrás acceso básico. No serás tutor par automáticamente.
+          Google verificará tu cuenta. Al completar el registro tendrás acceso básico y no serás tutor par automáticamente.
         </p>
         <RegistrationForm personType="student" programs={programs} />
       </div>

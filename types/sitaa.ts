@@ -39,7 +39,7 @@ export interface Role {
 
 export type AccountKind = "institutional" | "technical";
 
-export type AccountStatus = "pending_verification" | "active" | "inactive";
+export type AccountStatus = "pending_registration" | "active" | "inactive";
 
 export type PersonType = "student" | "professor";
 
@@ -50,7 +50,7 @@ export interface Profile {
   first_names: string | null;
   paternal_surname: string | null;
   maternal_surname: string | null;
-  full_name: string;
+  full_name: string | null;
   email?: string | null;
   account_kind?: AccountKind;
   account_status?: AccountStatus;

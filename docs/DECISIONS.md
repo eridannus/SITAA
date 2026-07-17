@@ -371,7 +371,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** el esquema actual usa `student|worker`, no distingue cuentas técnicas internas y sólo dispone de login. El acceso básico no debe confundirse con responsabilidades académicas.
 
-**Decisión:** SITAA tendrá rutas públicas distintas para alumnos y profesores, ambas con verificación de correo y activación básica automática. Las cuentas institucionales usan una clasificación exclusiva `student|professor`, identificador de dígitos almacenado como texto y programa principal obligatorio. La unicidad se aplica al par `(institutional_id_type, institutional_id_value)`, por lo que tipos distintos pueden compartir la misma cadena. Las cuentas `technical` se crean administrativamente y quedan exentas de identificador y programa. Perfil y asignaciones permanecen separados.
+**Decisión:** SITAA tendrá rutas públicas distintas para alumnos y profesores. Ambas capturan identidad institucional y continúan con Google OAuth; Google aporta correo verificado y SITAA activa sólo después de completar el perfil. No hay restricción de dominio. Las cuentas institucionales usan `student|professor`, identificador de dígitos como texto y programa obligatorio. Las cuentas `technical` se crean administrativamente. Perfil y asignaciones permanecen separados.
 
 **Consecuencias:** un profesor nuevo no es tutor ni asesor; un alumno nuevo no es tutor par. La persona desarrolladora puede tener una cuenta institucional ordinaria y otra técnica independiente. Corregir identidad principal corresponde a administración técnica auditada. La implementación requiere una migración a partir de 0004 y backfill verificado.
 
@@ -381,9 +381,9 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** el registro público debe crear el perfil sin exponer credenciales administrativas ni confiar en metadata editable para privilegios.
 
-**Decisión:** 0004 usa triggers `SECURITY DEFINER` de `auth.users`. `signUp` envía sólo tipo de registro, nombre, programa e identificador; la base deriva tipo de cuenta, tipo de identificador y estado. La confirmación activa únicamente perfiles pendientes. La creación no genera `role_assignments`. Las cuentas técnicas requieren `app_metadata` de un proceso confiable. Toda inserción Auth debe elegir exactamente un camino institucional o técnico y crear un perfil; metadata ausente, no soportada o ambigua revierte atómicamente el alta. Identificador, nombre normalizado y correo normalizado se limitan respectivamente a 1–50 dígitos, 2–200 y 1–254 caracteres.
+**Decisión:** 0004 usa triggers y RPC `SECURITY DEFINER`. Un Google nuevo crea un profile mínimo `pending_registration`; un intent opaco de 15 minutos, almacenado sólo como SHA-256, completa identidad y activa transaccionalmente. Signup público por contraseña y OAuth distinto de Google se rechazan. El login por contraseña permanece sólo para usuarios existentes. La creación no genera `role_assignments`; cuentas técnicas requieren `app_metadata` confiable. Toda inserción futura crea exactamente un profile o revierte atómicamente.
 
-**Consecuencias:** un fallo de identidad revierte la creación Auth; la aplicación nunca recibe `service_role`. El autoservicio de `profiles` se limita a `full_name`. El panel administrativo, revocación de sesiones y auditoría completa continúan en Fase B.
+**Consecuencias:** no se necesita SMTP para registro Google ni se envía identidad institucional a Google. El token crudo permanece en cookie `HttpOnly`, nunca en URL o `localStorage`. La aplicación nunca recibe `service_role`. Administración, sesiones y auditoría completa continúan en Fase B.
 
 **Estado:** Implementada en código y migración 0004; migración pendiente de aplicación y preflight.
 
@@ -391,9 +391,9 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** 0004 introduce semántica de `profiles` distinta de la aplicación post-0003: `worker` pasa a `professor`, el acceso depende de `account_status` y Auth crea/sincroniza perfiles mediante triggers. Separar la migración de la versión compatible de la aplicación durante demasiado tiempo puede mostrar etiquetas incompatibles o bloquear de forma inesperada a una cuenta.
 
-**Decisión:** antes de cualquier DDL se ejecuta un preflight bloqueante. Detiene límites o perfiles incompatibles, huérfanos en ambos sentidos entre `auth.users` y `profiles`, cuentas activas con correo Auth no confirmado y cualquier trigger no interno no documentado sobre `auth.users`. El despliegue se coordina así: 1) aprobar preflight; 2) comprometer aplicación y migración sin desplegar; 3) aplicar 0004 manualmente; 4) desplegar inmediatamente la versión compatible; 5) ejecutar verificador y pruebas de registro; 6) regenerar snapshot. No se inventan identidades ni fechas de confirmación, ni se reemplazan triggers heredados sin restauración exacta.
+**Decisión:** antes de cualquier DDL se ejecuta un preflight bloqueante. Detiene perfiles incompatibles, huérfanos Auth/profile, dependencias anteriores de `pending_verification` y triggers no documentados. Identidades email/password y OAuth existentes son informativas, no bloqueantes. El despliegue se coordina así: configurar Google; aprobar preflight; comprometer app y migración; aplicar 0004 manualmente; desplegar la app compatible; ejecutar verificador y pruebas; regenerar snapshot.
 
-**Consecuencias:** perfiles activos sin correo confirmado deben confirmarse administrativamente, desactivarse explícitamente si son descartables o recrearse. El rollback sólo restaura el estado post-0003 cuando el preflight constató ausencia de triggers personalizados; no elimina Auth users ni profiles. La breve ventana entre DDL y despliegue debe minimizarse y comunicarse como riesgo operativo.
+**Consecuencias:** perfiles activos existentes permanecen activos aunque usen sólo contraseña. El rollback no elimina Auth users, profiles ni identidades Google y se bloquea ante perfiles `pending_registration` o técnicos incompatibles. La ventana entre DDL y despliegue debe minimizarse.
 
 **Estado:** Aceptada; endurecimiento preaplicación de 0004 pendiente de revisión y aplicación manual.
 

@@ -10,7 +10,7 @@
 - corregir identidad principal bajo validación estricta;
 - activar o desactivar acceso sin borrar historia;
 - administrar asignaciones vigentes e históricas;
-- iniciar flujos seguros de correo y contraseña;
+- administrar de forma segura acceso heredado y vinculación de proveedores sin ver credenciales;
 - mantener auditoría de toda acción crítica.
 
 ## Búsqueda y filtros del panel
@@ -23,7 +23,7 @@ El panel debe buscar por:
 - programa;
 - tipo de cuenta (`institutional`, `technical`);
 - tipo de persona (`student`, `professor`);
-- estado (`pending_verification`, `active`, `inactive`);
+- estado (`pending_registration`, `active`, `inactive`);
 - rol asignado;
 - servicio;
 - alcance.
@@ -50,7 +50,6 @@ Sólo `technical_admin` puede, durante la fase actual:
 - corregir programa principal;
 - corregir tipo o valor del identificador con unicidad del par `(tipo, valor)`;
 - crear y administrar cuentas técnicas internas;
-- reenviar confirmación de correo;
 - iniciar recuperación de contraseña;
 - asignar o revocar roles críticos conforme a la matriz V2;
 - consultar el historial administrativo.
@@ -85,8 +84,8 @@ La versión instalada de `@supabase/supabase-js` ofrece operaciones públicas y 
 
 | Operación | Cliente público/SSR con clave anon | Backend confiable o Edge Function |
 | --- | --- | --- |
-| Registro institucional propio | `auth.signUp` | Validación complementaria y creación idempotente del perfil |
-| Confirmación de correo propio | Flujo de Auth y `auth.resend` cuando corresponda | Administración, auditoría y rate limit si se inicia desde el panel |
+| Registro institucional propio | Google OAuth + intents/RPC | Configuración del proveedor; no usa `service_role` en la aplicación |
+| Vinculación Google propia | Flujo Supabase Auth | Se conserva `auth.users.id`; no se sobrescribe identidad SITAA |
 | Recuperación propia | `auth.resetPasswordForEmail` | Panel administrativo debe envolverla para autorización y auditoría |
 | Leer/editar perfil propio no crítico | Cliente SSR bajo RLS | No requerido |
 | Listar usuarios Auth | No | `auth.admin.listUsers` |
@@ -112,7 +111,7 @@ Se requiere un registro inmutable o append-only con, como mínimo:
 - referencia a asignación cuando aplique;
 - metadatos mínimos no sensibles.
 
-Eventos mínimos: creación técnica, activación, desactivación, corrección de identidad/programa, reenvío de confirmación, inicio de recuperación, asignación, revocación y transferencia de `technical_admin`.
+Eventos mínimos: creación técnica, activación, desactivación, corrección de identidad/programa, vinculación de proveedor cuando se administre, inicio de recuperación, asignación, revocación y transferencia de `technical_admin`.
 
 No deben registrarse contraseñas, tokens, enlaces completos, cookies ni identificadores completos si basta una referencia interna o versión enmascarada.
 

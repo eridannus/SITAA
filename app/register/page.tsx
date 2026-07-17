@@ -29,7 +29,7 @@ export default function RegisterPage() {
           Elige tu tipo de registro
         </h1>
         <p className="mt-4 leading-7 text-slate-600">
-          La identidad básica no concede permisos de tutoría, asesoría, tutoría par ni administración.
+          Completa tus datos institucionales y continúa con cualquier cuenta de Google. La identidad básica no concede permisos académicos ni administrativos.
         </p>
       </div>
 

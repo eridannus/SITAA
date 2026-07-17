@@ -1,16 +1,5 @@
--- Rollback manual de emergencia para SITAA 0004.
---
--- ADVERTENCIA: 0004 permite registros y cuentas técnicas que no existen en el
--- modelo posterior a 0003. Este archivo no borra usuarios Auth ni profiles. Un
--- operador debe revisar todas las cuentas creadas desde la aplicación de 0004 y
--- aceptar explícitamente la pérdida del estado detallado antes de ejecutarlo:
---
---   begin;
---   set local sitaa.rollback_0004_reviewed = 'yes';
---   \i supabase/reconciliation/0004_identity_registration_rollback.sql
---
--- Si el cliente no conserva la misma transacción, añada el SET LOCAL después
--- del BEGIN de este archivo de forma deliberada. Nunca automatizar este paso.
+-- Rollback manual de emergencia para SITAA 0004 (Google OAuth).
+-- No elimina usuarios Auth, profiles ni identidades Google. Requiere revisión.
 
 begin;
 
@@ -19,24 +8,29 @@ begin
   if current_setting('sitaa.rollback_0004_reviewed', true) is distinct from 'yes' then
     raise exception 'Rollback 0004 detenido: falta revisión explícita de cuentas creadas bajo 0004.';
   end if;
-  if exists (select 1 from public.profiles where account_kind = 'technical') then
-    raise exception 'Rollback 0004 detenido: existen cuentas técnicas incompatibles con el esquema 0003.';
+  if exists (
+    select 1 from public.profiles
+    where account_kind = 'technical' or account_status = 'pending_registration'
+  ) then
+    raise exception 'Rollback 0004 detenido: existen cuentas que no pueden mapearse con seguridad a 0003.';
   end if;
 end;
 $operator_review$;
 
--- 0004 bloquea la aplicación si auth.users tenía triggers no internos; por ello
--- el estado post-0003 documentado para estos dos nombres es la ausencia de
--- triggers. Nunca se elimina ni intenta reconstruir un trigger heredado.
 drop trigger if exists on_sitaa_auth_user_created on auth.users;
-drop trigger if exists on_sitaa_auth_user_verified on auth.users;
+drop trigger if exists on_sitaa_auth_user_email_changed on auth.users;
 drop trigger if exists enforce_sitaa_profile_identity on public.profiles;
 
-revoke all on function public.activate_own_verified_profile() from public, anon, authenticated;
-drop function if exists public.activate_own_verified_profile();
-drop function if exists public.sync_sitaa_profile_from_auth();
+revoke all on function public.complete_own_google_registration(text) from public, anon, authenticated;
+revoke all on function public.create_registration_intent(text, text, text, uuid) from public, anon, authenticated;
+drop function if exists public.complete_own_google_registration(text);
+drop function if exists public.create_registration_intent(text, text, text, uuid);
+drop function if exists public.sync_sitaa_profile_email_from_auth();
 drop function if exists public.handle_sitaa_auth_user_created();
 drop function if exists public.enforce_sitaa_profile_identity();
+
+revoke all on table public.registration_intents from public, anon, authenticated;
+drop table if exists public.registration_intents;
 
 drop policy if exists "Public can read active academic programs" on public.academic_programs;
 revoke select on table public.academic_programs from anon;
@@ -57,13 +51,10 @@ alter table public.profiles drop constraint if exists profiles_account_status_ch
 alter table public.profiles drop constraint if exists profiles_account_kind_check;
 
 update public.profiles
-set
-  person_type = case when person_type = 'professor' then 'worker' else person_type end,
-  is_active = account_status = 'active';
+set person_type = case when person_type = 'professor' then 'worker' else person_type end,
+    is_active = account_status = 'active';
 
-alter table public.profiles
-  alter column is_active set default true;
-
+alter table public.profiles alter column is_active set default true;
 alter table public.profiles
   add constraint profiles_institutional_id_type_check
     check (institutional_id_type is null or institutional_id_type in ('student_account', 'worker_number')),
@@ -144,7 +135,7 @@ grant execute on function public.add_activity_participant(uuid, uuid, text) to a
 commit;
 
 -- No reversible automáticamente:
--- - Auth users creados durante 0004 permanecen;
--- - pending_verification se reduce al booleano is_active = false;
--- - el alta pública deja de crear profiles al retirar el trigger;
--- - cuentas técnicas deben resolverse antes del rollback y nunca se eliminan aquí.
+-- - las identidades Google vinculadas en auth.identities permanecen;
+-- - los Auth users y profiles permanecen;
+-- - el trigger de alta Google y los intents dejan de existir;
+-- - pgcrypto no se elimina porque puede ser compartida por otras capacidades.

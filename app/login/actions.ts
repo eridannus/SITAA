@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { AUTH_NEXT_COOKIE, oauthCookieOptions } from "@/lib/auth/oauth-cookies";
+import { getSiteOrigin } from "@/lib/auth/site-url";
 import { safeNextPath } from "@/lib/navigation/safe-next-path";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -50,4 +53,34 @@ export async function login(formData: FormData) {
 
   revalidatePath("/", "layout");
   redirect(nextPath ?? "/dashboard");
+}
+
+export async function loginWithGoogle(formData: FormData) {
+  const nextPath = safeNextPath(formData.get("next"));
+  let supabase;
+  try {
+    supabase = await createSupabaseServerClient();
+  } catch {
+    redirect(loginErrorPath("configuracion", nextPath));
+  }
+
+  const requestHeaders = await headers();
+  const origin = getSiteOrigin(
+    requestHeaders.get("origin"),
+    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host"),
+    requestHeaders.get("x-forwarded-proto"),
+  );
+  const cookieStore = await cookies();
+  if (nextPath) cookieStore.set(AUTH_NEXT_COOKIE, nextPath, oauthCookieOptions());
+  else cookieStore.delete(AUTH_NEXT_COOKIE);
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: new URL("/auth/callback", origin).toString() },
+  });
+  if (error || !data.url) {
+    cookieStore.delete(AUTH_NEXT_COOKIE);
+    redirect(loginErrorPath("google", nextPath));
+  }
+  redirect(data.url);
 }

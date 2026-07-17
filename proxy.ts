@@ -13,5 +13,6 @@ export const config = {
     "/activities/:path*",
     "/check-in/:path*",
     "/account-status/:path*",
+    "/complete-registration/:path*",
   ],
 };

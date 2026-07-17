@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { safeNextPath } from "@/lib/navigation/safe-next-path";
-import { login } from "./actions";
+import { login, loginWithGoogle } from "./actions";
 
 export const metadata: Metadata = {
   title: "Iniciar sesión",
@@ -15,6 +15,8 @@ const errorMessages: Record<string, string> = {
   "datos-incompletos": "Escribe tu correo y contraseña para continuar.",
   "sesion-requerida": "Inicia sesión para continuar.",
   "verificacion-pendiente": "Confirma tu correo antes de iniciar sesión.",
+  google: "No fue posible iniciar sesión con Google. Intenta nuevamente.",
+  "enlace-heredado": "El enlace de acceso heredado no es válido o ya expiró.",
 };
 
 type LoginPageProps = {
@@ -32,21 +34,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border border-emerald-950/10 bg-white shadow-2xl shadow-emerald-950/10 md:grid-cols-[0.9fr_1.1fr]">
         <div className="bg-emerald-950 p-8 text-white sm:p-10">
           <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-300">
-            Acceso institucional
+            Acceso a SITAA
           </p>
           <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
             Bienvenido a SITAA
           </h1>
           <p className="mt-5 leading-7 text-emerald-100/80">
-            Ingresa con la cuenta que te proporcionó la institución para consultar tu panel.
+            Continúa con Google. Puedes usar una cuenta personal, pc.puma u otra cuenta de Google Workspace.
           </p>
         </div>
 
         <div className="p-8 sm:p-10">
           <h2 className="text-2xl font-bold text-slate-900">Iniciar sesión</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Accede con tu cuenta o crea un registro básico de alumno o profesor.
-          </p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Usa Google como acceso principal a SITAA.</p>
 
           {errorMessage && (
             <div
@@ -57,7 +57,22 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             </div>
           )}
 
-          <form action={login} className="mt-7 space-y-5">
+          <form action={loginWithGoogle} className="mt-7">
+            {nextPath && <input type="hidden" name="next" value={nextPath} />}
+            <button type="submit" className="w-full cursor-pointer rounded-xl bg-emerald-800 px-5 py-3 font-bold text-white shadow-lg shadow-emerald-900/15 transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+              Continuar con Google
+            </button>
+          </form>
+
+          <div className="my-7 flex items-center gap-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Acceso heredado</span>
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+          <h3 className="text-base font-bold text-slate-800">Acceso con correo y contraseña</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Disponible temporalmente para cuentas existentes. No crea cuentas nuevas.</p>
+
+          <form action={login} className="mt-5 space-y-5">
             {nextPath && <input type="hidden" name="next" value={nextPath} />}
             <div>
               <label htmlFor="email" className="block text-sm font-semibold text-slate-700">
@@ -92,11 +107,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               type="submit"
               className="w-full rounded-xl bg-emerald-800 px-5 py-3 font-bold text-white shadow-lg shadow-emerald-900/15 transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
             >
-              Entrar
+              Entrar con acceso heredado
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-slate-600">
-            ¿Todavía no tienes cuenta?{" "}
+            ¿Todavía no tienes cuenta SITAA?{" "}
             <Link href="/register" className="cursor-pointer font-bold text-emerald-800 underline decoration-emerald-400 underline-offset-4 hover:text-emerald-950">
               Registrarme
             </Link>

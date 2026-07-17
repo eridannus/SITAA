@@ -29,10 +29,10 @@ El modelo canónico de esta materia se define en `docs/IDENTITY_AND_REGISTRATION
 
 SITAA deberá ofrecer dos flujos institucionales diferenciados:
 
-- **Alumno:** nombres, apellidos, programa, correo y número de cuenta.
-- **Profesor:** nombres, apellidos, programa principal, correo y número de trabajador.
+- **Alumno:** nombre, programa y número de cuenta; Google aporta el correo verificado.
+- **Profesor:** nombre, programa principal y número de trabajador; Google aporta el correo verificado.
 
-Las cuentas técnicas internas son una excepción administrativa: no usan el registro público ni requieren identificador o programa académico. Verificar el correo institucional activa una cuenta básica, pero no concede funciones académicas: el alumno no se vuelve tutor par y el profesor no se vuelve tutor o asesor sin una asignación autorizada.
+El registro público usa Google OAuth sin restricción de dominio y sin scopes elevados. Las cuentas técnicas internas son una excepción administrativa: no usan el registro público ni requieren identificador o programa académico. Completar identidad después de Google activa una cuenta básica, pero no concede funciones académicas: el alumno no se vuelve tutor par y el profesor no se vuelve tutor o asesor sin una asignación autorizada.
 
 ## Alcance funcional
 
