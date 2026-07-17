@@ -31,6 +31,7 @@ public	divisions	divisions_code_key	CREATE UNIQUE INDEX divisions_code_key ON pu
 public	divisions	divisions_pkey	CREATE UNIQUE INDEX divisions_pkey ON public.divisions USING btree (id)
 public	location_types	location_types_pkey	CREATE UNIQUE INDEX location_types_pkey ON public.location_types USING btree (code)
 public	participant_roles	participant_roles_pkey	CREATE UNIQUE INDEX participant_roles_pkey ON public.participant_roles USING btree (code)
+public	profiles	profiles_institutional_identifier_pair_key	CREATE UNIQUE INDEX profiles_institutional_identifier_pair_key ON public.profiles USING btree (institutional_id_type, institutional_id_value) WHERE ((account_kind = 'institutional'::text) AND (institutional_id_value IS NOT NULL))
 public	profiles	profiles_pkey	CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)
 public	role_assignments	role_assignments_pkey	CREATE UNIQUE INDEX role_assignments_pkey ON public.role_assignments USING btree (id)
 public	roles	roles_pkey	CREATE UNIQUE INDEX roles_pkey ON public.roles USING btree (code)

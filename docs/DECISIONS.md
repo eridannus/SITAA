@@ -50,6 +50,10 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-036 | Roles académicos V2 y autoridad de asignación | Aceptada |
 | DEC-037 | Administración confiable y filtrado posterior a autorización | Aceptada |
 | DEC-038 | Implementación por fases y check-in abierto posterior | Aceptada |
+| DEC-039 | Sincronización Auth/profile en Fase A | Aceptada |
+| DEC-040 | Contrato de aplicación coordinada de identidad 0004 | Aceptada |
+| DEC-041 | Verificación Google diferida hasta la finalización institucional | Aceptada |
+| DEC-042 | Cierre reconciliado de identidad y Google OAuth | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -351,7 +355,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** 0002 y 0003 fueron aplicadas y verificadas en Supabase. El snapshot vivo se regeneró después de ambas migraciones y conserva evidencia especializada de estructura, funciones, políticas, privilegios y ACL.
 
-**Decisión:** la cadena `0001 + 0002 + 0003` queda reconciliada con el snapshot generado en `2026-07-17T00:21:06Z`, sin deriva inexplicada. `0001`, `0002` y `0003` no se reescriben desde este punto salvo para corregir un artefacto histórico comprobado. El siguiente número permitido es `0004`.
+**Decisión histórica al cierre de 0003:** la cadena `0001 + 0002 + 0003` quedó reconciliada con el snapshot generado en `2026-07-17T00:21:06Z`, sin deriva inexplicada. En ese momento, el siguiente número permitido era `0004`. DEC-042 registra el cierre vigente posterior a 0005.
 
 **Consecuencias:** todo cambio futuro debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos, comparar el estado vivo contra la cadena completa y actualizar el changelog. La restricción de `technical_admin` permanece diferida y el check-in abierto sigue fuera del alcance implementado.
 
@@ -385,7 +389,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Consecuencias:** no se necesita SMTP ni se envía identidad institucional a Google. Una cookie breve `HttpOnly` guarda sólo la ruta `student|professor`; no contiene PII ni funciona como autorización. La duplicidad se informa únicamente después de autenticar. La aplicación nunca recibe `service_role`. Administración y auditoría completa continúan en Fase B.
 
-**Estado:** Implementada y aplicada en 0004; la corrección de secuencia OAuth queda en 0005 pendiente.
+**Estado:** Implementada por 0004 y corregida en su secuencia OAuth por 0005; ambas están aplicadas y verificadas.
 
 ## DEC-040 — Contrato de aplicación coordinada de identidad 0004
 
@@ -423,7 +427,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** implementar en orden: A) identidad/registro; B) administración básica/auditoría; C) roles; D) paneles/filtros/reportes; E) retirar acceso académico implícito de `technical_admin`; F) check-in abierto. La fase F sólo opera cuando la actividad lo habilita y, dentro de una transacción, agrega al usuario autenticado elegible como participante si falta y marca asistencia.
 
-**Consecuencias:** el check-in abierto no forma parte de 0004 inicial. Conserva el mensaje normal de éxito, valida cuenta/programa/elegibilidad y no cambia la ausencia normal de participantes registrados que no asisten. Cada fase puede usar una o más migraciones posteriores sin reescribir 0001–0003.
+**Consecuencias:** el check-in abierto no forma parte de la Fase A. Conserva el mensaje normal de éxito, valida cuenta/programa/elegibilidad y no cambia la ausencia normal de participantes registrados que no asisten. Cada fase puede usar una o más migraciones posteriores sin reescribir 0001–0005.
 
 **Estado:** Aceptada.
 
@@ -433,6 +437,16 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** 0005 permite que el trigger cree únicamente un perfil institucional `pending_registration`, inactivo e incompleto, cuando metadata confiable identifica Google. La activación se traslada al RPC autenticado, que exige una identidad Google enlazada al mismo Auth user, correo coincidente con Auth/profile y verificación final. Las rutas y el action de alta impiden reiniciar registro desde una cuenta autenticada.
 
-**Consecuencias:** quitar la verificación temprana no concede acceso. Se conserva el rechazo atómico de proveedores no soportados y signup por contraseña, mientras los diagnósticos del callback distinguen etapas sin registrar secretos. 0005 debe aprobar preflight y verificador antes de aplicarse.
+**Consecuencias:** quitar la verificación temprana no concede acceso. Se conserva el rechazo atómico de proveedores no soportados y signup por contraseña, mientras los diagnósticos del callback distinguen etapas sin registrar secretos. El preflight, aplicación, verificador y smoke tests de 0005 fueron aprobados.
 
-**Estado:** Aceptada; migración 0005 creada y pendiente de aplicación.
+**Estado:** Implementada, aplicada y verificada en 0005.
+
+## DEC-042 — Cierre reconciliado de identidad y Google OAuth
+
+**Contexto:** 0004 y 0005 están aplicadas y verificadas; el snapshot `2026-07-17T23:20:07Z` fue generado después de los verificadores, los smoke tests y una separación administrativa controlada de cuentas.
+
+**Decisión:** cerrar la Fase A como operativa y fijar `0001`–`0005` como cadena aplicada, verificada y reconciliada. La separación inicial entre cuenta técnica y cuenta académica se documenta como limpieza específica del entorno, no como migración reutilizable ni función de fusión. `0006` es el siguiente número disponible, sin quedar reservado para una implementación concreta.
+
+**Consecuencias:** registro público Google, ciclo `pending_registration`, finalización institucional, activación básica, cuenta técnica, guardas de registro y login heredado quedan vigentes. Las fases B–F continúan abiertas y `technical_admin` conserva temporalmente su acceso académico amplio hasta la Fase E.
+
+**Estado:** Aceptada; reconciliación cerrada sin deriva inexplicada.

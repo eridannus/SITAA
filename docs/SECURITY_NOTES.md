@@ -20,6 +20,8 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - No existe RPC anónimo para crear registros o consultar disponibilidad. El conflicto de identificador sólo se revela al usuario autenticado que completa su propio perfil.
 - Desde 0005, el trigger de alta Google no confía en el valor temporal de `email_confirmed_at` durante el `INSERT`. El perfil queda pendiente, inactivo y sin permisos; la activación exige después una fila Google de `auth.identities`, correo coincidente y evidencia final de verificación.
 - Las rutas públicas de registro y `startGoogleRegistration` repiten guardas de servidor: cuentas activas, pendientes, inactivas o sin perfil no pueden iniciar otra alta.
+- 0004 y 0005 están aplicadas, verificadas y reconciliadas. La guarda usada durante el render de rutas públicas es de sólo lectura; la limpieza de cookies queda limitada a Server Actions y Route Handlers.
+- La separación administrativa inicial entre una cuenta técnica y una cuenta académica fue específica del entorno, no transfirió historia ni se convierte en una operación general de fusión. La administración futura debe ser explícita y auditada en Fase B.
 - El callback registra sólo etapa, código/mensaje sanitizados y timestamp. Nunca registra código OAuth, state, verifier, access/refresh tokens, cookies o secretos del proveedor.
 - No revelar si un correo está registrado mediante mensajes de error diferenciados.
 - Revocar acceso al desactivar perfiles o vencer asignaciones.

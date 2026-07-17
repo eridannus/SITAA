@@ -3,5 +3,6 @@ activities	set_activities_updated_at	CREATE TRIGGER set_activities_updated_at BE
 activities	validate_activities_scheduled_state	CREATE TRIGGER validate_activities_scheduled_state BEFORE INSERT OR UPDATE ON activities FOR EACH ROW EXECUTE FUNCTION validate_activity_scheduled_state()
 activity_participants	guard_activity_participants_pending_deadline	CREATE TRIGGER guard_activity_participants_pending_deadline BEFORE UPDATE OF attendance_status ON activity_participants FOR EACH ROW EXECUTE FUNCTION guard_activity_participant_pending_deadline()
 activity_participants	set_activity_participants_updated_at	CREATE TRIGGER set_activity_participants_updated_at BEFORE UPDATE ON activity_participants FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+profiles	enforce_sitaa_profile_identity	CREATE TRIGGER enforce_sitaa_profile_identity BEFORE INSERT OR UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION enforce_sitaa_profile_identity()
 profiles	set_profiles_updated_at	CREATE TRIGGER set_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION set_updated_at()
 role_assignments	set_role_assignments_updated_at	CREATE TRIGGER set_role_assignments_updated_at BEFORE UPDATE ON role_assignments FOR EACH ROW EXECUTE FUNCTION set_updated_at()

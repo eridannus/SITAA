@@ -12,6 +12,8 @@
 .DS_Store
 desktop.ini
 *.pem
+supabase/reconciliation/*.local.sql
+supabase/reconciliation/*.local.txt
 
 # Registros
 npm-debug.log*

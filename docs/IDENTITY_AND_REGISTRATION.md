@@ -1,6 +1,6 @@
 # Identidad y registro
 
-**Estado funcional:** 0004 aplicada. Google configurado. 0005 creada y pendiente de aplicación para corregir el orden real del alta OAuth.
+**Estado funcional:** Fase A implementada y operativa. 0004 y 0005 están aplicadas, verificadas y reconciliadas con el snapshot posterior a 0005.
 
 ## Principio
 
@@ -70,4 +70,12 @@ Sólo un proceso administrativo confiable puede fijar `app_metadata.sitaa_accoun
 
 ## Corrección 0005
 
-0004 ya está aplicada. Las primeras pruebas reales confirmaron `sitaa_google_email_not_verified` durante el `INSERT` de `auth.users`: Supabase aún no había fijado `email_confirmed_at`. La transacción se revirtió completamente y no dejó usuarios, identidades ni perfiles que limpiar. 0005 elimina esa comprobación sólo del trigger Google y la hace más fuerte durante la finalización autenticada. Antes de aplicarla: aprobar preflight, revisar migración/rollback, aplicar manualmente, ejecutar verificador y regenerar snapshot.
+Las primeras pruebas reales posteriores a 0004 confirmaron `sitaa_google_email_not_verified` durante el `INSERT` de `auth.users`: Supabase aún no había fijado `email_confirmed_at`. La transacción se revirtió completamente y no dejó usuarios, identidades ni perfiles que limpiar. 0005 eliminó esa comprobación sólo del trigger Google y reforzó la verificación durante la finalización autenticada. Su preflight, aplicación, verificador transaccional y smoke tests reales fueron aprobados; el snapshot posterior quedó reconciliado sin deriva inexplicada.
+
+## Cierre de Fase A
+
+La Fase A comprende registro público sólo con Google, rutas separadas para alumno y profesor, perfil mínimo `pending_registration`, finalización institucional autenticada, activación básica automática, identificadores de dígitos almacenados como texto, ausencia de roles automáticos, soporte de cuenta técnica, guardas para excluir cuentas autenticadas del registro público y acceso heredado por correo/contraseña. No depende de SMTP ni restringe dominios.
+
+Durante el cierre se separaron administrativamente una cuenta técnica interna y una cuenta académica de profesor. La cuenta técnica conserva únicamente su identidad técnica y la asignación `technical_admin`; una asignación académica temporal quedó inactiva. La cuenta académica se registró normalmente con Google y no recibió roles. No se transfirieron actividades ni historia. Esta limpieza inicial no constituye fusión de cuentas ni una migración reutilizable.
+
+Las fases B–F permanecen abiertas: administración de cuentas, roles V2, paneles y filtros según permisos, retiro del acceso académico transitorio de `technical_admin` y check-in abierto.

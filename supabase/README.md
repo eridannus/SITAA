@@ -15,19 +15,14 @@ El dump se obtuvo con `--no-privileges`, pero los grants y ACL vivos se capturan
 - `0001_baseline_current_schema.sql`: baseline reconciliada.
 - `0002_database_security_and_integrity.sql`: aplicada y verificada en Supabase el 2026-07-16.
 - `0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
-- `0004_identity_registration_foundation.sql`: aplicada; introduce Google OAuth y finalización institucional autenticada, sin intents.
-- `0005_fix_google_oauth_user_creation.sql`: creada, no aplicada; corrige la secuencia temprana de `email_confirmed_at` y endurece la verificación final.
-- Snapshot posterior: `2026-07-17T00:21:06Z`, reconciliado sin deriva inexplicada.
-- Siguiente número permitido después de aplicar/verificar 0005: `0006`.
+- `0004_identity_registration_foundation.sql`: aplicada y verificada; introduce Google OAuth y finalización institucional autenticada, sin intents.
+- `0005_fix_google_oauth_user_creation.sql`: aplicada y verificada; corrige la secuencia temprana de `email_confirmed_at` y endurece la verificación final.
+- Snapshot posterior: `2026-07-17T23:20:07Z`, reconciliado contra 0001–0005 sin deriva inexplicada.
+- Siguiente número disponible: `0006`; no está creado ni reservado.
 
-## Aplicación pendiente de 0005
+## Cierre de 0005
 
-1. Ejecutar `0005_fix_google_oauth_user_creation_preflight.sql` en modo read-only y aprobar cero bloqueos.
-2. Revisar migración y rollback; no modificar 0001–0004.
-3. Aplicar manualmente `migrations/0005_fix_google_oauth_user_creation.sql`.
-4. Desplegar la aplicación con guardas de registro y callback diagnosticado.
-5. Ejecutar el verificador, `docs/TEST_PLAN_0005.md` y smoke tests Gmail/`pc.puma`.
-6. Regenerar y reconciliar el snapshot.
+El preflight, la aplicación manual, el verificador transaccional y los smoke tests de Google fueron aprobados. El verificador terminó con `ROLLBACK` y retiró sólo fixtures sintéticos. El informe `reconciliation/0005_post_apply_reconciliation.md` documenta el snapshot posterior, la ausencia de deriva y la separación administrativa inicial de cuentas sin PII.
 
 El rollback de 0005 es exclusivamente de emergencia: no transforma datos, pero reintroduce el defecto prematuro de 0004. Nunca borra Auth users, profiles ni identidades Google.
 
@@ -36,7 +31,7 @@ El rollback de 0005 es exclusivamente de emergencia: no transforma datos, pero r
 Después de esta reconciliación:
 
 - `0001_baseline_current_schema.sql` no se reescribe, excepto para corregir un defecto comprobado de la baseline.
-- `0001`, `0002` y `0003` no se reescriben, salvo para corregir un artefacto histórico comprobado y documentado.
+- `0001`–`0005` no se reescriben, salvo para corregir un artefacto histórico comprobado y documentado.
 - Cada cambio posterior usa el siguiente número libre y continúa incrementalmente; las migraciones aplicadas no se reescriben.
 - Una migración se crea antes o junto con cualquier SQL aplicado a Supabase.
 - Si el SQL se aplica manualmente desde Supabase SQL Editor, el mismo archivo debe quedar comprometido en Git.
@@ -56,7 +51,7 @@ El entorno proporciona `SUPABASE_DB_URL` como secreto. El script prefiere `pg_du
 
 Los resultados se almacenan en `supabase/reconciliation/live/`. Son artefactos para comparar el estado vivo y construir migraciones; no son migraciones para ejecutar directamente.
 
-La reconciliación cerrada el 2026-07-16 comparó el snapshot regenerado contra `0001 + 0002 + 0003`. Las diferencias fueron efectos esperados de 0002/0003 o metadata inocua de `pg_dump`; no se detectó deriva inexplicada.
+La reconciliación cerrada el 2026-07-17 comparó el snapshot `2026-07-17T23:20:07Z` contra `0001`–`0005`. No se detectó deriva inexplicada; los detalles están en `reconciliation/0005_post_apply_reconciliation.md`.
 
 ## Reglas de seguridad
 

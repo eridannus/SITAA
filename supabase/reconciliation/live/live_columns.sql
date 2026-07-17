@@ -13,6 +13,7 @@ academic_programs	2	division_id	uuid	uuid	NO
 academic_programs	3	code	text	text	NO					
 academic_programs	4	name	text	text	NO					
 academic_programs	5	created_at	timestamp with time zone	timestamptz	NO	now()				6
+academic_programs	6	is_active	boolean	bool	NO	true				
 activities	1	id	uuid	uuid	NO	gen_random_uuid()				
 activities	2	title	text	text	NO					
 activities	3	description	text	text	YES					
@@ -113,7 +114,7 @@ profiles	1	id	uuid	uuid	NO
 profiles	2	email	text	text	NO					
 profiles	3	full_name	text	text	YES					
 profiles	4	primary_program_id	uuid	uuid	YES					
-profiles	5	is_active	boolean	bool	NO	true				
+profiles	5	is_active	boolean	bool	NO	false				
 profiles	6	created_at	timestamp with time zone	timestamptz	NO	now()				6
 profiles	7	updated_at	timestamp with time zone	timestamptz	NO	now()				6
 profiles	8	first_names	text	text	YES					
@@ -122,6 +123,10 @@ profiles	10	maternal_surname	text	text	YES
 profiles	11	person_type	text	text	YES					
 profiles	12	institutional_id_type	text	text	YES					
 profiles	13	institutional_id_value	text	text	YES					
+profiles	14	account_kind	text	text	NO	'institutional'::text				
+profiles	15	account_status	text	text	NO	'pending_registration'::text				
+profiles	16	activated_at	timestamp with time zone	timestamptz	YES					6
+profiles	17	deactivated_at	timestamp with time zone	timestamptz	YES					6
 role_assignments	1	id	uuid	uuid	NO	gen_random_uuid()				
 role_assignments	2	user_id	uuid	uuid	NO					
 role_assignments	3	role_code	text	text	NO					

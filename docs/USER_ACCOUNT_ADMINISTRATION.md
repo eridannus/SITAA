@@ -1,8 +1,10 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** aprobado.
+**Estado funcional:** diseño aprobado para Fase B; no implementado.
 
 **Alcance:** panel interno para `technical_admin` y delegación limitada de roles académicos. No implementa código ni introduce una llave administrativa en el cliente.
+
+La separación administrativa realizada durante el cierre de Fase A fue una limpieza única y revisada del entorno. No constituye una capacidad de fusión, conversión o transferencia disponible para usuarios; las operaciones futuras deben pasar por este módulo controlado y su auditoría.
 
 ## Objetivos
 

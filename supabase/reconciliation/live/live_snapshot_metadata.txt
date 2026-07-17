@@ -1,5 +1,5 @@
 SITAA Supabase live snapshot metadata
-Generated at UTC: 2026-07-17T00:21:06Z
+Generated at UTC: 2026-07-17T23:20:07Z
 Status: SUCCESS
 Purpose: reconciliation only; no remote writes.
 Schema tool selected: pg_dump

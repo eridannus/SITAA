@@ -1,6 +1,6 @@
 # Roles y permisos V2
 
-**Estado funcional:** aprobado.
+**Estado funcional:** diseño aprobado para Fase C; no implementado. La Fase A de identidad está cerrada y no asigna roles automáticamente.
 
 **Documento canónico:** sustituye el catálogo funcional, la autoridad de asignación y los pendientes equivalentes de `ROLES_AND_PERMISSIONS.md`. Las reglas ya implementadas de actividades, borradores y asistencia del documento anterior siguen vigentes hasta su migración explícita.
 

@@ -1,36 +1,38 @@
 # Estado reconciliado de la base de datos
 
-**Fecha de cierre documental:** 2026-07-16.
+**Fecha de cierre documental:** 2026-07-17.
 
-**Snapshot vivo comparado:** `2026-07-17T00:21:06Z`, estado `SUCCESS`.
+**Snapshot vivo comparado:** `2026-07-17T23:20:07Z`, estado `SUCCESS`.
 
 La fuente de verdad histórica y evolutiva es la cadena:
 
 1. `supabase/migrations/0001_baseline_current_schema.sql`: baseline reconciliada.
 2. `supabase/migrations/0002_database_security_and_integrity.sql`: aplicada y verificada en Supabase el 2026-07-16.
 3. `supabase/migrations/0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
+4. `supabase/migrations/0004_identity_registration_foundation.sql`: aplicada y verificada.
+5. `supabase/migrations/0005_fix_google_oauth_user_creation.sql`: aplicada y verificada.
 
 El snapshot regenerado bajo `supabase/reconciliation/live/` fue comparado localmente contra esa cadena. No se conectó a Supabase durante esta reconciliación documental.
 
-## Inventario posterior a 0003
+## Inventario posterior a 0005
 
 | Categoría | Cantidad |
 | --- | ---: |
 | Tablas públicas | 17 |
-| Columnas | 151 |
-| Restricciones PK, FK, UNIQUE o CHECK | 61 |
-| Índices, incluidos los respaldados por restricciones | 37 |
-| Triggers | 6 |
-| Funciones y firmas públicas | 33 |
+| Columnas | 156 |
+| Restricciones PK, FK, UNIQUE o CHECK | 68 |
+| Índices, incluidos los respaldados por restricciones | 38 |
+| Triggers sobre tablas públicas | 7 |
+| Funciones y firmas públicas | 37 |
 | Políticas RLS | 23 |
 | Tablas con RLS habilitado | 17 |
 | Filas de semillas en catálogos controlados | 51 |
-| Grants de rutinas | 99 |
-| Grants de tablas | 262 |
+| Grants de rutinas | 108 |
+| Grants de tablas | 261 |
 | Grants de secuencia | 6 |
-| Entradas ACL expandidas | 401 |
+| Entradas ACL expandidas | 409 |
 
-Las tablas, columnas, restricciones, índices y semillas coinciden con 0001. Las diferencias del snapshot regenerado se limitan a funciones, políticas, triggers y privilegios previstos por 0002 y a las tres definiciones de temporalidad de borradores reemplazadas por 0003.
+El estado vivo coincide con el resultado acumulado de 0001–0005. Las 156 columnas corresponden al baseline más `academic_programs.is_active` y los cuatro campos de ciclo de cuenta añadidos por 0004. Las funciones críticas de 0005 coinciden de forma normalizada con la migración aplicada.
 
 ## Efectos verificados de 0002
 
@@ -56,24 +58,37 @@ La verificación SQL de 0002 terminó sin desviaciones. Los smoke tests manuales
 
 Los nueve resultados del verificador de 0003 fueron verdaderos y la prueba terminó con el `ROLLBACK` transaccional esperado. Los smoke tests manuales confirmaron edición y eliminación de borradores atrapados y rechazo de publicación con horarios inválidos.
 
+## Efectos verificados de 0004 y 0005
+
+- `profiles` distingue cuentas `institutional|technical` y estados `pending_registration|active|inactive` con restricciones de identidad y ciclo de vida.
+- Google crea un único perfil institucional pendiente, inactivo, incompleto y sin roles, aunque `email_confirmed_at` sea nulo durante el `INSERT` inicial.
+- La finalización exige sesión, identidad Google vinculada y verificada, correos coincidentes, programa activo e identificador institucional único.
+- La sincronización de Auth actualiza sólo `profiles.email`.
+- Signup público por contraseña, OAuth no soportado y metadata ambigua continúan rechazados atómicamente.
+- Las rutas públicas de registro excluyen cuentas ya autenticadas y la guarda de render es de sólo lectura.
+- Los preflight y verificadores transaccionales de 0004 y 0005 pasaron; sus fixtures terminaron en `ROLLBACK`.
+- Los smoke tests reales de alta Google y finalización de profesor pasaron. No quedaron filas Auth fallidas que limpiar.
+
 ## Resultado de reconciliación
 
 | Diferencia observada | Clasificación |
 | --- | --- |
-| Tres funciones nuevas, dos triggers nuevos y cambios de helpers/RPC | Efecto esperado de 0002 |
-| Política SELECT de `activities` separada por estado `draft` | Efecto esperado de 0002 |
-| Grants reducidos para `PUBLIC`, `anon` y `authenticated` | Efecto esperado de 0002 |
-| Definiciones finales de `activity_has_ended`, `can_update_activity_base` y `can_delete_activity` | Efecto esperado de 0003 |
-| Nuevo valor aleatorio `\restrict` de `pg_dump` y nueva fecha UTC de metadata | Diferencia ambiental inocua |
+| Objetos y privilegios de seguridad operativa | Efectos esperados de 0002 |
+| Definiciones finales del ciclo temporal de borradores | Efectos esperados de 0003 |
+| Campos, restricciones, funciones y trigger público de identidad | Efectos esperados de 0004 |
+| Definiciones finales de alta y finalización Google | Efectos esperados de 0005 |
+| Omisión de `SECURITY INVOKER` predeterminado y representación ACL de `MAINTAIN` | Diferencias ambientales inocuas |
+| Separación administrativa inicial y nuevo perfil de profesor | Diferencias controladas de datos operativos; no se exportan en el snapshot |
 
 **Deriva inexplicada:** ninguna en esquema, funciones, triggers, políticas, grants, ACL, catálogos o restricciones.
+
+El detalle probatorio está en `supabase/reconciliation/0005_post_apply_reconciliation.md`. El inventario `live_triggers.sql` se limita a tablas de `public`; los dos triggers SITAA sobre `auth.users` quedaron comprobados por los preflight y verificadores aprobados de 0004 y 0005.
 
 ## Pendientes conocidos
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- **0004 está aplicada** y Google OAuth está configurado. El snapshot versionado aún no debe presentarse como evidencia post-0004 hasta regenerarlo.
-- La prueba productiva confirmó `sitaa_google_email_not_verified` durante el `INSERT` de `auth.users`; no quedaron Auth users, identities, profiles ni enlaces accidentales. `0005_fix_google_oauth_user_creation.sql` está creada y no aplicada.
-- 0005 conserva el perfil Google `pending_registration` inactivo durante el alta temprana y traslada la verificación fuerte a la finalización autenticada. También excluye cuentas autenticadas de las rutas públicas de registro.
+- La Fase A de identidad y Google OAuth está cerrada y operativa mediante 0004 + 0005.
+- La separación inicial entre cuenta técnica y cuenta académica fue una operación administrativa controlada; no es una migración reutilizable ni una función de fusión de cuentas.
 - Administración de cuentas (Fase B), roles V2 (Fase C), filtros (Fase D), retiro de A-02 (Fase E) y check-in abierto (Fase F) siguen pendientes.
 - Permanecen siete hallazgos medios y cuatro bajos de la auditoría; 0002 y 0003 no pretendían resolverlos.
 - El check-in abierto sigue pendiente. En una capacidad futura, un usuario autenticado de SITAA no preinscrito podrá ser agregado como participante y marcado `attended` en una sola operación transaccional, únicamente cuando la actividad habilite check-in abierto.
@@ -81,6 +96,6 @@ Los nueve resultados del verificador de 0003 fueron verdaderos y la prueba termi
 
 ## Inmutabilidad y siguiente migración
 
-`0001`, `0002`, `0003` y `0004` forman historia aplicada y no se reescriben. `0005` es la siguiente migración creada y permanece pendiente de aplicación; el snapshot vivo debe regenerarse después de verificarla.
+`0001`–`0005` forman historia aplicada y verificada y no se reescriben. `0006` es el siguiente número disponible; no está creado ni reservado para una implementación concreta.
 
 Todo trabajo futuro de base de datos debe revisar la cadena completa, crear una nueva migración numerada, incluir verificación y rollback cuando corresponda, aplicarse manualmente a Supabase, regenerar el snapshot después de cambios significativos, comparar el estado vivo contra la cadena y actualizar `docs/DATABASE_CHANGELOG.md`.

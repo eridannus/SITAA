@@ -1,6 +1,6 @@
 # Plan de pruebas 0005: alta Google y exclusión del registro autenticado
 
-**Estado:** 0005 creada y no aplicada. Ejecutar después del preflight y en un entorno controlado.
+**Estado:** 0005 aplicada y verificada. El preflight y el verificador transaccional fueron aprobados; los smoke tests confirmados se resumen en `supabase/reconciliation/0005_post_apply_reconciliation.md`. La lista se conserva como contrato de regresión.
 
 ## Base de datos
 

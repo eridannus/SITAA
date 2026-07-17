@@ -54,14 +54,14 @@ La clave `anon` es pública y está sujeta a las políticas RLS. No agregues cla
 
 ## Autenticación
 
-El acceso público usa Google OAuth con cookies SSR; correo/contraseña permanece sólo para cuentas heredadas. El registro no restringe dominios ni requiere SMTP. Google y 0004 ya están configurados/aplicados; 0005 permanece pendiente para corregir el orden real del alta. El callback autorizado de producción es `https://www.sitaa.net/auth/callback`.
+El acceso público usa Google OAuth con cookies SSR; correo/contraseña permanece sólo para cuentas heredadas. El registro no restringe dominios ni requiere SMTP. Google, 0004 y 0005 están configurados, aplicados y verificados. El callback autorizado de producción es `https://www.sitaa.net/auth/callback`.
 
 El registro autentica primero con Google y sólo después solicita identidad institucional. No existe escritura anónima ni consulta de disponibilidad de identificadores; tampoco asigna tutoría, asesoría, tutoría par o administración. Las cuentas técnicas no usan formularios públicos.
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 
-La corrección 0005 se libera coordinadamente: aprobar el preflight, aplicar la migración manualmente, desplegar esta versión con guardas, ejecutar el verificador y regenerar el snapshot.
+La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-17T23:20:07Z` quedó reconciliado contra 0001–0005 sin deriva inexplicada; `0006` es el siguiente número disponible.
 
 ## Alcance actual
 
-Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos y el alta/listado básico de actividades. El dashboard muestra el contexto vigente del usuario, pero todavía no aplica paneles especializados por rol ni implementa participantes, asistencia, QR, formularios o reportes. La definición del producto se encuentra en `docs/`.
+Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes y asistencia manual o por QR/enlace/código. El dashboard aún no aplica paneles especializados por rol y los formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.

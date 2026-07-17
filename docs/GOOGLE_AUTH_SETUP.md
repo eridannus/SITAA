@@ -1,5 +1,7 @@
 # Configuración de Google OAuth para SITAA
 
+**Estado:** Google Cloud y Supabase están configurados. Las migraciones 0004 y 0005, sus verificadores y los smoke tests de alta/finalización están aprobados. La Fase A está operativa.
+
 No guardar Client ID, Client Secret, cookies ni tokens en el repositorio. Esta guía describe configuración operativa; no contiene secretos.
 
 ## Google Cloud
@@ -43,3 +45,4 @@ La vinculación automática de identidades por correo verificado se administra e
 - Confirmar que una cuenta compartida muestra advertencia, pero no se detecta ni bloquea automáticamente.
 - La configuración External/Testing debe incluir expresamente las cuentas Gmail y `pc.puma` usadas como test users.
 - 0005 permite que Supabase complete su secuencia OAuth aunque `email_confirmed_at` sea nulo durante el `INSERT`; la verificación final ocurre contra la identidad Google enlazada al completar el perfil.
+- El snapshot `2026-07-17T23:20:07Z` reconcilia el resultado vivo de 0001–0005. No quedaron cuentas fallidas que requirieran limpieza.

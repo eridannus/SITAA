@@ -1,6 +1,6 @@
 # Modelo de datos
 
-> **Vigencia:** este documento describe el esquema implementado después de 0003. El modelo funcional aprobado para identidad, cuentas técnicas y roles futuros está en `IDENTITY_AND_REGISTRATION.md` y `ROLES_AND_PERMISSIONS_V2.md`; las diferencias que requieren 0004 o fases posteriores están en `IMPLEMENTATION_GAPS_0004.md`.
+> **Vigencia:** este documento describe el esquema reconciliado después de 0005. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
 
 ## Tablas implementadas
 
@@ -156,7 +156,7 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 
 ## Estado de implementación
 
-La Fase A de identidad Google y la migración 0004 están aplicadas. Google está configurado; 0005 permanece pendiente para corregir el alta temprana y reforzar la verificación final. Las tablas operativas, asistencia y check-in permanecen sin cambios funcionales.
+La Fase A de identidad Google está implementada y operativa mediante 0004 + 0005. Ambas migraciones, sus verificadores y el snapshot posterior están reconciliados. Las tablas operativas, asistencia y check-in permanecen sin cambios funcionales por este cierre.
 ### Accesos de asistencia por QR, enlace y código
 
 `activity_checkin_tokens` representa el acceso temporal para confirmar asistencia de participantes ya registrados. El enlace directo usa `secret_token`; el código manual usa `three_word_code`. Ambos actualizan los mismos campos de asistencia de `activity_participants` mediante `check_in_activity`.

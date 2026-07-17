@@ -1,6 +1,6 @@
 # Brechas de implementación para 0004 y fases posteriores
 
-**Estado:** Fase A y 0004 aplicadas; corrección incremental 0005 creada y no aplicada.
+**Estado:** Fase A cerrada; 0004 y su corrección incremental 0005 están aplicadas, verificadas y reconciliadas. Este documento conserva las brechas de fases posteriores.
 
 ## Incluido en 0004
 
@@ -17,14 +17,9 @@
 
 No existe tabla de intents, escritura anónima de registro ni endpoint público de disponibilidad de identificadores.
 
-## Prerrequisitos antes de aplicar
+## Contrato de aplicación completado
 
-1. Configurar Google conforme a `GOOGLE_AUTH_SETUP.md`.
-2. Repetir el preflight y confirmar cero bloqueos.
-3. Probar callback de producción, local y preview autorizado.
-4. Aplicar 0004 manualmente y desplegar inmediatamente la aplicación compatible.
-5. Ejecutar verificador y plan de pruebas.
-6. Regenerar y reconciliar el snapshot.
+Se configuró Google conforme a `GOOGLE_AUTH_SETUP.md`; los preflight, aplicaciones manuales, verificadores y smoke tests de 0004/0005 fueron aprobados. El snapshot posterior se regeneró y reconcilió en `supabase/reconciliation/0005_post_apply_reconciliation.md`.
 
 ## Compatibilidad deliberada
 
@@ -42,4 +37,4 @@ No existe tabla de intents, escritura anónima de registro ni endpoint público 
 - **Fase E:** retirar acceso académico transitorio de `technical_admin`.
 - **Fase F:** check-in abierto.
 
-No forman parte de 0004 ni de su corrección 0005: Azure, SMTP, dominio obligatorio, scopes Google elevados, panel administrativo, roles V2 o filtros.
+No forman parte de la Fase A: Azure, SMTP, dominio obligatorio, scopes Google elevados, panel administrativo, roles V2 o filtros.

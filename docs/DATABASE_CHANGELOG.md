@@ -56,12 +56,12 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 - Diferencias ambientales inocuas: fecha del snapshot y valor aleatorio `\restrict` emitido por `pg_dump`.
 - Los enlaces QR y de check-in fueron probados manualmente con el dominio canónico de producción.
 
-## Flujo obligatorio a partir de 0004
+## Flujo obligatorio para cambios posteriores
 
-El siguiente número permitido es `0004`. Todo cambio futuro debe:
+El siguiente número disponible es `0006`. No está creado ni reservado para una implementación concreta. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
-2. crear una nueva migración numerada, sin reescribir `0001`, `0002` o `0003`;
+2. crear una nueva migración numerada, sin reescribir `0001`–`0005`;
 3. incluir verificación y rollback cuando sea apropiado;
 4. aplicarse manualmente a Supabase;
 5. regenerar el snapshot vivo después de cambios significativos;
@@ -70,7 +70,7 @@ El siguiente número permitido es `0004`. Todo cambio futuro debe:
 
 Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliación, no migraciones ejecutables.
 
-## 0004_identity_registration_foundation.sql — aplicada
+## 0004_identity_registration_foundation.sql — aplicada y verificada
 
 - Fecha de creación: 2026-07-17.
 - Propósito: formalizar `institutional|technical`, `student|professor`, estados `pending_registration|active|inactive`, identificadores como texto y registro público Google OAuth.
@@ -85,9 +85,9 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Rollback manual: `supabase/reconciliation/0004_identity_registration_rollback.sql`, exige revisión explícita.
 - Plan: `docs/TEST_PLAN_0004.md`.
 - Aplicación coordinada: aprobar preflight, aplicar 0004, desplegar inmediatamente la aplicación compatible, verificar y regenerar snapshot.
-- Estado: aplicada. La prueba OAuth posterior reveló el contrato prematuro de `email_confirmed_at`, corregido por la 0005 pendiente.
+- Estado: aplicada; preflight y verificador transaccional aprobados. La prueba OAuth posterior reveló el contrato prematuro de `email_confirmed_at`, sustituido únicamente en ese punto por 0005, sin rollback de 0004.
 
-## 0005_fix_google_oauth_user_creation.sql — creada, no aplicada
+## 0005_fix_google_oauth_user_creation.sql — aplicada y verificada
 
 - Fecha de creación: 2026-07-17.
 - Estado previo: 0004 ya aplicada; Google Cloud y Supabase configurados.
@@ -96,3 +96,16 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Frontera final: `complete_own_google_registration` exige identidad Google enlazada, correo coincidente y verificación final antes de activar.
 - Aplicación: las rutas y el server action de registro rechazan cuentas ya autenticadas; el callback incorpora diagnósticos sanitizados por etapa.
 - Artefactos: preflight read-only, verificador transaccional, rollback manual y `docs/TEST_PLAN_0005.md`.
+- Estado: preflight aprobado, migración aplicada y verificador transaccional aprobado con `ROLLBACK` final de fixtures sintéticos.
+- Smoke tests: alta Google real, perfil pendiente, selección de identidad, finalización de profesor y exclusión de cuentas activas de `/register` aprobados.
+- Resultado: el defecto temporal de `auth.users.email_confirmed_at` quedó resuelto y no hubo filas Auth fallidas que limpiar.
+
+## Reconciliación posterior a 0005 — 2026-07-17
+
+- Snapshot comparado: `2026-07-17T23:20:07Z`, estado `SUCCESS`.
+- Cadena reconciliada: `0001 + 0002 + 0003 + 0004 + 0005`.
+- Inventario vivo: 17 tablas, 156 columnas, 68 restricciones, 38 índices, 7 triggers públicos, 37 firmas de función, 23 políticas y 51 semillas controladas.
+- Privilegios vivos: 108 grants de rutina, 261 de tabla, 6 de secuencia y 409 entradas ACL expandidas.
+- Resultado: sin deriva inexplicada; informe en `supabase/reconciliation/0005_post_apply_reconciliation.md`.
+- Datos operativos: se documentó de forma genérica una separación administrativa única entre cuenta técnica y cuenta académica. No se convirtió en migración reutilizable.
+- Fase A: cerrada y operativa. Las fases B–F permanecen pendientes.

@@ -185,7 +185,6 @@ public	participant_roles	postgres	service_role	TRIGGER	NO	NO
 public	participant_roles	postgres	service_role	TRUNCATE	NO	NO
 public	participant_roles	postgres	service_role	UPDATE	NO	NO
 public	profiles	postgres	authenticated	SELECT	NO	YES
-public	profiles	postgres	authenticated	UPDATE	NO	NO
 public	profiles	postgres	postgres	DELETE	YES	NO
 public	profiles	postgres	postgres	INSERT	YES	NO
 public	profiles	postgres	postgres	REFERENCES	YES	NO
