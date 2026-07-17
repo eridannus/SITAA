@@ -371,11 +371,21 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** el esquema actual usa `student|worker`, no distingue cuentas técnicas internas y sólo dispone de login. El acceso básico no debe confundirse con responsabilidades académicas.
 
-**Decisión:** SITAA tendrá rutas públicas distintas para alumnos y profesores, ambas con verificación de correo y activación básica automática. Las cuentas institucionales usan una clasificación exclusiva `student|professor`, identificador de dígitos almacenado como texto y programa principal obligatorio. El identificador será único globalmente entre cuentas institucionales. Las cuentas `internal_technical` se crean administrativamente y quedan exentas de identificador y programa. Perfil y asignaciones permanecen separados.
+**Decisión:** SITAA tendrá rutas públicas distintas para alumnos y profesores, ambas con verificación de correo y activación básica automática. Las cuentas institucionales usan una clasificación exclusiva `student|professor`, identificador de dígitos almacenado como texto y programa principal obligatorio. La unicidad se aplica al par `(institutional_id_type, institutional_id_value)`, por lo que tipos distintos pueden compartir la misma cadena. Las cuentas `technical` se crean administrativamente y quedan exentas de identificador y programa. Perfil y asignaciones permanecen separados.
 
 **Consecuencias:** un profesor nuevo no es tutor ni asesor; un alumno nuevo no es tutor par. La persona desarrolladora puede tener una cuenta institucional ordinaria y otra técnica independiente. Corregir identidad principal corresponde a administración técnica auditada. La implementación requiere una migración a partir de 0004 y backfill verificado.
 
 **Estado:** Aceptada; detalles técnicos menores se registran en `IMPLEMENTATION_GAPS_0004.md`.
+
+## DEC-039 — Sincronización Auth/profile en Fase A
+
+**Contexto:** el registro público debe crear el perfil sin exponer credenciales administrativas ni confiar en metadata editable para privilegios.
+
+**Decisión:** 0004 usa triggers `SECURITY DEFINER` de `auth.users`. `signUp` envía sólo tipo de registro, nombre, programa e identificador; la base deriva tipo de cuenta, tipo de identificador y estado. La confirmación activa únicamente perfiles pendientes. La creación no genera `role_assignments`. Las cuentas técnicas requieren `app_metadata` de un proceso confiable.
+
+**Consecuencias:** un fallo de identidad revierte la creación Auth; la aplicación nunca recibe `service_role`. El autoservicio de `profiles` se limita a `full_name`. El panel administrativo, revocación de sesiones y auditoría completa continúan en Fase B.
+
+**Estado:** Implementada en código y migración 0004; migración pendiente de aplicación y preflight.
 
 ## DEC-036 — Roles académicos V2 y autoridad de asignación
 

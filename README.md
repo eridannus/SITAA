@@ -30,6 +30,8 @@ npm run start  # Inicia la compilación de producción
 - `/health`: comprobación básica del servicio; muestra `SITAA OK`.
 - `/supabase-test`: verifica la configuración y consulta `public.system_health`.
 - `/login`: inicio de sesión con correo y contraseña.
+- `/register`: elección de registro de alumno o profesor.
+- `/register/student` y `/register/professor`: altas separadas con verificación de correo.
 - `/dashboard`: panel protegido con perfil institucional y asignaciones de rol activas.
 - `/catalogs`: visor protegido de catálogos operativos activos.
 - `/profile`: edición protegida de identidad institucional básica.
@@ -49,7 +51,9 @@ La clave `anon` es pública y está sujeta a las políticas RLS. No agregues cla
 
 ## Autenticación
 
-El acceso usa Supabase Auth con correo y contraseña mediante cookies SSR. El registro público no está implementado: crea las cuentas autorizadas desde el panel administrativo de Supabase y mantén deshabilitada la opción de permitir nuevos registros en la configuración de Auth.
+El acceso usa Supabase Auth con correo, contraseña y cookies SSR. La Fase A incorpora registros públicos separados para alumnos y profesores y exige confirmación de correo. Antes de habilitarlos en producción se debe aplicar y verificar manualmente la migración 0004, configurar `NEXT_PUBLIC_SITE_URL` y autorizar `/auth/confirm` en los Redirect URLs de Supabase.
+
+El registro crea únicamente identidad básica; no asigna tutoría, asesoría, tutoría par ni administración. Las cuentas técnicas no usan formularios públicos.
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 

@@ -21,7 +21,7 @@ El panel debe buscar por:
 - correo;
 - número de cuenta o de trabajador;
 - programa;
-- tipo de cuenta (`institutional`, `internal_technical`);
+- tipo de cuenta (`institutional`, `technical`);
 - tipo de persona (`student`, `professor`);
 - estado (`pending_verification`, `active`, `inactive`);
 - rol asignado;
@@ -48,7 +48,7 @@ Sólo `technical_admin` puede, durante la fase actual:
 - activar o desactivar una cuenta;
 - corregir alumno/profesor;
 - corregir programa principal;
-- corregir tipo o valor del identificador con unicidad global;
+- corregir tipo o valor del identificador con unicidad del par `(tipo, valor)`;
 - crear y administrar cuentas técnicas internas;
 - reenviar confirmación de correo;
 - iniciar recuperación de contraseña;

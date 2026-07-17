@@ -7,16 +7,23 @@ import type {
   Profile,
   Role,
   RoleAssignment,
+  AccountStatus,
 } from "@/types/sitaa";
 
-export type UserContextError = "profile" | "assignments" | null;
+export type UserContextError = "profile" | "assignments" | "account_pending" | "account_inactive" | null;
 
 export interface AuthenticatedUserContext {
   user: User;
   profile: Profile | null;
   primaryProgram: AcademicProgram | null;
   activeRoleAssignments: ActiveRoleAssignment[];
+  accountStatus: AccountStatus | null;
   error: UserContextError;
+}
+
+function effectiveAccountStatus(profile: Profile): AccountStatus {
+  if (profile.account_status) return profile.account_status;
+  return profile.is_active === false ? "inactive" : "active";
 }
 
 function isAssignmentActive(assignment: RoleAssignment, now: Date) {
@@ -67,6 +74,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
       profile: null,
       primaryProgram: null,
       activeRoleAssignments: [],
+      accountStatus: null,
       error: "profile",
     };
   }
@@ -79,7 +87,20 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
       profile: null,
       primaryProgram: null,
       activeRoleAssignments: [],
+      accountStatus: null,
       error: null,
+    };
+  }
+
+  const accountStatus = effectiveAccountStatus(profile);
+  if (accountStatus !== "active") {
+    return {
+      user,
+      profile,
+      primaryProgram: null,
+      activeRoleAssignments: [],
+      accountStatus,
+      error: accountStatus === "inactive" ? "account_inactive" : "account_pending",
     };
   }
 
@@ -94,6 +115,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
       profile,
       primaryProgram: null,
       activeRoleAssignments: [],
+      accountStatus,
       error: "assignments",
     };
   }
@@ -122,6 +144,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
       profile,
       primaryProgram: null,
       activeRoleAssignments: [],
+      accountStatus,
       error: "assignments",
     };
   }
@@ -142,6 +165,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
       profile,
       primaryProgram: null,
       activeRoleAssignments: [],
+      accountStatus,
       error: "assignments",
     };
   }
@@ -171,6 +195,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
       ? (programById.get(profile.primary_program_id) ?? null)
       : null,
     activeRoleAssignments,
+    accountStatus,
     error: null,
   };
 }

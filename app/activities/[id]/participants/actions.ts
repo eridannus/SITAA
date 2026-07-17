@@ -12,7 +12,7 @@ import type { AttendanceStatus, ParticipantMutationState, ParticipantSearchState
 import type { InstitutionalIdType, PersonType } from "@/types/sitaa";
 
 const attendanceStatuses = new Set<AttendanceStatus>(["pending", "attended", "absent", "justified"]);
-const personTypes = new Set<PersonType>(["student", "worker"]);
+const personTypes = new Set<PersonType>(["student", "professor"]);
 const institutionalIdTypes = new Set<InstitutionalIdType>(["student_account", "worker_number"]);
 
 function normalizePersonType(value: unknown): PersonType | null {
@@ -112,7 +112,7 @@ export async function searchParticipationProfiles(activityId: string, _previous:
 function addErrorMessage(error: { code?: string; message?: string; details?: string; hint?: string }) {
   const text = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
   const normalizedText = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (/solo un trabajador puede registrarse como responsable|trabajador.*responsable/.test(normalizedText)) return "Sólo un trabajador puede registrarse como responsable de la actividad.";
+  if (/solo un (trabajador|profesor) puede registrarse como responsable|(trabajador|profesor).*responsable/.test(normalizedText)) return "Sólo un profesor puede registrarse como responsable de la actividad.";
   if (/otro programa academico/.test(normalizedText)) return "La persona seleccionada pertenece a otro programa académico.";
   if (error.code === "23505" || /duplicate|already|ya (está|esta)|registrad/.test(text)) return "Esta persona ya está registrada en la actividad.";
   if (error.code === "42501" || /permission|not authorized|row-level|rls|permiso|autorizad/.test(text)) return "No tienes permiso para agregar participantes a esta actividad.";

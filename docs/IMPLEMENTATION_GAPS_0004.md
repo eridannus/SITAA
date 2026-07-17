@@ -4,7 +4,7 @@
 
 **Base observada:** cadena reconciliada `0001 + 0002 + 0003`.
 
-**Restricción:** este documento no crea la migración 0004 ni modifica aplicación o Supabase.
+**Estado:** la Fase A está implementada en aplicación y en 0004; la migración todavía no fue aplicada a Supabase.
 
 ## Resumen
 
@@ -27,10 +27,10 @@ SITAA ya tiene Auth SSR, login, perfil, asignaciones múltiples, RLS de activida
 | --- | --- | --- | --- | --- | --- | --- |
 | Registro | Sólo login; registro público deshabilitado | Dos rutas alumno/profesor con verificación | No hay formularios, acciones, callback ni estado pendiente | `account_kind`, estado y constraints condicionales; creación idempotente de perfil | `/register/student`, `/register/professor`, confirmación y mensajes no enumerables | Validar metadata; auditar perfiles existentes antes de `NOT NULL`/checks |
 | Registro | `worker` representa trabajador/profesor | Clasificación exclusiva `student|professor` | Semántica y tipos no coinciden | Migrar `worker → professor`; actualizar check | Tipos TypeScript, formularios, etiquetas y contexto | Preflight de valores inesperados |
-| Registro | Sin unicidad institucional | Texto de dígitos, ceros preservados, único global | Duplicados posibles | Índice único parcial/global y check de dígitos | Validación servidor y mensajes sanitizados | Auditar duplicados y valores no numéricos antes de crear constraint |
+| Registro | Sin unicidad institucional | Texto de dígitos, ceros preservados, único por `(tipo, valor)` | Duplicados posibles dentro del mismo tipo | Índice único parcial por par y check de dígitos | Validación servidor y mensajes sanitizados | Auditar duplicados por par y valores no numéricos antes de crear constraint |
 | Registro | Programa opcional | Obligatorio sólo para cuenta institucional | Falta regla condicional por tipo de cuenta | Check `account_kind`/programa/identificador | Formularios y corrección administrativa | Backfill de perfiles institucionales incompletos |
 | Administración básica | `profiles.is_active` no gobierna todo el acceso | Desactivación bloquea Auth, RLS y RPC | Falta estado coordinado y gate central | Estado de cuenta y helpers que lo comprueben | Contexto, middleware y panel | Evitar borrar historia; decidir tratamiento de sesiones existentes |
-| Administración básica | Sin cuenta técnica explícita | `internal_technical` sin identidad institucional | Hoy requeriría datos ficticios | `account_kind` y checks condicionales | Flujo admin de creación y presentación | Sólo backend confiable; sin registro público |
+| Administración básica | Sin cuenta técnica explícita | `technical` sin identidad institucional | Hoy requeriría datos ficticios | `account_kind` y checks condicionales | Flujo admin de creación y presentación | Sólo backend confiable; sin registro público |
 | Administración básica | Sin historial administrativo | Auditoría append-only | No hay tabla/eventos | Nueva entidad de auditoría y políticas | Vista de historial y motivos | Minimizar PII; impedir edición/borrado cliente |
 | Administración básica | Sin Auth admin | Activar, desactivar, reenviar, recuperar | Cliente anon no puede listar/administrar Auth | Ninguno o RPC de coordinación; Auth vive fuera de `public` | Server actions/Edge Function confiables | `service_role` sólo servidor; rate limit y auditoría |
 | Roles académicos | `professor` combina tutor/asesor | Roles separados | No se puede delegar por servicio sin ambigüedad | Nuevos códigos y backfill | Helpers, formularios y paneles | No elevar profesores existentes automáticamente |
@@ -41,23 +41,23 @@ SITAA ya tiene Auth SSR, login, perfil, asignaciones múltiples, RLS de activida
 | Filtros | Listados casi sin estado reusable | Filtros posteriores a autorización | Falta contrato común y consultas parametrizadas | RPC/vistas sólo si aportan paginación segura | Estado URL, componentes y paneles | Nunca descargar filas prohibidas; conteos autorizados |
 | Mejora posterior | Check-in sólo para preinscritos | Check-in abierto opcional y transaccional | No existe bandera, elegibilidad ni RPC | Campo/configuración y operación atómica futura | Resultado normal de check-in | Después de identidad/roles; no forma parte de 0004 inicial |
 
-## Cambios mínimos candidatos para 0004
+## Cambios incluidos en 0004
 
-La primera migración futura debería limitarse a la base de identidad necesaria para la fase A, con preflight y sin activar aún todas las pantallas:
+La migración creada se limita a la base de identidad necesaria para la Fase A:
 
 1. introducir `account_kind` y un estado de cuenta explícito;
 2. migrar semánticamente `worker` a `professor`;
 3. definir checks condicionales para cuentas institucionales y técnicas;
-4. normalizar y proteger unicidad global de `institutional_id_value` cuando no sea nulo;
+4. proteger la unicidad del par (`institutional_id_type`, `institutional_id_value`) y conservar ceros iniciales;
 5. preparar creación idempotente de perfil tras `signUp`/confirmación;
 6. documentar/backfillear perfiles existentes incompatibles antes de hacer obligatorias las reglas;
 7. incluir verificación y rollback revisados.
 
-La migración no debe asignar nombres reales, elevar profesores existentes, crear la cuenta técnica de una persona ni retirar todavía A-02. Los cambios de roles y auditoría pueden entrar en 0004 sólo si el alcance permanece revisable; de lo contrario deben continuar en migraciones posteriores.
+La migración no asigna nombres reales, no eleva profesores, no crea cuentas técnicas reales, no cambia roles y no retira A-02. La administración y auditoría continúan en fases posteriores.
 
 ## Secuencia recomendada
 
-### Fase A — identidad y registro
+### Fase A — identidad y registro (implementada; 0004 no aplicada)
 
 - modelo canónico de cuenta;
 - dos formularios públicos;
@@ -116,10 +116,10 @@ La migración no debe asignar nombres reales, elevar profesores existentes, crea
 
 No existe una pregunta funcional que invalide el modelo aprobado. Antes de aplicar 0004 sí es obligatorio auditar valores nulos, `worker`, duplicados institucionales y perfiles sin programa; el resultado determina el backfill seguro.
 
-## Verificación futura mínima
+## Verificación de Fase A y fases futuras
 
 - registro alumno/profesor y confirmación de correo;
-- rechazo de duplicados, caracteres no numéricos y colisiones globales;
+- rechazo de duplicados dentro del mismo tipo y aceptación del mismo valor entre tipos diferentes;
 - cuenta técnica sin identificador/programa y sin registro público;
 - cuenta inactiva sin acceso aunque conserve asignaciones;
 - profesor nuevo sin tutoría/asesoría;

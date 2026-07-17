@@ -60,7 +60,7 @@ Las asignaciones se revocan o desactivan; nunca se eliminan en la operación nor
 
 - `peer_tutor` exige `person_type = student`.
 - `professor_tutor`, `professor_advisor` y responsabilidades académicas de programa exigen `person_type = professor` salvo una excepción institucional documentada.
-- `technical_admin` se asigna normalmente a `account_kind = internal_technical`.
+- `technical_admin` se asigna normalmente a `account_kind = technical`.
 - El alcance de programa exige `program_id`; el de división exige `division_id`; el de sistema no usa programa.
 - El servicio fijo de cada rol no puede sustituirse con un valor más amplio enviado por el cliente.
 - Una asignación no puede ser creada por su propio beneficiario.

@@ -7,7 +7,7 @@ const CREATION_ROLES = new Set(["professor", "peer_tutor", "program_tutoring_lea
 
 export function isStudentOnlyUser(context: AuthenticatedUserContext) {
   return (
-    context.activeRoleAssignments.length > 0 &&
+    context.profile?.person_type === "student" &&
     context.activeRoleAssignments.every((item) => item.role_code === "student")
   );
 }

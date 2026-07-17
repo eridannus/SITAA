@@ -1,6 +1,6 @@
 # Identidad y registro
 
-**Estado funcional:** aprobado.
+**Estado funcional:** Fase A implementada en código y migración 0004; migración pendiente de aplicación.
 
 **Documento canónico:** esta especificación sustituye las reglas de identidad y registro incompatibles o incompletas de documentos anteriores. No crea SQL ni habilita todavía el registro público.
 
@@ -10,10 +10,10 @@ La identidad responde «¿quién es la persona o cuenta?». La autorización res
 
 ## Categorías de cuenta
 
-| `account_kind` propuesto | Registro | `person_type` | Identificador institucional | Programa principal |
+| `account_kind` | Registro | `person_type` | Identificador institucional | Programa principal |
 | --- | --- | --- | --- | --- |
 | `institutional` | Público, con verificación de correo | `student` o `professor`, exclusivos | Obligatorio | Obligatorio |
-| `internal_technical` | Sólo administrativo | No aplica | No aplica | No aplica |
+| `technical` | Sólo administrativo | No aplica | No aplica | No aplica |
 
 Una cuenta institucional normal no puede ser simultáneamente alumno y profesor. Una cuenta técnica interna no debe fingir ser alumno o profesor ni recibir identificador o programa ficticios.
 
@@ -50,11 +50,11 @@ Los formularios pueden capturar nombres y apellidos por separado para derivar `f
 - El valor normalizado elimina espacios exteriores, pero no modifica los dígitos.
 - `student` exige `student_account`; `professor` exige `worker_number`.
 - El número de trabajador permanece asociado a la persona aunque cambie su responsabilidad o adscripción institucional.
-- La regla aprobada es conservadora: `institutional_id_value` es único globalmente entre cuentas institucionales activas o históricas, sin permitir que un número de cuenta y uno de trabajador compartan el mismo valor.
+- La unicidad se aplica al par (`institutional_id_type`, `institutional_id_value`). Un número de cuenta y un número de trabajador pueden compartir la misma cadena de dígitos; dos identificadores del mismo tipo no pueden repetirla.
 - Corregir tipo o valor requiere validación de unicidad y una acción auditada de `technical_admin`.
 - Desactivar una cuenta no libera el identificador para otra persona.
 
-La unicidad global evita búsquedas ambiguas. Si la UNAM confirma más adelante que ambos identificadores pertenecen a espacios independientes y admite colisiones legítimas, esa regla requerirá una decisión y migración nueva; no debe asumirse durante 0004.
+La aplicación no ofrece un endpoint público para comprobar disponibilidad. Los conflictos se resuelven durante el alta y se presentan con un mensaje sanitizado.
 
 ## Programa principal
 
@@ -73,7 +73,7 @@ La unicidad global evita búsquedas ambiguas. Si la UNAM confirma más adelante 
 5. La cuenta institucional pasa automáticamente a `active`; no requiere aprobación administrativa para acceso básico.
 6. El acceso básico se deriva de `person_type`; las responsabilidades adicionales se asignan después.
 
-Estados funcionales propuestos:
+Estados implementados por 0004:
 
 - `pending_verification`: Auth aún no confirma el correo; no puede operar.
 - `active`: correo confirmado, perfil completo y cuenta habilitada.
@@ -83,7 +83,7 @@ La transición de verificación debe ser idempotente. No debe crear duplicados d
 
 ## Cuenta técnica interna
 
-La cuenta `internal_technical`:
+La cuenta `technical`:
 
 - se crea mediante un proceso administrativo confiable;
 - usa un correo verificable, pero no registro público;
@@ -94,12 +94,14 @@ La cuenta `internal_technical`:
 
 Durante desarrollo, `technical_admin` conserva temporalmente el acceso académico amplio documentado en A-02. Es una excepción de transición, no el objetivo de seguridad.
 
+Bootstrap controlado pendiente de operación: una persona autorizada crea el usuario Auth mediante una herramienta administrativa confiable, fija `app_metadata.sitaa_account_kind = technical`, verifica que el perfil resultante no tenga identidad institucional y asigna `technical_admin` mediante el procedimiento auditado de la fase correspondiente. Nunca se ejecuta desde un formulario público, nunca se autoasigna y 0004 no incorpora ninguna cuenta concreta.
+
 ## Separación de cuentas del desarrollador
 
 El modelo admite dos cuentas independientes para una misma persona responsable del desarrollo:
 
 - cuenta institucional: `institutional + professor`, correo institucional, número de trabajador, programa principal y acceso básico de profesor;
-- cuenta personal técnica: `internal_technical`, sin identidad institucional ni programa, con asignación `technical_admin`.
+- cuenta personal técnica: `technical`, sin identidad institucional ni programa, con asignación `technical_admin`.
 
 La cuenta institucional no recibe permisos de comité por el hecho de desarrollar SITAA. La cuenta técnica no debe presentarse como profesor.
 
@@ -122,6 +124,12 @@ El usuario puede mantener datos personales no críticos que se definan posterior
 - Ningún nombre, correo o identificador personal se incorpora a semillas SQL.
 - Auth y perfil deben permanecer sincronizados sin exponer llaves administrativas al navegador.
 
-## Relación con el esquema actual
+Supabase Auth puede resumir un fallo de trigger como error genérico de alta. La aplicación reconoce causas específicas cuando el SDK las conserva y, en caso contrario, muestra un fallo sanitizado. No se añade una consulta anónima de disponibilidad porque permitiría enumerar identificadores; la confirmación definitiva de unicidad siempre ocurre en la transacción de registro.
 
-El esquema posterior a 0003 todavía usa `person_type = worker`, permite identidad principal nula, carece de `account_kind`/estado detallado y no impone unicidad institucional. Estas diferencias se registran en `IMPLEMENTATION_GAPS_0004.md`; este documento no las implementa.
+## Implementación de Fase A
+
+`0004_identity_registration_foundation.sql` reutiliza `person_type`, `institutional_id_type`, `institutional_id_value` y `primary_program_id`; transforma determinísticamente `worker` en `professor` y añade `account_kind`, `account_status`, `activated_at` y `deactivated_at`. La migración está creada pero no aplicada.
+
+El alta usa metadata de registro limitada y un trigger auditado sobre `auth.users`. El trigger deriva `account_kind`, tipo de identificador y estado, valida programa activo, no crea roles y falla la transacción Auth ante identidad inválida. Las cuentas técnicas sólo pueden originarse mediante `app_metadata` de un proceso administrativo confiable; 0004 no crea ninguna.
+
+Antes de aplicar 0004 es obligatorio ejecutar el preflight. Identificadores de prototipo no numéricos, duplicados, perfiles incompletos o inconsistencias Auth/profile detienen la migración y requieren remediación humana.

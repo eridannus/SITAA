@@ -33,7 +33,7 @@ const serviceAreaLabels: Record<ServiceArea, string> = {
 
 const personTypeLabels: Record<PersonType, string> = {
   student: "Alumno",
-  worker: "Trabajador",
+  professor: "Profesor",
 };
 
 const institutionalIdTypeLabels: Record<InstitutionalIdType, string> = {
@@ -48,7 +48,7 @@ function getRoleLabel(
   return role?.label?.trim() || role?.name?.trim() || roleCode;
 }
 
-function LogoutButton() {
+export function LogoutButton() {
   return (
     <form action={logout}>
       <button
@@ -129,26 +129,34 @@ export default async function DashboardPage() {
               <dd className="mt-1 break-all text-base text-slate-900">{user.email}</dd>
             </div>
             <div>
-              <dt className="font-semibold text-slate-500">Tipo de persona</dt>
-              <dd className="mt-1 text-base text-slate-900">{personTypeLabels[profile.person_type]}</dd>
+              <dt className="font-semibold text-slate-500">Tipo de cuenta</dt>
+              <dd className="mt-1 text-base text-slate-900">{profile.account_kind === "technical" ? "Técnica interna" : "Institucional"}</dd>
             </div>
-            <div>
-              <dt className="font-semibold text-slate-500">
-                {institutionalIdTypeLabels[profile.institutional_id_type]}
-              </dt>
-              <dd className="mt-1 break-words text-base text-slate-900">{profile.institutional_id_value}</dd>
-            </div>
+            {profile.person_type && (
+              <div>
+                <dt className="font-semibold text-slate-500">Tipo de persona</dt>
+                <dd className="mt-1 text-base text-slate-900">{personTypeLabels[profile.person_type]}</dd>
+              </div>
+            )}
+            {profile.institutional_id_type && profile.institutional_id_value && (
+              <div>
+                <dt className="font-semibold text-slate-500">
+                  {institutionalIdTypeLabels[profile.institutional_id_type]}
+                </dt>
+                <dd className="mt-1 break-words text-base text-slate-900">{profile.institutional_id_value}</dd>
+              </div>
+            )}
             {primaryProgram ? (
               <div>
                 <dt className="font-semibold text-slate-500">Programa académico principal</dt>
                 <dd className="mt-1 text-base text-slate-900">{primaryProgram.name}</dd>
               </div>
-            ) : (
+            ) : profile.account_kind !== "technical" ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
                 <dt className="font-semibold text-amber-800">Programa académico principal</dt>
                 <dd className="mt-1 text-sm font-semibold text-amber-900">Programa no asignado</dd>
               </div>
-            )}
+            ) : null}
           </dl>
         </div>
         <div className="flex flex-wrap gap-3">

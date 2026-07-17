@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { safeNextPath } from "@/lib/navigation/safe-next-path";
 import { login } from "./actions";
 
@@ -13,6 +14,7 @@ const errorMessages: Record<string, string> = {
     "No fue posible iniciar sesión. Verifica tu correo y contraseña.",
   "datos-incompletos": "Escribe tu correo y contraseña para continuar.",
   "sesion-requerida": "Inicia sesión para continuar.",
+  "verificacion-pendiente": "Confirma tu correo antes de iniciar sesión.",
 };
 
 type LoginPageProps = {
@@ -43,7 +45,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <div className="p-8 sm:p-10">
           <h2 className="text-2xl font-bold text-slate-900">Iniciar sesión</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            El registro público de cuentas no está disponible.
+            Accede con tu cuenta o crea un registro básico de alumno o profesor.
           </p>
 
           {errorMessage && (
@@ -93,6 +95,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               Entrar
             </button>
           </form>
+          <p className="mt-6 text-center text-sm text-slate-600">
+            ¿Todavía no tienes cuenta?{" "}
+            <Link href="/register" className="cursor-pointer font-bold text-emerald-800 underline decoration-emerald-400 underline-offset-4 hover:text-emerald-950">
+              Registrarme
+            </Link>
+          </p>
         </div>
       </div>
     </section>

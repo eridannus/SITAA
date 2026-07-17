@@ -42,6 +42,9 @@ export async function login(formData: FormData) {
   });
 
   if (error) {
+    if (error.message.toLowerCase().includes("email not confirmed")) {
+      redirect(loginErrorPath("verificacion-pendiente", nextPath));
+    }
     redirect(loginErrorPath("credenciales", nextPath));
   }
 

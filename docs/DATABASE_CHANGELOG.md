@@ -69,3 +69,17 @@ El siguiente número permitido es `0004`. Todo cambio futuro debe:
 7. actualizar este changelog.
 
 Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliación, no migraciones ejecutables.
+
+## 0004_identity_registration_foundation.sql — creada, no aplicada
+
+- Fecha de creación: 2026-07-17.
+- Propósito: formalizar `institutional|technical`, `student|professor`, estados de cuenta, identificadores numéricos como texto y registro Auth separado.
+- Reutiliza las columnas actuales de identidad; añade `account_kind`, `account_status`, `activated_at`, `deactivated_at` e `academic_programs.is_active`.
+- Unicidad: par `(institutional_id_type, institutional_id_value)`; se permiten valores iguales entre tipos diferentes.
+- Auth: trigger atómico para registro institucional, activación por correo y soporte confiable de cuentas técnicas; nunca crea roles.
+- Autoservicio: UPDATE directo de `profiles` limitado a `full_name`.
+- Preflight: `supabase/reconciliation/0004_identity_registration_preflight.sql`.
+- Verificación: `supabase/reconciliation/0004_identity_registration_verify.sql` con fixtures sintéticas y `ROLLBACK`.
+- Rollback manual: `supabase/reconciliation/0004_identity_registration_rollback.sql`, exige revisión explícita.
+- Plan: `docs/TEST_PLAN_0004.md`.
+- Estado: pendiente de preflight, revisión, aplicación manual, verificación y nuevo snapshot.

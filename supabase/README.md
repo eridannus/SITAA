@@ -15,8 +15,19 @@ El dump se obtuvo con `--no-privileges`, pero los grants y ACL vivos se capturan
 - `0001_baseline_current_schema.sql`: baseline reconciliada.
 - `0002_database_security_and_integrity.sql`: aplicada y verificada en Supabase el 2026-07-16.
 - `0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
+- `0004_identity_registration_foundation.sql`: creada; pendiente de preflight, revisión y aplicación manual.
 - Snapshot posterior: `2026-07-17T00:21:06Z`, reconciliado sin deriva inexplicada.
-- Siguiente número permitido: `0004`.
+- Siguiente número permitido después de aplicar/verificar 0004: `0005`.
+
+## Aplicación pendiente de 0004
+
+1. Ejecutar el preflight de sólo lectura `reconciliation/0004_identity_registration_preflight.sql`.
+2. Remediar manualmente identificadores no numéricos/duplicados, perfiles incompletos o inconsistencias Auth/profile. No limpiar caracteres ni inventar identificadores con SQL.
+3. Revisar y aplicar manualmente `migrations/0004_identity_registration_foundation.sql`.
+4. Ejecutar `reconciliation/0004_identity_registration_verify.sql` en un entorno de prueba y completar `docs/TEST_PLAN_0004.md`.
+5. Regenerar el snapshot vivo, reconciliarlo y sólo entonces marcar 0004 como aplicada.
+
+El rollback es exclusivamente de emergencia y exige revisión explícita de cuentas creadas bajo 0004; nunca borra Auth users ni profiles.
 
 ## Historial futuro
 

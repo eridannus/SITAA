@@ -37,23 +37,30 @@ export interface Role {
   updated_at?: string;
 }
 
-export type PersonType = "student" | "worker";
+export type AccountKind = "institutional" | "technical";
+
+export type AccountStatus = "pending_verification" | "active" | "inactive";
+
+export type PersonType = "student" | "professor";
 
 export type InstitutionalIdType = "student_account" | "worker_number";
 
 export interface Profile {
   id: string;
-  first_names: string;
-  paternal_surname: string;
+  first_names: string | null;
+  paternal_surname: string | null;
   maternal_surname: string | null;
   full_name: string;
   email?: string | null;
-  person_type: PersonType;
-  institutional_id_type: InstitutionalIdType;
-  institutional_id_value: string;
+  account_kind?: AccountKind;
+  account_status?: AccountStatus;
+  person_type: PersonType | null;
+  institutional_id_type: InstitutionalIdType | null;
+  institutional_id_value: string | null;
   primary_program_id: string | null;
-  status?: string;
   is_active?: boolean;
+  activated_at?: string | null;
+  deactivated_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }

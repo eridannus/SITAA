@@ -55,9 +55,9 @@ function isGuestRole(role: ParticipantRole) {
 function rolesForPersonType(roles: ParticipantRole[], personType: string) {
   if (personType === "student") return roles.filter((role) => !isResponsibleRole(role));
 
-  if (personType === "worker") {
-    const workerRoles = roles.filter((role) => isResponsibleRole(role) || isSupportRole(role) || isGuestRole(role));
-    return workerRoles.length ? workerRoles : roles.filter((role) => !isStudentParticipantRole(role) && !isPeerTutorRole(role));
+  if (personType === "professor") {
+    const professorRoles = roles.filter((role) => isResponsibleRole(role) || isSupportRole(role) || isGuestRole(role));
+    return professorRoles.length ? professorRoles : roles.filter((role) => !isStudentParticipantRole(role) && !isPeerTutorRole(role));
   }
 
   return roles;

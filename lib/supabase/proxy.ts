@@ -42,5 +42,25 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle();
+  const accountStatus = profile?.account_status ?? (profile?.is_active === false ? "inactive" : "active");
+  const isStatusPage = request.nextUrl.pathname === "/account-status";
+
+  if (profileError || !profile || accountStatus !== "active") {
+    if (!isStatusPage) {
+      const statusUrl = new URL("/account-status", request.url);
+      return NextResponse.redirect(statusUrl);
+    }
+    return response;
+  }
+
+  if (isStatusPage) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
   return response;
 }

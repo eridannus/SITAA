@@ -9,12 +9,15 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 ### Identidad y sesión
 
 - Usar Supabase Auth y exigir correo institucional cuando sea viable.
-- Mantener deshabilitado el registro público hasta implementar y probar las dos rutas canónicas. Después, permitir registro separado de alumnos y profesores con verificación obligatoria de correo y activación básica automática; las cuentas técnicas internas siguen siendo exclusivamente administrativas.
+- 0004 implementa registro separado de alumnos y profesores con verificación obligatoria de correo y activación básica automática. No habilitarlo en producción hasta aplicar/verificar la migración, aprobar el preflight y configurar redirects.
+- Las cuentas `technical` siguen siendo exclusivamente administrativas: sólo `app_metadata` confiable puede originarlas; el formulario público no controla tipo de cuenta, estado ni roles.
 - Gestionar la sesión con clientes SSR y cookies seguras; validar al usuario en el servidor antes de servir rutas protegidas.
 - Configurar redirecciones autorizadas y cookies seguras.
 - No revelar si un correo está registrado mediante mensajes de error diferenciados.
 - Revocar acceso al desactivar perfiles o vencer asignaciones.
 - No permitir que el usuario cambie por autoservicio tipo de cuenta/persona, identificador, programa principal, estado o roles.
+- El autoservicio de Fase A permite únicamente `profiles.full_name`; el correo cambia por Supabase Auth y nueva verificación.
+- La aplicación bloquea perfiles pendientes o inactivos. La revocación coordinada de sesiones Auth y la administración de bajas se completan en Fase B/0005.
 
 ### Administración de cuentas y roles
 
@@ -69,7 +72,7 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - Supabase Authentication configura Site URL en `https://www.sitaa.net` y permite actualmente `https://www.sitaa.net/**` y `https://sitaa.vercel.app/**` como Redirect URLs.
 - Los enlaces QR y directos de asistencia derivan de `NEXT_PUBLIC_SITE_URL`; se verificó manualmente que usan `https://www.sitaa.net/check-in/...`.
 - Cloudflare administra DNS. Los registros CNAME dirigidos a Vercel deben permanecer en modo **DNS only**, sin proxy de Cloudflare.
-- Los archivos de ejemplo sólo declaran `NEXT_PUBLIC_SITE_URL=` vacío; el valor productivo se mantiene en Vercel y no se registra en archivos locales con secretos.
+- El archivo de ejemplo puede documentar `NEXT_PUBLIC_SITE_URL=https://www.sitaa.net` porque es un origen público, no un secreto; los valores efectivos se controlan por entorno en Vercel.
 
 ## Auditoría y operación
 

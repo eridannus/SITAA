@@ -71,13 +71,14 @@ Los nueve resultados del verificador de 0003 fueron verdaderos y la prueba termi
 ## Pendientes conocidos
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- La especificación funcional de identidad, registro, administración, roles V2 y filtros ya está aprobada. El esquema todavía carece de `account_kind`, estado detallado, unicidad institucional, revocación completa, nuevos códigos de rol y auditoría administrativa; consultar `IMPLEMENTATION_GAPS_0004.md`.
+- La Fase A está implementada en `0004_identity_registration_foundation.sql`, pero **0004 no está aplicada** y el snapshot vivo sigue representando `0001 + 0002 + 0003`. El preflight debe resolver identificadores inválidos/duplicados y perfiles incompletos antes de aplicar.
+- Administración de cuentas (Fase B), roles V2 (Fase C), filtros (Fase D), retiro de A-02 (Fase E) y check-in abierto (Fase F) siguen pendientes.
 - Permanecen siete hallazgos medios y cuatro bajos de la auditoría; 0002 y 0003 no pretendían resolverlos.
 - El check-in abierto sigue pendiente. En una capacidad futura, un usuario autenticado de SITAA no preinscrito podrá ser agregado como participante y marcado `attended` en una sola operación transaccional, únicamente cuando la actividad habilite check-in abierto.
 - Overloads heredados, `activities.updated_by`, `starts_at`/`ends_at`, alcance divisional y `token_type = 'registration'` permanecen reservados o pendientes de análisis.
 
 ## Inmutabilidad y siguiente migración
 
-`0001`, `0002` y `0003` forman historia cerrada y no deben reescribirse, salvo para corregir un artefacto histórico comprobado y documentado. El siguiente número permitido es **0004**.
+`0001`, `0002` y `0003` forman historia cerrada. `0004` es la siguiente migración creada y permanece pendiente de aplicación; no debe marcarse como parte del estado vivo hasta ejecutarla, verificarla y regenerar el snapshot.
 
 Todo trabajo futuro de base de datos debe revisar la cadena completa, crear una nueva migración numerada, incluir verificación y rollback cuando corresponda, aplicarse manualmente a Supabase, regenerar el snapshot después de cambios significativos, comparar el estado vivo contra la cadena y actualizar `docs/DATABASE_CHANGELOG.md`.
