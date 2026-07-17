@@ -108,33 +108,6 @@ begin
 end;
 $$;
 
-create or replace function pg_temp.expect_intent_rejection(
-  target_person_type text,
-  target_name text,
-  target_identifier text,
-  target_program uuid,
-  expected_error text,
-  expected_label text
-) returns void
-language plpgsql
-set search_path = public, pg_temp
-as $$
-declare caught_message text; rejected boolean := false;
-begin
-  begin
-    perform public.create_registration_intent(
-      target_person_type, target_name, target_identifier, target_program
-    );
-  exception when others then
-    rejected := true;
-    get stacked diagnostics caught_message = message_text;
-  end;
-  if not rejected or position(expected_error in coalesce(caught_message, '')) = 0 then
-    raise exception 'El intent inválido % no respetó el contrato.', expected_label;
-  end if;
-end;
-$$;
-
 -- Auth: Google válido crea exactamente un profile pending_registration.
 select pg_temp.insert_auth_user(
   current_setting('sitaa_test.student_id')::uuid,
@@ -219,72 +192,28 @@ begin
 end;
 $verify_technical$;
 
--- Intent: tokens opacos, hash persistido, límites, programa y privilegios.
-select set_config('sitaa_test.student_token', public.create_registration_intent(
-  'student', repeat('A', 200), '00001234', current_setting('sitaa_test.program_id')::uuid
-), true);
-select set_config('sitaa_test.professor_token', public.create_registration_intent(
-  'professor', 'Profesor sintético 0004', '00001234', current_setting('sitaa_test.program_id')::uuid
-), true);
-
-do $verify_intent_storage$
-declare raw_token text := current_setting('sitaa_test.student_token');
+-- El RPC de finalización sólo es ejecutable por authenticated.
+do $verify_completion_privileges$
 begin
-  if char_length(raw_token) < 40 then raise exception 'El token de intent no es suficientemente opaco.'; end if;
-  if (select count(*) from public.registration_intents
-      where token_hash = encode(extensions.digest(raw_token, 'sha256'), 'hex')
-        and token_hash <> raw_token and expires_at > now()
-        and consumed_at is null and consumed_by is null
-  ) <> 1 then raise exception 'El intent no almacenó exclusivamente la huella esperada.'; end if;
-  if has_table_privilege('anon', 'public.registration_intents', 'SELECT')
-     or has_table_privilege('authenticated', 'public.registration_intents', 'SELECT')
-     or has_table_privilege('anon', 'public.registration_intents', 'INSERT')
-     or has_table_privilege('authenticated', 'public.registration_intents', 'UPDATE')
-     or has_table_privilege('anon', 'public.registration_intents', 'DELETE')
-     or has_table_privilege('authenticated', 'public.registration_intents', 'DELETE') then
-    raise exception 'anon/authenticated conserva acceso directo a registration_intents.';
-  end if;
-  if not has_function_privilege('anon',
-       'public.create_registration_intent(text,text,text,uuid)', 'EXECUTE')
-     or not has_function_privilege('authenticated',
-       'public.complete_own_google_registration(text)', 'EXECUTE') then
-    raise exception 'Faltan grants mínimos para los RPC de registro.';
+  if has_function_privilege(
+       'anon', 'public.complete_own_google_registration(text,text,text,uuid)', 'EXECUTE'
+     ) or not has_function_privilege(
+       'authenticated', 'public.complete_own_google_registration(text,text,text,uuid)', 'EXECUTE'
+     ) then
+    raise exception 'Los privilegios del RPC autenticado no respetan el mínimo requerido.';
   end if;
 end;
-$verify_intent_storage$;
+$verify_completion_privileges$;
 
-select pg_temp.expect_intent_rejection(
-  'student', 'Nombre válido', 'ABC', current_setting('sitaa_test.program_id')::uuid,
-  'sitaa_invalid_institutional_identifier', 'identificador no numérico'
-);
-select pg_temp.expect_intent_rejection(
-  'student', 'Nombre válido', repeat('9', 51), current_setting('sitaa_test.program_id')::uuid,
-  'sitaa_identifier_too_long', 'identificador de 51 dígitos'
-);
-select pg_temp.expect_intent_rejection(
-  'student', 'N', '00009001', current_setting('sitaa_test.program_id')::uuid,
-  'sitaa_invalid_full_name', 'nombre de un carácter'
-);
-select pg_temp.expect_intent_rejection(
-  'student', repeat('N', 201), '00009002', current_setting('sitaa_test.program_id')::uuid,
-  'sitaa_invalid_full_name', 'nombre de 201 caracteres'
-);
-select pg_temp.expect_intent_rejection(
-  'student', 'Nombre válido', '00009003', current_setting('sitaa_test.inactive_program_id')::uuid,
-  'sitaa_invalid_registration_program', 'programa inactivo'
-);
-select pg_temp.expect_intent_rejection(
-  'student', 'Nombre válido', '00009004', gen_random_uuid(),
-  'sitaa_invalid_registration_program', 'programa inexistente'
-);
-
--- Completar alumno y profesor: identidad derivada, ceros y cero roles.
+-- Completar alumno y profesor: 1 y 50 dígitos, identidad derivada y cero roles.
 select set_config('request.jwt.claim.sub', current_setting('sitaa_test.student_id'), true);
 select set_config('request.jwt.claims', jsonb_build_object(
   'sub', current_setting('sitaa_test.student_id'), 'role', 'authenticated'
 )::text, true);
 set local role authenticated;
-select public.complete_own_google_registration(current_setting('sitaa_test.student_token'));
+select public.complete_own_google_registration(
+  'student', 'Alumno sintético 0004', '7', current_setting('sitaa_test.program_id')::uuid
+);
 reset role;
 
 select set_config('request.jwt.claim.sub', current_setting('sitaa_test.professor_id'), true);
@@ -292,7 +221,10 @@ select set_config('request.jwt.claims', jsonb_build_object(
   'sub', current_setting('sitaa_test.professor_id'), 'role', 'authenticated'
 )::text, true);
 set local role authenticated;
-select public.complete_own_google_registration(current_setting('sitaa_test.professor_token'));
+select public.complete_own_google_registration(
+  'professor', repeat('P', 200), repeat('0', 49) || '7',
+  current_setting('sitaa_test.program_id')::uuid
+);
 reset role;
 
 do $verify_completed_profiles$
@@ -301,15 +233,16 @@ begin
       where id = current_setting('sitaa_test.student_id')::uuid
         and account_status = 'active' and is_active
         and person_type = 'student' and institutional_id_type = 'student_account'
-        and institutional_id_value = '00001234'
-        and full_name = repeat('A', 200)
+        and institutional_id_value = '7'
+        and full_name = 'Alumno sintético 0004'
         and primary_program_id = current_setting('sitaa_test.program_id')::uuid
   ) <> 1 then raise exception 'El alumno no completó la identidad esperada.'; end if;
   if (select count(*) from public.profiles
       where id = current_setting('sitaa_test.professor_id')::uuid
         and account_status = 'active' and is_active
         and person_type = 'professor' and institutional_id_type = 'worker_number'
-        and institutional_id_value = '00001234'
+        and institutional_id_value = repeat('0', 49) || '7'
+        and char_length(institutional_id_value) = 50
   ) <> 1 then raise exception 'El profesor no completó la identidad esperada.'; end if;
   if exists (
     select 1 from public.role_assignments where user_id in (
@@ -320,67 +253,116 @@ begin
 end;
 $verify_completed_profiles$;
 
--- Un token consumido no se reutiliza por el mismo usuario ni por otro.
-do $verify_one_time_token$
-declare rejected boolean := false;
+-- Un perfil activo no puede reescribirse mediante completion.
+do $verify_active_not_rewritten$
+declare before_profile jsonb; rejected boolean := false;
 begin
+  select to_jsonb(p) - 'updated_at' into before_profile from public.profiles p
+  where id = current_setting('sitaa_test.student_id')::uuid;
   begin
-    perform public.complete_own_google_registration(current_setting('sitaa_test.student_token'));
+    perform public.complete_own_google_registration(
+      'professor', 'Nombre alterado', '999', current_setting('sitaa_test.program_id')::uuid
+    );
   exception when others then rejected := true;
   end;
-  if not rejected then raise exception 'Un token consumido pudo reutilizarse.'; end if;
+  if not rejected or before_profile is distinct from (
+    select to_jsonb(p) - 'updated_at' from public.profiles p
+    where id = current_setting('sitaa_test.student_id')::uuid
+  ) then raise exception 'Un perfil activo fue reescrito por completion.'; end if;
 end;
-$verify_one_time_token$;
+$verify_active_not_rewritten$;
 
--- Intent expirado: el profile permanece pending_registration.
+-- Perfil pendiente adicional para validaciones posteriores a autenticación.
 select pg_temp.insert_auth_user(
   current_setting('sitaa_test.inactive_id')::uuid,
-  'expired-intent-0004@example.invalid', 'google',
+  'validation-0004@example.invalid', 'google',
   '{"full_name":"Cuenta pendiente"}'::jsonb
 );
-select set_config('sitaa_test.expired_token', public.create_registration_intent(
-  'student', 'Intent expirado', '00008001', current_setting('sitaa_test.program_id')::uuid
-), true);
-update public.registration_intents set expires_at = now() - interval '1 second'
-where token_hash = encode(extensions.digest(current_setting('sitaa_test.expired_token'), 'sha256'), 'hex');
 select set_config('request.jwt.claim.sub', current_setting('sitaa_test.inactive_id'), true);
 select set_config('request.jwt.claims', jsonb_build_object(
   'sub', current_setting('sitaa_test.inactive_id'), 'role', 'authenticated'
 )::text, true);
-do $verify_expired_intent$
-declare rejected boolean := false;
+do $verify_invalid_completion_inputs$
+declare rejected boolean; message text;
 begin
-  begin
-    perform public.complete_own_google_registration(current_setting('sitaa_test.expired_token'));
-  exception when others then rejected := true;
-  end;
-  if not rejected or not exists (
-    select 1 from public.profiles
-    where id = current_setting('sitaa_test.inactive_id')::uuid
-      and account_status = 'pending_registration' and not is_active
-  ) then raise exception 'El intent expirado activó o alteró el profile.'; end if;
-end;
-$verify_expired_intent$;
+  rejected := false; message := null;
+  begin perform public.complete_own_google_registration(
+    'worker', 'Nombre válido', '1234', current_setting('sitaa_test.program_id')::uuid
+  ); exception when others then rejected := true; get stacked diagnostics message = message_text; end;
+  if not rejected or position('sitaa_invalid_registration_type' in coalesce(message, '')) = 0 then
+    raise exception 'Se aceptó un tipo de registro no soportado.';
+  end if;
 
--- Carrera de duplicados: dos intents se crean; sólo el primero puede completar.
-select set_config('sitaa_test.duplicate_token', public.create_registration_intent(
-  'student', 'Segundo duplicado', '00007777', current_setting('sitaa_test.program_id')::uuid
-), true);
-select set_config('sitaa_test.peer_token', public.create_registration_intent(
-  'student', 'Primer duplicado', '00007777', current_setting('sitaa_test.program_id')::uuid
-), true);
+  rejected := false; message := null;
+  begin perform public.complete_own_google_registration(
+    'student', 'N', '1234', current_setting('sitaa_test.program_id')::uuid
+  ); exception when others then rejected := true; get stacked diagnostics message = message_text; end;
+  if not rejected or position('sitaa_invalid_full_name' in coalesce(message, '')) = 0 then
+    raise exception 'Se aceptó un nombre de un carácter.';
+  end if;
+
+  rejected := false; message := null;
+  begin perform public.complete_own_google_registration(
+    'student', repeat('N', 201), '1234', current_setting('sitaa_test.program_id')::uuid
+  ); exception when others then rejected := true; get stacked diagnostics message = message_text; end;
+  if not rejected or position('sitaa_invalid_full_name' in coalesce(message, '')) = 0 then
+    raise exception 'Se aceptó un nombre de 201 caracteres.';
+  end if;
+
+  rejected := false;
+  begin perform public.complete_own_google_registration(
+    'student', 'Nombre válido', repeat('9', 51), current_setting('sitaa_test.program_id')::uuid
+  ); exception when others then rejected := true; get stacked diagnostics message = message_text; end;
+  if not rejected or position('sitaa_identifier_too_long' in coalesce(message, '')) = 0 then
+    raise exception 'Se aceptó un identificador de 51 dígitos.';
+  end if;
+
+  rejected := false; message := null;
+  begin perform public.complete_own_google_registration(
+    'student', 'Nombre válido', '12A3', current_setting('sitaa_test.program_id')::uuid
+  ); exception when others then rejected := true; get stacked diagnostics message = message_text; end;
+  if not rejected or position('sitaa_invalid_institutional_identifier' in coalesce(message, '')) = 0 then
+    raise exception 'Se aceptaron caracteres no numéricos.';
+  end if;
+
+  rejected := false; message := null;
+  begin perform public.complete_own_google_registration(
+    'student', 'Nombre válido', '1234', current_setting('sitaa_test.inactive_program_id')::uuid
+  ); exception when others then rejected := true; get stacked diagnostics message = message_text; end;
+  if not rejected or position('sitaa_invalid_registration_program' in coalesce(message, '')) = 0 then
+    raise exception 'Se aceptó un programa inactivo.';
+  end if;
+
+  rejected := false;
+  begin perform public.complete_own_google_registration(
+    'student', 'Nombre válido', '1234', gen_random_uuid()
+  ); exception when others then rejected := true; end;
+  if not rejected then raise exception 'Se aceptó un programa inexistente.'; end if;
+
+  if not exists (
+    select 1 from public.profiles where id = current_setting('sitaa_test.inactive_id')::uuid
+      and account_status = 'pending_registration' and not is_active
+      and person_type is null and institutional_id_value is null
+  ) then raise exception 'Una validación fallida alteró el perfil pendiente.'; end if;
+end;
+$verify_invalid_completion_inputs$;
+
+-- Un tercer perfil comprueba ceros iniciales y conserva permisos de tutor par.
 select pg_temp.insert_auth_user(
   current_setting('sitaa_test.peer_tutor_id')::uuid,
-  'first-duplicate-0004@example.invalid', 'google', '{}'::jsonb
+  'peer-0004@example.invalid', 'google', '{}'::jsonb
 );
 select set_config('request.jwt.claim.sub', current_setting('sitaa_test.peer_tutor_id'), true);
 select set_config('request.jwt.claims', jsonb_build_object(
   'sub', current_setting('sitaa_test.peer_tutor_id'), 'role', 'authenticated'
 )::text, true);
 set local role authenticated;
-select public.complete_own_google_registration(current_setting('sitaa_test.peer_token'));
+select public.complete_own_google_registration(
+  'student', 'Tutor par sintético', '00007777', current_setting('sitaa_test.program_id')::uuid
+);
 reset role;
 
+-- Duplicado: la unicidad se comprueba sólo después de autenticar al usuario.
 select pg_temp.insert_auth_user(
   current_setting('sitaa_test.duplicate_id')::uuid,
   'second-duplicate-0004@example.invalid', 'google', '{}'::jsonb
@@ -390,22 +372,13 @@ select set_config('request.jwt.claims', jsonb_build_object(
   'sub', current_setting('sitaa_test.duplicate_id'), 'role', 'authenticated'
 )::text, true);
 
-do $verify_different_user_cannot_reuse_token$
-declare rejected boolean := false;
-begin
-  begin
-    perform public.complete_own_google_registration(current_setting('sitaa_test.student_token'));
-  exception when others then rejected := true;
-  end;
-  if not rejected then raise exception 'Otro usuario reutilizó un intent consumido.'; end if;
-end;
-$verify_different_user_cannot_reuse_token$;
-
 do $verify_duplicate_completion$
 declare rejected boolean := false; message text;
 begin
   begin
-    perform public.complete_own_google_registration(current_setting('sitaa_test.duplicate_token'));
+    perform public.complete_own_google_registration(
+      'student', 'Segundo duplicado', '00007777', current_setting('sitaa_test.program_id')::uuid
+    );
   exception when others then
     rejected := true; get stacked diagnostics message = message_text;
   end;
@@ -436,21 +409,66 @@ end;
 $verify_pending_cannot_operate$;
 reset role;
 
--- Una cuenta inactiva no se reactiva y vincular Google no reescribe identidad.
+-- Un usuario sin identidad Google vinculada no puede completar.
+update auth.users
+set raw_app_meta_data = '{"provider":"email","providers":["email"]}'::jsonb
+where id = current_setting('sitaa_test.inactive_id')::uuid;
+
+select set_config('request.jwt.claim.sub', current_setting('sitaa_test.inactive_id'), true);
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', current_setting('sitaa_test.inactive_id'), 'role', 'authenticated'
+)::text, true);
+set local role authenticated;
+do $verify_google_required$
+declare rejected boolean := false; message text;
+begin
+  begin perform public.complete_own_google_registration(
+    'student', 'Sin Google', '8888', current_setting('sitaa_test.program_id')::uuid
+  ); exception when others then rejected := true; get stacked diagnostics message = message_text; end;
+  if not rejected or position('sitaa_google_identity_required' in coalesce(message, '')) = 0 then
+    raise exception 'Un usuario sin Google completó registro institucional.';
+  end if;
+end;
+$verify_google_required$;
+reset role;
+
+-- Una cuenta inactiva no se reactiva.
+update auth.users
+set raw_app_meta_data = '{"provider":"google","providers":["google"]}'::jsonb
+where id = current_setting('sitaa_test.inactive_id')::uuid;
+select set_config('request.jwt.claim.sub', current_setting('sitaa_test.inactive_id'), true);
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', current_setting('sitaa_test.inactive_id'), 'role', 'authenticated'
+)::text, true);
+set local role authenticated;
+select public.complete_own_google_registration(
+  'professor', 'Profesor que será inactivo', '6666',
+  current_setting('sitaa_test.program_id')::uuid
+);
+reset role;
 update public.profiles set account_status = 'inactive'
-where id = current_setting('sitaa_test.duplicate_id')::uuid;
+where id = current_setting('sitaa_test.inactive_id')::uuid;
+select set_config('request.jwt.claim.sub', current_setting('sitaa_test.inactive_id'), true);
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', current_setting('sitaa_test.inactive_id'), 'role', 'authenticated'
+)::text, true);
+set local role authenticated;
 
 do $verify_inactive_not_completed$
 declare rejected boolean := false;
 begin
   begin
-    perform public.complete_own_google_registration(current_setting('sitaa_test.duplicate_token'));
+    perform public.complete_own_google_registration(
+      'professor', 'Profesor reactivado', '5555', current_setting('sitaa_test.program_id')::uuid
+    );
   exception when others then rejected := true;
   end;
   if not rejected then raise exception 'Una cuenta inactiva fue reactivada por completion.'; end if;
 end;
 $verify_inactive_not_completed$;
+reset role;
 
+-- Vincular Google a un perfil existente no reescribe identidad canónica.
 create temporary table sitaa_0004_profile_before_link on commit drop as
 select to_jsonb(p) - 'updated_at' profile_snapshot
 from public.profiles p where id = current_setting('sitaa_test.student_id')::uuid;
@@ -467,9 +485,8 @@ begin
   if before_profile is distinct from after_profile then
     raise exception 'Vincular Google reescribió la identidad institucional activa.';
   end if;
-  if not exists (
-    select 1 from public.profiles
-    where id = current_setting('sitaa_test.duplicate_id')::uuid
+  if not exists (select 1 from public.profiles
+    where id = current_setting('sitaa_test.inactive_id')::uuid
       and account_status = 'inactive' and not is_active and deactivated_at is not null
   ) then raise exception 'La cuenta inactiva perdió su estado.'; end if;
 end;

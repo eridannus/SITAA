@@ -49,7 +49,8 @@ export async function updateSession(request: NextRequest) {
     .maybeSingle();
   const accountStatus = profile?.account_status ?? (profile?.is_active === false ? "inactive" : "active");
   const isStatusPage = request.nextUrl.pathname === "/account-status";
-  const isCompletionPage = request.nextUrl.pathname === "/complete-registration";
+  const isCompletionPage = request.nextUrl.pathname === "/complete-registration"
+    || request.nextUrl.pathname.startsWith("/complete-registration/");
 
   if (profileError || !profile) {
     if (!isStatusPage) {

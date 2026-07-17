@@ -4,8 +4,9 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSiteOrigin } from "@/lib/auth/site-url";
 import {
-  oauthCookieOptions,
-  REGISTRATION_INTENT_COOKIE,
+  clearCallbackCookie,
+  oauthCallbackCookieOptions,
+  REGISTRATION_TYPE_COOKIE,
 } from "@/lib/auth/oauth-cookies";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
@@ -23,13 +24,13 @@ function text(formData: FormData, name: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function personType(value: string): RegistrationPersonType | "" {
+function normalizePersonType(value: string): RegistrationPersonType | "" {
   return value === "student" || value === "professor" ? value : "";
 }
 
 function registrationValuesFrom(formData: FormData): RegistrationFormValues {
   return {
-    person_type: personType(text(formData, "person_type")),
+    person_type: normalizePersonType(text(formData, "person_type")),
     full_name: text(formData, "full_name").replace(/\s+/g, " "),
     institutional_id_value: text(formData, "institutional_id_value"),
     primary_program_id: text(formData, "primary_program_id"),
@@ -46,7 +47,7 @@ function validationError(
 
 function validateRegistration(values: RegistrationFormValues) {
   const errors: Partial<Record<RegistrationField, string>> = {};
-  if (!values.person_type) errors.person_type = "Selecciona si eres alumno o profesor.";
+  if (!values.person_type) errors.person_type = "El tipo de registro no es válido.";
   if (values.full_name.length < 2 || values.full_name.length > 200) {
     errors.full_name = "Escribe tu nombre completo (de 2 a 200 caracteres).";
   }
@@ -66,7 +67,7 @@ function mapRegistrationError(message: string, code?: string) {
   if (code === "23505" || normalized.includes("sitaa_identifier_conflict")) {
     return {
       field: "institutional_id_value" as RegistrationField,
-      message: "No fue posible usar ese identificador institucional. Verifica el dato capturado.",
+      message: "Ese identificador institucional ya está registrado en SITAA.",
     };
   }
   if (normalized.includes("program")) {
@@ -84,38 +85,23 @@ function mapRegistrationError(message: string, code?: string) {
       message: "El identificador institucional no es válido.",
     };
   }
-  return { message: "El registro no está disponible temporalmente. Intenta más tarde." };
+  return { message: "No fue posible completar el registro. Intenta nuevamente." };
 }
 
-async function createIntent(values: RegistrationFormValues) {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("create_registration_intent", {
-    requested_person_type: values.person_type,
-    requested_full_name: values.full_name,
-    requested_institutional_id_value: values.institutional_id_value,
-    requested_primary_program_id: values.primary_program_id,
-  });
-  return { supabase, token: typeof data === "string" ? data : null, error };
-}
+export async function startGoogleRegistration(formData: FormData) {
+  const registrationType = normalizePersonType(text(formData, "registration_type"));
+  if (!registrationType) redirect("/register?error=tipo-invalido");
 
-export async function startGoogleRegistration(
-  _previous: RegistrationState,
-  formData: FormData,
-): Promise<RegistrationState> {
-  const values = registrationValuesFrom(formData);
-  const fieldErrors = validateRegistration(values);
-  if (Object.keys(fieldErrors).length) return validationError(values, fieldErrors);
-
-  let oauthUrl: string;
+  let oauthUrl: string | null = null;
+  let failurePath: string | null = null;
   try {
-    const { supabase, token, error } = await createIntent(values);
-    if (error || !token) {
-      const mapped = mapRegistrationError(error?.message ?? "intent_unavailable", error?.code);
-      return validationError(values, mapped.field ? { [mapped.field]: mapped.message } : {}, mapped.message);
-    }
-
+    const supabase = await createSupabaseServerClient();
     const cookieStore = await cookies();
-    cookieStore.set(REGISTRATION_INTENT_COOKIE, token, oauthCookieOptions());
+    cookieStore.set(
+      REGISTRATION_TYPE_COOKIE,
+      registrationType,
+      oauthCallbackCookieOptions(),
+    );
 
     const requestHeaders = await headers();
     const origin = getSiteOrigin(
@@ -123,18 +109,21 @@ export async function startGoogleRegistration(
       requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host"),
       requestHeaders.get("x-forwarded-proto"),
     );
-    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: new URL("/auth/callback", origin).toString() },
     });
-    if (oauthError || !data.url) {
-      cookieStore.delete(REGISTRATION_INTENT_COOKIE);
-      return validationError(values, {}, "No fue posible iniciar el acceso con Google.");
+    if (error || !data.url) {
+      clearCallbackCookie(cookieStore, REGISTRATION_TYPE_COOKIE);
+      failurePath = `/register/${registrationType}?error=google`;
+    } else {
+      oauthUrl = data.url;
     }
-    oauthUrl = data.url;
   } catch {
-    return validationError(values, {}, "El registro no está configurado temporalmente.");
+    failurePath = `/register/${registrationType}?error=configuracion`;
   }
+  if (failurePath) redirect(failurePath);
+  if (!oauthUrl) redirect(`/register/${registrationType}?error=google`);
   redirect(oauthUrl);
 }
 
@@ -147,19 +136,21 @@ export async function completeGoogleRegistration(
   if (Object.keys(fieldErrors).length) return validationError(values, fieldErrors);
 
   try {
-    const { supabase, token, error } = await createIntent(values);
-    if (error || !token) {
-      const mapped = mapRegistrationError(error?.message ?? "intent_unavailable", error?.code);
-      return validationError(values, mapped.field ? { [mapped.field]: mapped.message } : {}, mapped.message);
-    }
-    const { error: completionError } = await supabase.rpc("complete_own_google_registration", {
-      raw_intent_token: token,
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.rpc("complete_own_google_registration", {
+      requested_person_type: values.person_type,
+      requested_full_name: values.full_name,
+      requested_institutional_id_value: values.institutional_id_value,
+      requested_primary_program_id: values.primary_program_id,
     });
-    if (completionError) {
-      const mapped = mapRegistrationError(completionError.message, completionError.code);
-      return validationError(values, mapped.field ? { [mapped.field]: mapped.message } : {}, mapped.message);
+    if (error) {
+      const mapped = mapRegistrationError(error.message, error.code);
+      return validationError(
+        values,
+        mapped.field ? { [mapped.field]: mapped.message } : {},
+        mapped.message,
+      );
     }
-    (await cookies()).delete(REGISTRATION_INTENT_COOKIE);
   } catch {
     return validationError(values, {}, "No fue posible completar el registro. Intenta nuevamente.");
   }

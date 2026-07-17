@@ -31,7 +31,8 @@ La vinculación automática de identidades por correo verificado se administra e
 - Production usa `NEXT_PUBLIC_SITE_URL=https://www.sitaa.net`.
 - No crear variables `NEXT_PUBLIC_*` para secretos de Google.
 - No enviar identificadores, programa o nombre institucional en `redirectTo`, `state` o URLs.
-- El callback canónico es `/auth/callback`; la cookie de intent es temporal, `HttpOnly` y no contiene PII.
+- El callback canónico es `/auth/callback`; la cookie temporal de tipo de registro es `HttpOnly`, contiene sólo `student` o `professor` y se limita a esa ruta.
+- Los datos institucionales se capturan después de Google; no existe escritura anónima de registro ni endpoint de disponibilidad de identificadores.
 
 ## Criterios operativos
 

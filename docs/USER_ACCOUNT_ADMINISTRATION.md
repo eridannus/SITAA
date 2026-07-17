@@ -84,7 +84,7 @@ La versión instalada de `@supabase/supabase-js` ofrece operaciones públicas y 
 
 | Operación | Cliente público/SSR con clave anon | Backend confiable o Edge Function |
 | --- | --- | --- |
-| Registro institucional propio | Google OAuth + intents/RPC | Configuración del proveedor; no usa `service_role` en la aplicación |
+| Registro institucional propio | Google OAuth + RPC autenticado posterior | Configuración del proveedor; no usa `service_role` en la aplicación |
 | Vinculación Google propia | Flujo Supabase Auth | Se conserva `auth.users.id`; no se sobrescribe identidad SITAA |
 | Recuperación propia | `auth.resetPasswordForEmail` | Panel administrativo debe envolverla para autorización y auditoría |
 | Leer/editar perfil propio no crítico | Cliente SSR bajo RLS | No requerido |

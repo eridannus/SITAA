@@ -15,7 +15,7 @@ El dump se obtuvo con `--no-privileges`, pero los grants y ACL vivos se capturan
 - `0001_baseline_current_schema.sql`: baseline reconciliada.
 - `0002_database_security_and_integrity.sql`: aplicada y verificada en Supabase el 2026-07-16.
 - `0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
-- `0004_identity_registration_foundation.sql`: reescrita para Google OAuth e intents; pendiente de preflight, configuración, revisión y aplicación manual.
+- `0004_identity_registration_foundation.sql`: reescrita para Google OAuth y finalización institucional autenticada, sin intents; pendiente de preflight, configuración, revisión y aplicación manual.
 - Snapshot posterior: `2026-07-17T00:21:06Z`, reconciliado sin deriva inexplicada.
 - Siguiente número permitido después de aplicar/verificar 0004: `0005`.
 

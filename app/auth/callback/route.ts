@@ -1,11 +1,20 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
-import { AUTH_NEXT_COOKIE, REGISTRATION_INTENT_COOKIE } from "@/lib/auth/oauth-cookies";
+import {
+  AUTH_NEXT_COOKIE,
+  clearCallbackCookie,
+  REGISTRATION_TYPE_COOKIE,
+} from "@/lib/auth/oauth-cookies";
 import { safeNextPath } from "@/lib/navigation/safe-next-path";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { RegistrationPersonType } from "@/types/registration";
 
 function redirectTo(request: NextRequest, path: string) {
   return NextResponse.redirect(new URL(path, request.url));
+}
+
+function validatedRegistrationType(value?: string): RegistrationPersonType | null {
+  return value === "student" || value === "professor" ? value : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -26,33 +35,26 @@ export async function GET(request: NextRequest) {
 
     const cookieStore = await cookies();
     const nextPath = safeNextPath(cookieStore.get(AUTH_NEXT_COOKIE)?.value);
-    cookieStore.delete(AUTH_NEXT_COOKIE);
+    const registrationType = validatedRegistrationType(
+      cookieStore.get(REGISTRATION_TYPE_COOKIE)?.value,
+    );
+    clearCallbackCookie(cookieStore, AUTH_NEXT_COOKIE);
+    clearCallbackCookie(cookieStore, REGISTRATION_TYPE_COOKIE);
 
     if (profile.account_status === "inactive") {
-      cookieStore.delete(REGISTRATION_INTENT_COOKIE);
       return redirectTo(request, "/account-status?state=inactive");
     }
     if (profile.account_status === "active" || (!profile.account_status && profile.is_active !== false)) {
-      cookieStore.delete(REGISTRATION_INTENT_COOKIE);
       return redirectTo(request, nextPath ?? "/dashboard");
     }
     if (profile.account_status !== "pending_registration") {
-      cookieStore.delete(REGISTRATION_INTENT_COOKIE);
       return redirectTo(request, "/account-status?state=missing");
     }
 
-    const intentToken = cookieStore.get(REGISTRATION_INTENT_COOKIE)?.value;
-    if (!intentToken) return redirectTo(request, "/complete-registration");
-
-    const { error: completionError } = await supabase.rpc("complete_own_google_registration", {
-      raw_intent_token: intentToken,
-    });
-    cookieStore.delete(REGISTRATION_INTENT_COOKIE);
-    if (completionError) {
-      const errorCode = completionError.message.includes("identifier_conflict") ? "identifier" : "intent";
-      return redirectTo(request, `/complete-registration?error=${errorCode}`);
+    if (registrationType) {
+      return redirectTo(request, `/complete-registration/${registrationType}`);
     }
-    return redirectTo(request, nextPath ?? "/dashboard?registration=completed");
+    return redirectTo(request, "/complete-registration");
   } catch {
     return redirectTo(request, "/login?error=google");
   }

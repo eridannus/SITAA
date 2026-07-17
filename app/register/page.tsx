@@ -8,13 +8,13 @@ const choices = [
     href: "/register/student",
     eyebrow: "Registro de alumno",
     title: "Soy alumno",
-    description: "Usa tu número de cuenta UNAM y elige tu programa académico.",
+    description: "Autentícate con Google y después completa tu número de cuenta y programa.",
   },
   {
     href: "/register/professor",
     eyebrow: "Registro de profesor",
     title: "Soy profesor",
-    description: "Usa tu número de trabajador UNAM y elige tu programa principal.",
+    description: "Autentícate con Google y después completa tu número de trabajador y programa.",
   },
 ];
 
@@ -29,7 +29,7 @@ export default function RegisterPage() {
           Elige tu tipo de registro
         </h1>
         <p className="mt-4 leading-7 text-slate-600">
-          Completa tus datos institucionales y continúa con cualquier cuenta de Google. La identidad básica no concede permisos académicos ni administrativos.
+          Primero continúa con cualquier cuenta de Google controlada individualmente. Tus datos institucionales se solicitarán sólo después de autenticarte y no concederán permisos académicos ni administrativos.
         </p>
       </div>
 

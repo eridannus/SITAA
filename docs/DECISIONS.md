@@ -371,7 +371,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** el esquema actual usa `student|worker`, no distingue cuentas técnicas internas y sólo dispone de login. El acceso básico no debe confundirse con responsabilidades académicas.
 
-**Decisión:** SITAA tendrá rutas públicas distintas para alumnos y profesores. Ambas capturan identidad institucional y continúan con Google OAuth; Google aporta correo verificado y SITAA activa sólo después de completar el perfil. No hay restricción de dominio. Las cuentas institucionales usan `student|professor`, identificador de dígitos como texto y programa obligatorio. Las cuentas `technical` se crean administrativamente. Perfil y asignaciones permanecen separados.
+**Decisión:** SITAA tendrá rutas públicas distintas para alumnos y profesores. Ambas autentican primero con Google y capturan identidad institucional después, en formularios autenticados de tipo fijo. Google aporta correo verificado y SITAA activa sólo al completar el perfil. No hay restricción de dominio. Las cuentas institucionales usan `student|professor`, identificador de dígitos como texto y programa obligatorio. Las cuentas `technical` se crean administrativamente. Perfil y asignaciones permanecen separados.
 
 **Consecuencias:** un profesor nuevo no es tutor ni asesor; un alumno nuevo no es tutor par. La persona desarrolladora puede tener una cuenta institucional ordinaria y otra técnica independiente. Corregir identidad principal corresponde a administración técnica auditada. La implementación requiere una migración a partir de 0004 y backfill verificado.
 
@@ -381,9 +381,9 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Contexto:** el registro público debe crear el perfil sin exponer credenciales administrativas ni confiar en metadata editable para privilegios.
 
-**Decisión:** 0004 usa triggers y RPC `SECURITY DEFINER`. Un Google nuevo crea un profile mínimo `pending_registration`; un intent opaco de 15 minutos, almacenado sólo como SHA-256, completa identidad y activa transaccionalmente. Signup público por contraseña y OAuth distinto de Google se rechazan. El login por contraseña permanece sólo para usuarios existentes. La creación no genera `role_assignments`; cuentas técnicas requieren `app_metadata` confiable. Toda inserción futura crea exactamente un profile o revierte atómicamente.
+**Decisión:** 0004 usa triggers y un RPC `SECURITY DEFINER` exclusivo de `authenticated`. Un Google nuevo crea un profile mínimo `pending_registration`; después, el usuario captura identidad institucional y completa el mismo perfil transaccionalmente. No existe tabla de intents, PII preautenticación, escritura anónima ni endpoint de disponibilidad. Signup público por contraseña y OAuth distinto de Google se rechazan. El login por contraseña permanece sólo para usuarios existentes. La creación no genera `role_assignments`; cuentas técnicas requieren `app_metadata` confiable. Toda inserción futura crea exactamente un profile o revierte atómicamente.
 
-**Consecuencias:** no se necesita SMTP para registro Google ni se envía identidad institucional a Google. El token crudo permanece en cookie `HttpOnly`, nunca en URL o `localStorage`. La aplicación nunca recibe `service_role`. Administración, sesiones y auditoría completa continúan en Fase B.
+**Consecuencias:** no se necesita SMTP ni se envía identidad institucional a Google. Una cookie breve `HttpOnly` guarda sólo la ruta `student|professor`; no contiene PII ni funciona como autorización. La duplicidad se informa únicamente después de autenticar. La aplicación nunca recibe `service_role`. Administración y auditoría completa continúan en Fase B.
 
 **Estado:** Implementada en código y migración 0004; migración pendiente de aplicación y preflight.
 

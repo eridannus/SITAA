@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { RegistrationProgram } from "@/types/registration";
 
-export async function getPublicRegistrationPrograms(): Promise<RegistrationProgram[]> {
+export async function getRegistrationPrograms(): Promise<RegistrationProgram[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("academic_programs")

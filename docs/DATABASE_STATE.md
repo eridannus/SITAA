@@ -72,7 +72,7 @@ Los nueve resultados del verificador de 0003 fueron verdaderos y la prueba termi
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
 - La Fase A Google está implementada localmente en `0004_identity_registration_foundation.sql`, pero **0004 no está aplicada** y el snapshot vivo sigue representando `0001 + 0002 + 0003`. El preflight aprobado debe volver a ejecutarse antes de aplicar; Google OAuth y sus redirects son prerrequisitos operativos.
-- 0004 añadirá `pending_registration`, `registration_intents`, triggers Google y RPC de creación/consumo. Usuarios correo/contraseña existentes permanecen compatibles y no necesitan identidad Google.
+- 0004 añadirá `pending_registration`, triggers Google y un RPC autenticado de finalización. No agrega intents ni escrituras anónimas de registro. Usuarios correo/contraseña existentes permanecen compatibles y no necesitan identidad Google.
 - Administración de cuentas (Fase B), roles V2 (Fase C), filtros (Fase D), retiro de A-02 (Fase E) y check-in abierto (Fase F) siguen pendientes.
 - Permanecen siete hallazgos medios y cuatro bajos de la auditoría; 0002 y 0003 no pretendían resolverlos.
 - El check-in abierto sigue pendiente. En una capacidad futura, un usuario autenticado de SITAA no preinscrito podrá ser agregado como participante y marcado `attended` en una sola operación transaccional, únicamente cuando la actividad habilite check-in abierto.

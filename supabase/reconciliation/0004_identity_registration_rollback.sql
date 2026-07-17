@@ -21,19 +21,12 @@ drop trigger if exists on_sitaa_auth_user_created on auth.users;
 drop trigger if exists on_sitaa_auth_user_email_changed on auth.users;
 drop trigger if exists enforce_sitaa_profile_identity on public.profiles;
 
-revoke all on function public.complete_own_google_registration(text) from public, anon, authenticated;
-revoke all on function public.create_registration_intent(text, text, text, uuid) from public, anon, authenticated;
-drop function if exists public.complete_own_google_registration(text);
-drop function if exists public.create_registration_intent(text, text, text, uuid);
+revoke all on function public.complete_own_google_registration(text, text, text, uuid)
+  from public, anon, authenticated;
+drop function if exists public.complete_own_google_registration(text, text, text, uuid);
 drop function if exists public.sync_sitaa_profile_email_from_auth();
 drop function if exists public.handle_sitaa_auth_user_created();
 drop function if exists public.enforce_sitaa_profile_identity();
-
-revoke all on table public.registration_intents from public, anon, authenticated;
-drop table if exists public.registration_intents;
-
-drop policy if exists "Public can read active academic programs" on public.academic_programs;
-revoke select on table public.academic_programs from anon;
 
 revoke update (full_name) on table public.profiles from authenticated;
 grant select, update on table public.profiles to authenticated;
@@ -137,5 +130,4 @@ commit;
 -- No reversible automáticamente:
 -- - las identidades Google vinculadas en auth.identities permanecen;
 -- - los Auth users y profiles permanecen;
--- - el trigger de alta Google y los intents dejan de existir;
--- - pgcrypto no se elimina porque puede ser compartida por otras capacidades.
+-- - el trigger de alta Google y el RPC de finalización dejan de existir.

@@ -31,9 +31,10 @@ npm run start  # Inicia la compilación de producción
 - `/supabase-test`: verifica la configuración y consulta `public.system_health`.
 - `/login`: Google como acceso principal y correo/contraseña heredado como opción secundaria.
 - `/register`: elección de registro de alumno o profesor.
-- `/register/student` y `/register/professor`: identidad institucional y continuación con Google.
-- `/auth/callback`: intercambio PKCE y finalización segura del registro.
-- `/complete-registration`: recuperación para perfiles Google con registro pendiente.
+- `/register/student` y `/register/professor`: inicio Google sin capturar PII institucional.
+- `/auth/callback`: intercambio PKCE y selección de la ruta de finalización.
+- `/complete-registration`: selector para perfiles Google con registro pendiente.
+- `/complete-registration/student` y `/complete-registration/professor`: identidad institucional autenticada de tipo fijo.
 - `/dashboard`: panel protegido con perfil institucional y asignaciones de rol activas.
 - `/catalogs`: visor protegido de catálogos operativos activos.
 - `/profile`: edición protegida de identidad institucional básica.
@@ -55,7 +56,7 @@ La clave `anon` es pública y está sujeta a las políticas RLS. No agregues cla
 
 El acceso público usa Google OAuth con cookies SSR; correo/contraseña permanece sólo para cuentas heredadas. El registro no restringe dominios ni requiere SMTP. Antes de producción se debe configurar Google según `docs/GOOGLE_AUTH_SETUP.md`, aplicar/verificar 0004 y autorizar `https://www.sitaa.net/auth/callback` junto con callbacks locales o técnicos deliberados.
 
-El registro crea únicamente identidad básica; no asigna tutoría, asesoría, tutoría par ni administración. Las cuentas técnicas no usan formularios públicos.
+El registro autentica primero con Google y sólo después solicita identidad institucional. No existe escritura anónima ni consulta de disponibilidad de identificadores; tampoco asigna tutoría, asesoría, tutoría par o administración. Las cuentas técnicas no usan formularios públicos.
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 

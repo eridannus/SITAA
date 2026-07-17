@@ -1,8 +1,9 @@
--- SITAA 0004: identidad institucional y registro público con Google OAuth.
+-- SITAA 0004: identidad institucional posterior a Google OAuth.
 --
 -- Requiere 0001 + 0002 + 0003 aplicadas. No crea usuarios, roles ni cuentas
 -- técnicas reales. Debe revisarse y aplicarse manualmente después de aprobar
 -- el preflight. Google autentica; SITAA conserva la identidad institucional.
+-- No recibe PII institucional ni ejecuta escrituras de registro antes de OAuth.
 
 begin;
 
@@ -118,19 +119,11 @@ end;
 $preflight$;
 
 -- -----------------------------------------------------------------------------
--- Dependencias y catálogo público del formulario.
+-- Catálogo de programas para el formulario autenticado.
 -- -----------------------------------------------------------------------------
-
-create schema if not exists extensions;
-create extension if not exists pgcrypto with schema extensions;
 
 alter table public.academic_programs
   add column if not exists is_active boolean not null default true;
-
-drop policy if exists "Public can read active academic programs" on public.academic_programs;
-create policy "Public can read active academic programs"
-on public.academic_programs for select to anon using (is_active = true);
-grant select on table public.academic_programs to anon;
 
 -- -----------------------------------------------------------------------------
 -- Profiles: identidad estable y ciclo pending_registration | active | inactive.
@@ -232,97 +225,6 @@ alter table public.profiles
 create unique index if not exists profiles_institutional_identifier_pair_key
   on public.profiles (institutional_id_type, institutional_id_value)
   where account_kind = 'institutional' and institutional_id_value is not null;
-
--- -----------------------------------------------------------------------------
--- Registro previo a OAuth: intent opaco, breve y de un solo uso.
--- -----------------------------------------------------------------------------
-
-create table public.registration_intents (
-  id uuid primary key default gen_random_uuid(),
-  token_hash text not null unique,
-  person_type text not null check (person_type in ('student', 'professor')),
-  full_name text not null check (
-    char_length(full_name) between 2 and 200
-    and full_name = regexp_replace(btrim(full_name), '\s+', ' ', 'g')
-  ),
-  institutional_id_value text not null check (
-    institutional_id_value ~ '^[0-9]+$'
-    and char_length(institutional_id_value) between 1 and 50
-  ),
-  primary_program_id uuid not null references public.academic_programs(id),
-  expires_at timestamp with time zone not null default (now() + interval '15 minutes'),
-  consumed_at timestamp with time zone,
-  consumed_by uuid references auth.users(id),
-  created_at timestamp with time zone not null default now(),
-  constraint registration_intents_consumption_check check (
-    (consumed_at is null and consumed_by is null)
-    or (consumed_at is not null and consumed_by is not null)
-  )
-);
-
-alter table public.registration_intents enable row level security;
-revoke all on table public.registration_intents from public, anon, authenticated;
-
-create or replace function public.create_registration_intent(
-  requested_person_type text,
-  requested_full_name text,
-  requested_institutional_id_value text,
-  requested_primary_program_id uuid
-) returns text
-language plpgsql
-security definer
-set search_path = pg_catalog, public, extensions
-as $function$
-declare
-  normalized_name text := regexp_replace(btrim(coalesce(requested_full_name, '')), '\s+', ' ', 'g');
-  normalized_identifier text := btrim(coalesce(requested_institutional_id_value, ''));
-  identifier_type text;
-  raw_token text;
-begin
-  if requested_person_type not in ('student', 'professor') then
-    raise exception 'sitaa_invalid_registration_type' using errcode = '23514';
-  end if;
-  if char_length(normalized_name) not between 2 and 200 then
-    raise exception 'sitaa_invalid_full_name' using errcode = '23514';
-  end if;
-  if normalized_identifier !~ '^[0-9]+$' then
-    raise exception 'sitaa_invalid_institutional_identifier' using errcode = '23514';
-  end if;
-  if char_length(normalized_identifier) > 50 then
-    raise exception 'sitaa_identifier_too_long' using errcode = '23514';
-  end if;
-  if not exists (
-    select 1 from public.academic_programs ap
-    where ap.id = requested_primary_program_id and ap.is_active
-  ) then
-    raise exception 'sitaa_invalid_registration_program' using errcode = '23514';
-  end if;
-
-  identifier_type := case
-    when requested_person_type = 'student' then 'student_account'
-    else 'worker_number'
-  end;
-  if exists (
-    select 1 from public.profiles p
-    where p.institutional_id_type = identifier_type
-      and p.institutional_id_value = normalized_identifier
-  ) then
-    raise exception 'sitaa_identifier_conflict' using errcode = '23505';
-  end if;
-
-  raw_token := encode(extensions.gen_random_bytes(32), 'hex');
-  insert into public.registration_intents (
-    token_hash, person_type, full_name, institutional_id_value, primary_program_id
-  ) values (
-    encode(extensions.digest(raw_token, 'sha256'), 'hex'),
-    requested_person_type, normalized_name, normalized_identifier, requested_primary_program_id
-  );
-  return raw_token;
-end;
-$function$;
-
-revoke all on function public.create_registration_intent(text, text, text, uuid) from public;
-grant execute on function public.create_registration_intent(text, text, text, uuid) to anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Protección de profiles y normalización del ciclo de vida.
@@ -491,26 +393,29 @@ for each row when (old.email is distinct from new.email)
 execute function public.sync_sitaa_profile_email_from_auth();
 
 -- -----------------------------------------------------------------------------
--- Consumo autenticado y transaccional del intent.
+-- Finalización autenticada y transaccional del registro institucional.
 -- -----------------------------------------------------------------------------
 
-create or replace function public.complete_own_google_registration(raw_intent_token text)
+create or replace function public.complete_own_google_registration(
+  requested_person_type text,
+  requested_full_name text,
+  requested_institutional_id_value text,
+  requested_primary_program_id uuid
+)
 returns void
 language plpgsql
 security definer
-set search_path = pg_catalog, public, auth, extensions
+set search_path = pg_catalog, public, auth
 as $function$
 declare
   current_user_id uuid := auth.uid();
-  target_intent public.registration_intents%rowtype;
   target_profile public.profiles%rowtype;
+  normalized_name text := regexp_replace(btrim(coalesce(requested_full_name, '')), '\s+', ' ', 'g');
+  normalized_identifier text := btrim(coalesce(requested_institutional_id_value, ''));
   identifier_type text;
 begin
   if current_user_id is null then
     raise exception 'sitaa_authentication_required' using errcode = '42501';
-  end if;
-  if nullif(btrim(raw_intent_token), '') is null then
-    raise exception 'sitaa_invalid_or_expired_registration_intent' using errcode = '22023';
   end if;
   if not exists (
     select 1 from auth.users u
@@ -535,39 +440,45 @@ begin
     raise exception 'sitaa_registration_not_pending' using errcode = '42501';
   end if;
 
-  select * into target_intent from public.registration_intents
-  where token_hash = encode(extensions.digest(raw_intent_token, 'sha256'), 'hex')
-  for update;
-  if not found or target_intent.consumed_at is not null or target_intent.expires_at <= now() then
-    raise exception 'sitaa_invalid_or_expired_registration_intent' using errcode = '22023';
+  if requested_person_type not in ('student', 'professor') then
+    raise exception 'sitaa_invalid_registration_type' using errcode = '23514';
+  end if;
+  if char_length(normalized_name) not between 2 and 200 then
+    raise exception 'sitaa_invalid_full_name' using errcode = '23514';
+  end if;
+  if normalized_identifier !~ '^[0-9]+$' then
+    raise exception 'sitaa_invalid_institutional_identifier' using errcode = '23514';
+  end if;
+  if char_length(normalized_identifier) > 50 then
+    raise exception 'sitaa_identifier_too_long' using errcode = '23514';
   end if;
   if not exists (
     select 1 from public.academic_programs ap
-    where ap.id = target_intent.primary_program_id and ap.is_active
+    where ap.id = requested_primary_program_id and ap.is_active
   ) then
     raise exception 'sitaa_invalid_registration_program' using errcode = '23514';
   end if;
 
   identifier_type := case
-    when target_intent.person_type = 'student' then 'student_account'
+    when requested_person_type = 'student' then 'student_account'
     else 'worker_number'
   end;
   if exists (
     select 1 from public.profiles p
     where p.id <> current_user_id
       and p.institutional_id_type = identifier_type
-      and p.institutional_id_value = target_intent.institutional_id_value
+      and p.institutional_id_value = normalized_identifier
   ) then
     raise exception 'sitaa_identifier_conflict' using errcode = '23505';
   end if;
 
   begin
     update public.profiles
-    set full_name = target_intent.full_name,
-        person_type = target_intent.person_type,
-        primary_program_id = target_intent.primary_program_id,
+    set full_name = normalized_name,
+        person_type = requested_person_type,
+        primary_program_id = requested_primary_program_id,
         institutional_id_type = identifier_type,
-        institutional_id_value = target_intent.institutional_id_value,
+        institutional_id_value = normalized_identifier,
         account_status = 'active', is_active = true,
         activated_at = now(), deactivated_at = null
     where id = current_user_id;
@@ -575,14 +486,13 @@ begin
     raise exception 'sitaa_identifier_conflict' using errcode = '23505';
   end;
 
-  update public.registration_intents
-  set consumed_at = now(), consumed_by = current_user_id
-  where id = target_intent.id;
 end;
 $function$;
 
-revoke all on function public.complete_own_google_registration(text) from public, anon;
-grant execute on function public.complete_own_google_registration(text) to authenticated;
+revoke all on function public.complete_own_google_registration(text, text, text, uuid)
+  from public, anon;
+grant execute on function public.complete_own_google_registration(text, text, text, uuid)
+  to authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Compatibilidad funcional: worker pasa a professor sin cambiar roles actuales.

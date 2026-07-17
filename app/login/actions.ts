@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { AUTH_NEXT_COOKIE, oauthCookieOptions } from "@/lib/auth/oauth-cookies";
+import {
+  AUTH_NEXT_COOKIE,
+  clearCallbackCookie,
+  oauthCallbackCookieOptions,
+} from "@/lib/auth/oauth-cookies";
 import { getSiteOrigin } from "@/lib/auth/site-url";
 import { safeNextPath } from "@/lib/navigation/safe-next-path";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -71,15 +75,15 @@ export async function loginWithGoogle(formData: FormData) {
     requestHeaders.get("x-forwarded-proto"),
   );
   const cookieStore = await cookies();
-  if (nextPath) cookieStore.set(AUTH_NEXT_COOKIE, nextPath, oauthCookieOptions());
-  else cookieStore.delete(AUTH_NEXT_COOKIE);
+  if (nextPath) cookieStore.set(AUTH_NEXT_COOKIE, nextPath, oauthCallbackCookieOptions());
+  else clearCallbackCookie(cookieStore, AUTH_NEXT_COOKIE);
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: { redirectTo: new URL("/auth/callback", origin).toString() },
   });
   if (error || !data.url) {
-    cookieStore.delete(AUTH_NEXT_COOKIE);
+    clearCallbackCookie(cookieStore, AUTH_NEXT_COOKIE);
     redirect(loginErrorPath("google", nextPath));
   }
   redirect(data.url);

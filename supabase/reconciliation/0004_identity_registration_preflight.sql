@@ -1,5 +1,6 @@
 -- Preflight de sólo lectura para SITAA 0004 (Google OAuth).
 -- Ejecutar antes de aplicar 0004. La salida normal contiene sólo conteos.
+-- La revisión final no depende de tablas o escrituras de registro previas a OAuth.
 
 begin transaction read only;
 

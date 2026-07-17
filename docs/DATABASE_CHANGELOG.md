@@ -77,11 +77,11 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Reutiliza las columnas actuales de identidad; añade `account_kind`, `account_status`, `activated_at`, `deactivated_at` e `academic_programs.is_active`.
 - Unicidad: par `(institutional_id_type, institutional_id_value)`; se permiten valores iguales entre tipos diferentes.
 - Auth: trigger atómico para Google nuevo, sincronización de correo y soporte confiable de cuentas técnicas; signup público por contraseña queda rechazado y nunca se crean roles.
-- Intents: tabla privada con huella SHA-256, vigencia de 15 minutos y RPC de creación/consumo transaccional.
+- Registro: Google crea un perfil pendiente; la identidad institucional se captura después de autenticar y se completa con un RPC transaccional exclusivo de `authenticated`. No hay tabla de intents ni escritura anónima.
 - Autoservicio: UPDATE directo de `profiles` limitado a `full_name`.
 - Preflight: `supabase/reconciliation/0004_identity_registration_preflight.sql`.
 - Preflight Google: bloquea huérfanos Auth/profile, límites incompatibles, dependencias de `pending_verification` y triggers no documentados; email/password y OAuth existentes se reportan como informativos.
-- Verificación: fixtures Google, proveedores rechazados, intents, consumo, expiración, duplicados, estados, roles y regresiones; termina con `ROLLBACK`.
+- Verificación: fixtures Google, proveedores rechazados, finalización autenticada, límites, duplicados, estados, roles y regresiones; termina con `ROLLBACK`.
 - Rollback manual: `supabase/reconciliation/0004_identity_registration_rollback.sql`, exige revisión explícita.
 - Plan: `docs/TEST_PLAN_0004.md`.
 - Aplicación coordinada: aprobar preflight, aplicar 0004, desplegar inmediatamente la aplicación compatible, verificar y regenerar snapshot.

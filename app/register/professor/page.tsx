@@ -1,22 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { RegistrationForm } from "@/components/registration-form";
-import { getPublicRegistrationPrograms } from "@/lib/registration/programs";
-import type { RegistrationProgram } from "@/types/registration";
+import { GoogleRegistrationStart } from "@/components/google-registration-start";
 
-export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Registro de profesor" };
 
-export default async function ProfessorRegistrationPage() {
-  let programs: RegistrationProgram[] = [];
-  try {
-    programs = await getPublicRegistrationPrograms();
-  } catch {
-    return <RegistrationUnavailable />;
-  }
+type Props = { searchParams: Promise<{ error?: string | string[] }> };
 
-  if (!programs.length) return <RegistrationUnavailable />;
-
+export default async function ProfessorRegistrationPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const hasError = Boolean(Array.isArray(params.error) ? params.error[0] : params.error);
   return (
     <main className="mx-auto max-w-4xl px-5 py-16 sm:px-8 sm:py-20">
       <Link href="/register" className="cursor-pointer text-sm font-bold text-emerald-800 hover:text-emerald-950">
@@ -24,24 +16,15 @@ export default async function ProfessorRegistrationPage() {
       </Link>
       <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
         <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Profesor</p>
-        <h1 className="mt-3 text-3xl font-bold text-emerald-950">Crear cuenta de profesor</h1>
+        <h1 className="mt-3 text-3xl font-bold text-emerald-950">Comenzar registro de profesor</h1>
         <p className="mt-4 leading-7 text-slate-600">
-          Google verificará tu cuenta. No recibirás permisos de tutoría o asesoría sin una asignación autorizada.
+          Google autenticará tu cuenta. Después capturarás tu nombre, número de trabajador UNAM y programa principal dentro de SITAA.
         </p>
-        <RegistrationForm personType="professor" programs={programs} />
-      </div>
-    </main>
-  );
-}
-
-function RegistrationUnavailable() {
-  return (
-    <main className="mx-auto max-w-3xl px-5 py-16 sm:px-8 sm:py-20">
-      <div className="rounded-3xl border border-amber-200 bg-white p-8 sm:p-12">
-        <h1 className="text-3xl font-bold text-slate-900">Registro no disponible temporalmente</h1>
-        <p className="mt-4 leading-7 text-slate-600">
-          No fue posible cargar los programas académicos. Intenta nuevamente más tarde.
-        </p>
+        {hasError && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">No fue posible iniciar el acceso con Google. Intenta nuevamente.</p>}
+        <div className="mt-6 rounded-2xl bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
+          Puedes usar cualquier cuenta de Google. Recomendamos una cuenta personal controlada por ti; una cuenta compartida o de oficina reduce la trazabilidad individual.
+        </div>
+        <GoogleRegistrationStart personType="professor" />
       </div>
     </main>
   );

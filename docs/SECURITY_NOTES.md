@@ -9,14 +9,15 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 ### Identidad y sesión
 
 - Usar Supabase Auth con Google OAuth para registro y login público. No restringir dominios ni usar `hd`; aceptar Gmail, Workspace y `pc.puma` con scopes básicos `openid`, `email`, `profile`.
-- 0004 crea `pending_registration` para Google nuevo y sólo activa al consumir un intent válido. SMTP no es requisito. El acceso correo/contraseña permanece únicamente para identidades heredadas.
+- 0004 crea `pending_registration` para Google nuevo y sólo activa mediante un RPC autenticado que completa el propio perfil. SMTP no es requisito. El acceso correo/contraseña permanece únicamente para identidades heredadas.
 - Las cuentas `technical` siguen siendo exclusivamente administrativas: sólo `app_metadata` confiable puede originarlas; el formulario público no controla tipo de cuenta, estado ni roles.
 - SITAA no permite cuentas que existan sólo en Auth. Cada alta debe resolver exactamente un camino institucional o técnico y crear exactamente un perfil; metadata ausente, no soportada o ambigua aborta la transacción completa sin dejar un Auth user huérfano.
 - El preflight de 0004 bloquea por separado perfiles sin Auth y Auth users sin perfil. La conciliación de estos casos se realiza con acceso privado: no se inventan nombres, programas ni identificadores y no se elimina una cuenta salvo confirmación explícita de que es sintética y desechable.
 - La base limita los identificadores institucionales a 1–50 dígitos como texto, el nombre normalizado a 2–200 caracteres y el correo normalizado a 254 caracteres. El trigger de alta aplica los mismos límites antes de crear el perfil.
 - Gestionar la sesión con clientes SSR y cookies seguras; validar al usuario en el servidor antes de servir rutas protegidas.
 - Configurar redirecciones autorizadas y cookies seguras.
-- El registration intent usa token aleatorio, huella SHA-256, expiración de 15 minutos y cookie `HttpOnly`; no se guarda en URL, `localStorage` ni texto claro.
+- No se recibe ni almacena PII institucional antes de Google. La selección pública guarda sólo `student` o `professor` en una cookie breve `HttpOnly` limitada al callback.
+- No existe RPC anónimo para crear registros o consultar disponibilidad. El conflicto de identificador sólo se revela al usuario autenticado que completa su propio perfil.
 - No revelar si un correo está registrado mediante mensajes de error diferenciados.
 - Revocar acceso al desactivar perfiles o vencer asignaciones.
 - No permitir que el usuario cambie por autoservicio tipo de cuenta/persona, identificador, programa principal, estado o roles.
