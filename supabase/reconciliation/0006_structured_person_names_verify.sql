@@ -37,6 +37,14 @@ returns text language sql stable set search_path = pg_temp as $$
   select email from sitaa_0006_cases where label = target_label
 $$;
 
+-- El cambio de rol posterior debe conservar acceso sólo al lookup temporal del arnés.
+-- Estos permisos desaparecen con la tabla y el esquema temporal de la sesión.
+revoke all on function pg_temp.case_id(text) from public, anon;
+revoke all on function pg_temp.case_email(text) from public, anon;
+grant select on table pg_temp.sitaa_0006_cases to authenticated;
+grant execute on function pg_temp.case_id(text) to authenticated;
+grant execute on function pg_temp.case_email(text) to authenticated;
+
 create or replace function pg_temp.insert_auth_user(
   target_label text,
   target_provider text default 'google',

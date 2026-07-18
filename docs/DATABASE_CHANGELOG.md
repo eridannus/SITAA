@@ -110,7 +110,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Datos operativos: se documentó de forma genérica una separación administrativa única entre cuenta técnica y cuenta académica. No se convirtió en migración reutilizable.
 - Fase A: cerrada y operativa. Las fases B–F permanecen pendientes.
 
-## 0006_structured_person_names.sql — creada, no aplicada
+## 0006_structured_person_names.sql — aplicada; verificador pendiente de repetición
 
 - Formaliza las columnas preexistentes `first_names`, `paternal_surname` y `maternal_surname` como autoridad del nombre personal.
 - Mantiene `full_name` como compatibilidad derivada mediante trigger; no lo elimina ni divide nombres históricos.
@@ -119,4 +119,6 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - El verificador transaccional cubre límites de nombres e identificadores, identidad Google, programas, ciclo de cuenta, edición propia, ACL y regresiones 0002–0005; termina con `ROLLBACK`.
 - El rollback revoca primero los permisos 0006, restaura el contrato post‑0005 sin borrar columnas ni valores y se autoverifica antes de confirmar.
 - Incluye `docs/TEST_PLAN_0006.md`, alineado con los contratos de preflight, verificación y rollback.
-- Estado: pendiente de revisión, preflight y aplicación manual coordinada; el snapshot vivo sigue representando 0001–0005.
+- Estado: migración aplicada y aplicación compatible desplegada. La primera ejecución del verificador detectó un defecto exclusivo del arnés: `authenticated` no podía consultar `pg_temp.sitaa_0006_cases` mediante `pg_temp.case_id(text)`.
+- Corrección del arnés: grants temporales y acotados de `SELECT` sobre la tabla de lookup y `EXECUTE` sobre sus dos helpers; no cambia ningún objeto o privilegio persistente. El verificador debe repetirse y conservar su `ROLLBACK` final.
+- El snapshot vivo versionado todavía representa 0001–0005 y requiere reconciliación posterior autorizada.

@@ -74,7 +74,7 @@ El preflight embebido repite todas las condiciones bloqueantes y aborta la trans
 - Verifica que roles y perfil permanezcan separados.
 - Comprueba funciones, triggers y políticas esenciales introducidos por 0002–0005.
 
-Todas las fixtures usan UUID y dominios `.invalid`, viven dentro de una transacción explícita y se eliminan con el `ROLLBACK` final.
+Todas las fixtures usan UUID y dominios `.invalid`, viven dentro de una transacción explícita y se eliminan con el `ROLLBACK` final. El rol `authenticated` recibe únicamente `SELECT` sobre `pg_temp.sitaa_0006_cases` y `EXECUTE` sobre `pg_temp.case_id(text)` y `pg_temp.case_email(text)` para resolver las fixtures durante las pruebas de privilegios; no recibe acceso a `sitaa_0006_context` ni a objetos persistentes adicionales.
 
 ## Pruebas de aplicación coordinada
 
