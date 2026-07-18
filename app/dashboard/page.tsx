@@ -58,7 +58,7 @@ export default async function DashboardPage() {
   if (context.error) {
     return (
       <section className="mx-auto max-w-4xl px-5 py-16 sm:px-8 sm:py-20">
-        <div className="rounded-3xl border border-red-200 bg-white p-8 shadow-xl shadow-red-950/5 sm:p-12">
+        <div className="sitaa-alert sitaa-alert--error p-8 sm:p-12">
           <p className="text-sm font-bold uppercase tracking-[0.2em] text-red-700">
             Información no disponible
           </p>
@@ -76,7 +76,7 @@ export default async function DashboardPage() {
   if (!context.profile) {
     return (
       <section className="mx-auto max-w-4xl px-5 py-16 sm:px-8 sm:py-20">
-        <div className="rounded-3xl border border-amber-200 bg-white p-8 shadow-xl shadow-amber-950/5 sm:p-12">
+        <div className="sitaa-alert sitaa-alert--warning p-8 sm:p-12">
           <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-700">
             Activación pendiente
           </p>
@@ -132,7 +132,7 @@ export default async function DashboardPage() {
                 <dd className="mt-1 text-base text-slate-900">{primaryProgram.name}</dd>
               </div>
             ) : profile.account_kind !== "technical" ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="sitaa-alert sitaa-alert--warning">
                 <dt className="font-semibold text-amber-800">Programa académico principal</dt>
                 <dd className="mt-1 text-sm font-semibold text-amber-900">Programa no asignado</dd>
               </div>

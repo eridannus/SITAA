@@ -19,6 +19,7 @@ Antes de proponer o implementar cambios, revisar:
 9. `docs/USER_ACCOUNT_ADMINISTRATION.md`
 10. `docs/FILTERING_AND_VISIBILITY.md`
 11. `docs/GOOGLE_AUTH_SETUP.md` para cambios de autenticación o despliegue OAuth.
+12. `docs/DESIGN_SYSTEM.md` para cualquier interfaz o cambio visual.
 
 Para preparar 0004 o cambios de identidad/autorización, revisar también `docs/IMPLEMENTATION_GAPS_0004.md`. `docs/ROLES_AND_PERMISSIONS.md` conserva reglas operativas implementadas, pero su catálogo futuro y matriz de asignación están parcialmente sustituidos por la versión V2.
 
@@ -36,6 +37,14 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 - Mantener los cambios pequeños, verificables y documentados.
 - No incluir secretos, credenciales, datos reales de estudiantes ni archivos de entorno en Git.
 - No añadir dependencias, servicios de pago o complejidad arquitectónica sin justificarlo en `docs/DECISIONS.md`.
+
+## Interfaz obligatoria
+
+- `docs/DESIGN_SYSTEM.md` es la fuente canónica de color, componentes, estados e interacción.
+- Usar tokens y primitivas semánticas existentes antes de crear estilos nuevos; nunca introducir branding `emerald-*`.
+- Usar verde sólo mediante el contrato semántico de éxito y especificar siempre foreground y background de controles rellenos.
+- Auditar responsive, wrapping, foco visible, teclado y objetivos táctiles después de todo cambio visual.
+- Ejecutar `npm run check:ui` y `npm run check:text` al modificar UI.
 
 ## Estado actual
 

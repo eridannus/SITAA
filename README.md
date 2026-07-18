@@ -20,6 +20,7 @@ Otros comandos útiles:
 
 ```bash
 npm run lint   # Revisa la calidad del código
+npm run check:ui # Detecta patrones visuales prohibidos
 npm run build  # Genera la compilación de producción
 npm run start  # Inicia la compilación de producción
 ```
@@ -63,6 +64,8 @@ Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los 
 La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-17T23:20:07Z` quedó reconciliado contra 0001–0005 sin deriva inexplicada. 0006 está creada, no aplicada, y formaliza los nombres personales estructurados conservando `full_name` como compatibilidad derivada.
 
 La navegación autenticada usa avatar Google validado o iniciales, menú de cuenta accesible y estados seleccionados de alto contraste. El acceso público emplea una tarjeta única que cabe en el viewport; el fondo canvas es decorativo, pausa en pestañas ocultas y respeta movimiento reducido.
+
+El sistema visual canónico está en `docs/DESIGN_SYSTEM.md`. Toda interfaz usa la identidad azul y oro y reserva el verde exclusivamente para estados semánticos de éxito. Antes de entregar cambios visuales es obligatorio ejecutar `npm run check:ui`.
 
 ## Alcance actual
 

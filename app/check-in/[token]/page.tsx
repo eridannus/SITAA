@@ -26,19 +26,19 @@ export default async function TokenCheckinPage({ params }: Props) {
   const isError = result.status === "error";
   const isWarning = result.status === "invalid" || result.status === "not-participant";
   const messageClass = isError
-    ? "border-red-200 bg-red-50 text-red-800"
+    ? "sitaa-alert--error"
     : isWarning
-      ? "border-amber-200 bg-amber-50 text-amber-900"
-      : "border-emerald-200 bg-emerald-50 text-emerald-800";
+      ? "sitaa-alert--warning"
+      : "sitaa-alert--success";
   return <main className="mx-auto max-w-3xl px-5 py-16 sm:px-8 sm:py-20">
-    <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Asistencia</p>
-    <h1 className="mt-3 text-3xl font-bold text-emerald-950 sm:text-4xl">Confirmación de asistencia</h1>
-    <div role={isError || isWarning ? "alert" : "status"} className={"mt-8 rounded-3xl border p-7 shadow-sm " + messageClass}>
+    <p className="sitaa-section-eyebrow">Asistencia</p>
+    <h1 className="sitaa-section-title mt-3 text-3xl sm:text-4xl">Confirmación de asistencia</h1>
+    <div role={isError || isWarning ? "alert" : "status"} className={"sitaa-alert mt-8 p-7 " + messageClass}>
       {result.activityTitle ? <p className="mb-3 break-words text-sm font-semibold opacity-80">{result.activityTitle}</p> : null}
       <p className="break-words text-lg font-bold">{result.message}</p>
     </div>
     <div className="mt-7 flex flex-wrap gap-3">
-      <Link href="/activities" className="inline-flex cursor-pointer rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Ver mis actividades</Link>
+      <Link href="/activities" className="sitaa-primary-action px-6">Ver mis actividades</Link>
     </div>
   </main>;
 }

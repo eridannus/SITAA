@@ -14,7 +14,7 @@ type WindowWithBarcodeDetector = Window & typeof globalThis & { BarcodeDetector?
 
 function SubmitButton() {
   const { pending } = useFormStatus();
-  return <button type="submit" disabled={pending} className="cursor-pointer rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+  return <button type="submit" disabled={pending} className="sitaa-primary-action px-6">
     {pending ? "Registrando..." : "Registrar asistencia"}
   </button>;
 }
@@ -268,14 +268,14 @@ function CheckinScanner({ onScanned }: { onScanned: (value: string) => void }) {
     <p className="mt-3 text-sm text-slate-600">Usa esta opción sólo si tienes el QR de asistencia. La cámara se solicitará hasta que pulses el botón.</p>
     <p className="mt-2 text-sm text-slate-600">También puedes escanear el QR con la cámara del teléfono o escribir el código manualmente.</p>
     <div className="mt-5 flex flex-wrap gap-3">
-      <button type="button" onClick={startScanning} disabled={scanning} className="cursor-pointer rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+      <button type="button" onClick={startScanning} disabled={scanning} className="sitaa-primary-action px-6">
         {scanning ? "Escaneando..." : "Escanear QR"}
       </button>
-      {scanning ? <button type="button" onClick={stopCamera} className="cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-sm font-bold text-slate-800 transition hover:border-slate-500 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Cancelar</button> : null}
+      {scanning ? <button type="button" onClick={stopCamera} className="sitaa-secondary-action px-6">Cancelar</button> : null}
     </div>
     <video ref={videoRef} autoPlay muted playsInline disablePictureInPicture className={scanning ? "mt-5 aspect-video w-full rounded-2xl bg-slate-950 object-cover" : "pointer-events-none absolute h-px w-px opacity-0"} />
     <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
-    {message ? <p role={message.startsWith("Apunta") ? "status" : "alert"} className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{message}</p> : null}
+    {message ? <p role={message.startsWith("Apunta") ? "status" : "alert"} className="sitaa-alert sitaa-alert--warning mt-4 font-semibold">{message}</p> : null}
   </div>;
 }
 
@@ -289,10 +289,10 @@ export function CheckinCodeForm({ returnHref = "/activities" }: { returnHref?: s
   const isWarning = state.status === "invalid" || state.status === "not-participant";
   const isRegistered = state.status === "success" || state.status === "already";
   const messageClass = isError
-    ? "border-red-200 bg-red-50 text-red-800"
+    ? "sitaa-alert--error"
     : isWarning
-      ? "border-amber-200 bg-amber-50 text-amber-900"
-      : "border-emerald-200 bg-emerald-50 text-emerald-800";
+      ? "sitaa-alert--warning"
+      : "sitaa-alert--success";
 
   function handleScanned(value: string) {
     const internalPath = extractInternalCheckinPath(value);
@@ -315,10 +315,10 @@ export function CheckinCodeForm({ returnHref = "/activities" }: { returnHref?: s
   }
 
   if (isRegistered) {
-    return <div className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50 p-7 text-emerald-900 shadow-sm sm:p-10">
+    return <div className="sitaa-alert sitaa-alert--success mt-8 p-7 sm:p-10">
       {state.activityTitle ? <p className="mb-3 break-words text-sm font-semibold opacity-80">{state.activityTitle}</p> : null}
       <p className="break-words text-lg font-bold">{state.message}</p>
-      <Link href={returnHref} className="mt-7 inline-flex cursor-pointer rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Ver mis actividades</Link>
+      <Link href={returnHref} className="sitaa-primary-action mt-7 px-6">Ver mis actividades</Link>
     </div>;
   }
 
@@ -336,17 +336,17 @@ export function CheckinCodeForm({ returnHref = "/activities" }: { returnHref?: s
       }
 
       setClientError(null);
-    }} className="mt-8 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
+    }} className="sitaa-card mt-8 p-7 sm:p-10">
       <input type="hidden" name="input_source" value={inputSource} />
       <input type="hidden" name="checkin_input" value={codeValue} />
-      <label htmlFor="checkin_code" className="block text-sm font-semibold text-slate-700">Código de asistencia</label>
+      <label htmlFor="checkin_code" className="sitaa-form-label">Código de asistencia</label>
       <input id="checkin_code" name="checkin_code" required placeholder="mar-foco-papel" value={codeValue} onChange={(event) => {
         setInputSource("manual");
         setCodeValue(event.target.value);
-      }} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
-      <p className="mt-3 text-sm text-slate-600">Puedes escribirlo con guiones o espacios. Ejemplo: mar-foco-papel.</p>
-      {clientError ? <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{clientError}</p> : null}
-      {state.message ? <div role={isError || isWarning ? "alert" : "status"} className={"mt-5 rounded-xl border px-4 py-3 text-sm font-semibold " + messageClass}>
+      }} className="sitaa-field mt-2" />
+      <p className="sitaa-help-text mt-3">Puedes escribirlo con guiones o espacios. Ejemplo: mar-foco-papel.</p>
+      {clientError ? <p role="alert" className="mt-3 text-sm font-semibold text-[var(--sitaa-error-foreground)]">{clientError}</p> : null}
+      {state.message ? <div role={isError || isWarning ? "alert" : "status"} className={"sitaa-alert mt-5 font-semibold " + messageClass}>
         {state.activityTitle ? <p className="mb-2 break-words text-xs opacity-80">{state.activityTitle}</p> : null}
         <p className="break-words">{state.message}</p>
       </div> : null}

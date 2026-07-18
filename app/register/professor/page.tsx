@@ -23,7 +23,7 @@ export default async function ProfessorRegistrationPage({ searchParams }: Props)
         <p className="mt-4 leading-7 text-slate-600">
           Google autenticará tu cuenta. Después capturarás tu nombre, número de trabajador UNAM y programa principal dentro de SITAA.
         </p>
-        {hasError && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">No fue posible iniciar el acceso con Google. Intenta nuevamente.</p>}
+        {hasError && <p role="alert" className="sitaa-alert sitaa-alert--error mt-6">No fue posible iniciar el acceso con Google. Intenta nuevamente.</p>}
         <div className="mt-6 rounded-2xl bg-[var(--sitaa-blue-light)] p-4 text-sm leading-6 text-[var(--sitaa-blue-dark)]">
           Puedes usar cualquier cuenta de Google. Recomendamos una cuenta personal controlada por ti; una cuenta compartida o de oficina reduce la trazabilidad individual.
         </div>

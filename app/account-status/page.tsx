@@ -44,13 +44,13 @@ export default async function AccountStatusPage() {
 
   return (
     <main className="mx-auto grid min-h-[70vh] max-w-4xl place-items-center px-5 py-16 sm:px-8">
-      <div className="w-full rounded-3xl border border-amber-200 bg-white p-8 shadow-xl shadow-amber-950/5 sm:p-12">
+      <div className="sitaa-card w-full p-8 sm:p-12">
         <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-700">{state.eyebrow}</p>
         <h1 className="mt-4 text-3xl font-bold text-slate-900">{state.title}</h1>
         <p className="mt-5 max-w-2xl leading-7 text-slate-600">{state.message}</p>
         <p className="mt-4 break-all text-sm text-slate-500">Cuenta: {user.email}</p>
         <form action={logout} className="mt-8">
-          <button type="submit" className="cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-sm font-bold text-slate-700 transition hover:border-red-300 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2">
+          <button type="submit" className="sitaa-secondary-action px-6">
             Cerrar sesión
           </button>
         </form>

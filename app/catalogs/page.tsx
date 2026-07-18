@@ -68,9 +68,9 @@ function getItemLabel(item: CatalogRow) {
 
 function CatalogCard({ section, items }: { section: CatalogSection; items: CatalogRow[] }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+    <section className="sitaa-card p-6 sm:p-8">
       <div className="border-b border-slate-100 pb-5">
-        <h2 className="text-xl font-bold text-emerald-950">{section.title}</h2>
+        <h2 className="text-xl font-bold text-[var(--sitaa-blue-dark)]">{section.title}</h2>
         <p className="mt-2 text-sm leading-6 text-slate-500">{section.description}</p>
       </div>
 
@@ -87,7 +87,7 @@ function CatalogCard({ section, items }: { section: CatalogSection; items: Catal
                     <p className="mt-1 text-sm leading-6 text-slate-600">{item.description}</p>
                   )}
                 </div>
-                <code className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                <code className="sitaa-status-badge sitaa-status-badge--info w-fit">
                   {item.code}
                 </code>
               </div>
@@ -117,8 +117,8 @@ export default async function CatalogsPage() {
   } catch {
     return (
       <section className="mx-auto max-w-4xl px-5 py-16 sm:px-8 sm:py-20">
-        <div className="rounded-3xl border border-red-200 bg-white p-8 shadow-xl shadow-red-950/5 sm:p-12">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-red-700">
+        <div className="sitaa-alert sitaa-alert--error p-8 sm:p-12">
+          <p className="text-sm font-bold uppercase tracking-[0.2em]">
             Catálogos no disponibles
           </p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900">
@@ -135,10 +135,10 @@ export default async function CatalogsPage() {
   return (
     <main className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
       <div className="max-w-3xl">
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">
+        <p className="sitaa-section-eyebrow">
           Configuración operativa
         </p>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">
+        <h1 className="sitaa-section-title mt-3 text-3xl sm:text-4xl">
           Catálogos vigentes
         </h1>
         <p className="mt-4 text-lg leading-8 text-slate-600">

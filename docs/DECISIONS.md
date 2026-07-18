@@ -49,6 +49,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-035 | Identidad y registro institucional separados | Aceptada |
 | DEC-036 | Roles académicos V2 y autoridad de asignación | Aceptada |
 | DEC-044 | Puerta pública y navegación autenticada | Aceptada |
+| DEC-045 | Sistema visual canónico y estados semánticos | Aceptada |
 | DEC-037 | Administración confiable y filtrado posterior a autorización | Aceptada |
 | DEC-038 | Implementación por fases y check-in abierto posterior | Aceptada |
 | DEC-039 | Sincronización Auth/profile en Fase A | Aceptada |
@@ -359,6 +360,16 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Decisión histórica al cierre de 0003:** la cadena `0001 + 0002 + 0003` quedó reconciliada con el snapshot generado en `2026-07-17T00:21:06Z`, sin deriva inexplicada. En ese momento, el siguiente número permitido era `0004`. DEC-042 registra el cierre vigente posterior a 0005.
 
 **Consecuencias:** todo cambio futuro debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos, comparar el estado vivo contra la cadena completa y actualizar el changelog. La restricción de `technical_admin` permanece diferida y el check-in abierto sigue fuera del alcance implementado.
+
+**Estado:** Aceptada.
+
+## DEC-045 — Sistema visual canónico y estados semánticos
+
+**Contexto:** superficies anteriores al rediseño conservaban emerald como marca, combinaciones locales de alertas y controles duplicados, lo que producía inconsistencia y regresiones de contraste.
+
+**Decisión:** `docs/DESIGN_SYSTEM.md` es la especificación visual autoritativa. Azul y oro forman la identidad; éxito, advertencia, error, información y neutral usan tokens independientes. Verde queda reservado a éxito real. Acciones, badges, alertas, tabs, campos, superficies y encabezados reutilizan primitivas semánticas, y `npm run check:ui` bloquea patrones prohibidos.
+
+**Consecuencias:** nuevas pantallas no eligen paletas propias ni duplican controles rellenos. Los cambios visuales requieren contraste comprobado, foco, teclado, wrapping, movimiento reducido y revisión responsive. Las excepciones de color calculado se limitan al canvas y se documentan en el checker.
 
 **Estado:** Aceptada.
 

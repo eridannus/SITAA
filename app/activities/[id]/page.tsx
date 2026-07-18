@@ -91,7 +91,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     supabase.from("activities").select("*").eq("id", id).maybeSingle(),
     getVisibleActivities().then((cards) => ({ cards, error: null })).catch(() => ({ cards: [], error: true })),
   ]);
-  if (error || !data) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex cursor-pointer font-bold text-emerald-800 transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link></main>;
+  if (error || !data) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="sitaa-text-action mt-7">Volver a actividades</Link></main>;
 
   const activity = data as Activity;
   const isDraft = activity.status_code === "draft";
@@ -102,7 +102,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   const card = cardsResult.cards.find((item) => item.id === id);
   const values = formValues(activity);
   const studentOnly = isStudentOnlyUser(context);
-  if (studentOnly && isDraft) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="mt-7 inline-flex cursor-pointer font-bold text-emerald-800 transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link></main>;
+  if (studentOnly && isDraft) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="sitaa-text-action mt-7">Volver a actividades</Link></main>;
   const technicalAdmin = context.activeRoleAssignments.some((item) => item.role_code === "technical_admin");
   const legacyCleanup = activity.scope_type === "division" && (technicalAdmin || activity.created_by === context.user.id);
   const normalCanEdit = activity.scope_type === "program" && canManageActivityScope(context, values, options.programs, activity.division_id);
@@ -192,15 +192,15 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
 
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0"><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Actividad</p><h1 className="mt-3 break-words text-3xl font-bold text-emerald-950 sm:text-4xl">{canUpdateBaseData ? "Editar actividad" : activity.title}</h1></div>
-      <Link href="/activities" className="shrink-0 cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-sm font-bold transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Volver a actividades</Link>
+      <div className="min-w-0"><p className="sitaa-section-eyebrow">Actividad</p><h1 className="sitaa-section-title mt-3 break-words text-3xl sm:text-4xl">{canUpdateBaseData ? "Editar actividad" : activity.title}</h1></div>
+      <Link href="/activities" className="sitaa-secondary-action shrink-0 px-6">Volver a actividades</Link>
     </div>
-    {updated && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Los cambios se guardaron correctamente.</div>}
-    {published && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">La actividad se publicó correctamente.</div>}
-    {publicationErrorMessage && <div role="alert" className="mt-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{publicationErrorMessage}</div>}
+    {updated && <div role="status" className="sitaa-alert sitaa-alert--success mt-8">Los cambios se guardaron correctamente.</div>}
+    {published && <div role="status" className="sitaa-alert sitaa-alert--success mt-8">La actividad se publicó correctamente.</div>}
+    {publicationErrorMessage && <div role="alert" className="sitaa-alert sitaa-alert--error mt-8">{publicationErrorMessage}</div>}
 
     {canUpdateBaseData ? <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
-      {showAdministrativeCorrectionMode && <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Corrección administrativa de datos base habilitada.</div>}
+      {showAdministrativeCorrectionMode && <div role="status" className="sitaa-alert sitaa-alert--warning mb-6 font-semibold">Corrección administrativa de datos base habilitada.</div>}
       <ActivityForm options={options} access={access} initialValues={values} initialErrors={publicationFieldErrors} mode="edit" activityId={id} statusCode={activity.status_code} />
     </div> : <section className="mt-9 min-w-0 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <h2 className="break-words text-2xl font-bold text-slate-900">{activity.title}</h2>
@@ -214,28 +214,25 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Categoría de atención</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(attentionCategoryLabel)}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Modalidad</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(modalityLabel)}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Tipo de ubicación</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(locationHeading)}</dd></div>
-        <div className="min-w-0 sm:col-span-2"><dt className="break-words font-semibold text-slate-500">Detalle de ubicación</dt>{locationDetail ? (isHttpUrl(locationDetail) ? <dd className="mt-1 min-w-0 break-all text-slate-900"><a className="cursor-pointer text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2" href={locationDetail} target="_blank" rel="noopener noreferrer">{locationDetail}</a></dd> : <dd className="mt-1 min-w-0 break-words text-slate-900">{locationDetail}</dd>) : <dd className="mt-1 min-w-0 break-words text-slate-900">{valueOrPlaceholder(null)}</dd>}</div>
+        <div className="min-w-0 sm:col-span-2"><dt className="break-words font-semibold text-slate-500">Detalle de ubicación</dt>{locationDetail ? (isHttpUrl(locationDetail) ? <dd className="mt-1 min-w-0 break-all text-slate-900"><a className="sitaa-text-action break-all" href={locationDetail} target="_blank" rel="noopener noreferrer">{locationDetail}</a></dd> : <dd className="mt-1 min-w-0 break-words text-slate-900">{locationDetail}</dd>) : <dd className="mt-1 min-w-0 break-words text-slate-900">{valueOrPlaceholder(null)}</dd>}</div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Fecha</dt><dd className="break-words text-slate-900">{activity.start_date ? date(activity.start_date) : valueOrPlaceholder(null)}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Hora de inicio</dt><dd className="break-words text-slate-900">{activity.start_time?.slice(0,5) ?? valueOrPlaceholder(null)}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Hora de término</dt><dd className="break-words text-slate-900">{activity.end_time?.slice(0,5) ?? valueOrPlaceholder(null)}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Duración</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(durationLabel)}</dd></div>
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Responsable</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(responsibleName)}</dd></div>
       </dl>
-      {studentOnly && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">{card?.ownParticipantRoleLabel ? `Tu participación: ${card.ownParticipantRoleLabel}.` : "Estás registrado como participante en esta actividad."}</p>}
-      {!isDraft && canManageActivity && !canUpdateBaseData && <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{baseDataLockMessage}</p>}
-      {!studentOnly && !canManageActivity && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
+      {studentOnly && <p className="sitaa-alert sitaa-alert--info mt-6 font-semibold">{card?.ownParticipantRoleLabel ? `Tu participación: ${card.ownParticipantRoleLabel}.` : "Estás registrado como participante en esta actividad."}</p>}
+      {!isDraft && canManageActivity && !canUpdateBaseData && <p className="sitaa-alert sitaa-alert--warning mt-6 font-semibold">{baseDataLockMessage}</p>}
+      {!studentOnly && !canManageActivity && <p className="sitaa-alert mt-6">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
     </section>}
 
     {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} checkinState={activeCheckinState} attendanceOpenAt={attendanceOpenAt} attendanceDeadline={attendanceDeadline} attendanceDeadlinePassed={attendanceDeadlinePassed} status={displayedCheckinStatus} detail={displayedCheckinDetail} />}
 
     {canManageParticipants && (participantsError
-      ? <section className="mt-10 rounded-3xl border border-red-200 bg-white p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3 text-red-700">No fue posible cargar los participantes.</p></section>
+      ? <section className="sitaa-alert sitaa-alert--error mt-10 p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3">No fue posible cargar los participantes.</p></section>
       : <ParticipantManager activityId={id} participants={participants} roles={roles} canEdit status={participantStatus} attendanceWindowExpired={attendanceDeadlinePassed} />)}
 
-    {canDeleteActivityRecord && <section className="mt-10 rounded-3xl border border-red-200 bg-red-50 p-7 sm:p-10"><h2 className="text-xl font-bold text-red-950">Eliminar actividad</h2><p className="mt-3 text-red-800">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold text-red-800">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
+    {canDeleteActivityRecord && <section className="sitaa-alert sitaa-alert--error mt-10 p-7 sm:p-10"><h2 className="text-xl font-bold">Eliminar actividad</h2><p className="mt-3">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
   </main>;
 }
-
-
-
 

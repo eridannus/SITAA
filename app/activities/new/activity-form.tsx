@@ -25,7 +25,7 @@ function displayDate(value: string) {
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
 function FieldError({ field, message }: { field: ActivityFormField; message?: string }) {
-  return message ? <p id={`${field}-error`} className="mt-2 text-sm font-medium text-red-700">{message}</p> : null;
+  return message ? <p id={`${field}-error`} className="mt-2 text-sm font-medium text-[var(--sitaa-error-foreground)]">{message}</p> : null;
 }
 const ONLINE_MODALITY_CODE = "online";
 const ONLINE_LOCATION_TYPE_CODE = "online_space";
@@ -51,13 +51,13 @@ function focusFirstInvalid(errors: ActivityFormState["errors"]) {
 function SubmitButtons({ mode, statusCode, confirmPublish, onCancelPublish }: { mode: "create" | "edit"; statusCode: string; confirmPublish: boolean; onCancelPublish: () => void }) {
   const { pending } = useFormStatus();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const primaryClass = "rounded-full bg-emerald-800 px-7 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-200 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2";
-  const secondaryClass = "rounded-full border border-slate-300 px-7 py-3 text-sm font-bold text-slate-800 transition hover:border-emerald-700 hover:text-emerald-900 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2";
-  const warningClass = "rounded-full bg-amber-600 px-7 py-3 text-sm font-bold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-400 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-2";
+  const primaryClass = "sitaa-primary-action px-7";
+  const secondaryClass = "sitaa-secondary-action px-7";
+  const warningClass = "sitaa-primary-action px-7";
   const publishConfirmationMessage = "Una vez publicada, los datos base de la actividad quedar\u00e1n bloqueados para edici\u00f3n normal. Podr\u00e1s seguir gestionando participantes y asistencia.";
 
   if (confirmPublish) {
-    return <div className="grid gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950 sm:col-span-2">
+    return <div className="sitaa-alert sitaa-alert--warning grid gap-4 sm:col-span-2">
       <div>
         <p className="font-bold">Confirma la publicación</p>
         <p className="mt-2 leading-6">{publishConfirmationMessage}</p>
@@ -181,7 +181,7 @@ function Fields({ state, formAction, options, access, mode, statusCode }: {
   const onlineLocationType = options.locationTypes.find((item) => item.code === ONLINE_LOCATION_TYPE_CODE);
   const onlineLocationLabel = onlineLocationType ? label(onlineLocationType) : "En línea";
   const nonOnlineLocationTypes = options.locationTypes.filter((item) => item.code !== ONLINE_LOCATION_TYPE_CODE);
-  const inputClass = (field: keyof ActivityFormValues) => `mt-2 w-full scroll-mt-24 rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${fieldErrors[field] ? "border-red-400 focus:border-red-600 focus:ring-red-100" : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"}`;
+  const inputClass = (field: keyof ActivityFormValues) => `sitaa-field mt-2 scroll-mt-24 ${fieldErrors[field] ? "sitaa-field-invalid" : ""}`;
   const common = (field: keyof ActivityFormValues, helperIds: string[] = []) => ({
     key: state.revision + ":" + field, defaultValue: state.values[field],
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => set(field, event.target.value),
@@ -190,7 +190,7 @@ function Fields({ state, formAction, options, access, mode, statusCode }: {
     className: inputClass(field),
   });
   const catalogSelect = (id: keyof ActivityFormValues, title: string, empty: string, items: CatalogRow[]) => <div>
-    <label htmlFor={id} className="block text-sm font-semibold text-slate-700">{title}</label>
+    <label htmlFor={id} className="sitaa-form-label">{title}</label>
     <select id={id} name={id} required {...common(id)}><option value="">{empty}</option>{items.map((item) => <option key={item.id} value={item.code}>{label(item)}</option>)}</select>
     <FieldError field={id} message={fieldErrors[id]} />
   </div>;
@@ -216,22 +216,22 @@ function Fields({ state, formAction, options, access, mode, statusCode }: {
     : Object.keys(state.errors).length === 0 ? state.message : null;
 
   return <form action={formAction} onSubmit={handleSubmit} className="grid gap-6 sm:grid-cols-2" noValidate>
-    {summaryMessage && <div role="alert" className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"><p className="font-semibold">Revisa los campos señalados.</p><p>{summaryMessage}</p></div>}
-    <div className={`sm:col-span-2 rounded-2xl border p-5 ${semesterInfo.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}><p className="text-sm font-semibold">{semesterInfo.text}</p><FieldError field="academic_period_id" message={fieldErrors.academic_period_id} /></div>
-    <div className="sm:col-span-2"><label htmlFor="title" className="block text-sm font-semibold text-slate-700">Título</label><input id="title" name="title" required maxLength={200} {...common("title")} /><FieldError field="title" message={fieldErrors.title} /></div>
-    <div className="sm:col-span-2"><label htmlFor="description" className="block text-sm font-semibold text-slate-700">Descripción (opcional)</label><textarea id="description" name="description" rows={4} maxLength={5000} {...common("description")} /><FieldError field="description" message={fieldErrors.description} /></div>
+    {summaryMessage && <div role="alert" className="sitaa-alert sitaa-alert--error sm:col-span-2"><p className="font-semibold">Revisa los campos señalados.</p><p>{summaryMessage}</p></div>}
+    <div className={`sitaa-alert sm:col-span-2 ${semesterInfo.tone === "warning" ? "sitaa-alert--warning" : "sitaa-alert--info"}`}><p className="text-sm font-semibold">{semesterInfo.text}</p><FieldError field="academic_period_id" message={fieldErrors.academic_period_id} /></div>
+    <div className="sm:col-span-2"><label htmlFor="title" className="sitaa-form-label">Título</label><input id="title" name="title" required maxLength={200} {...common("title")} /><FieldError field="title" message={fieldErrors.title} /></div>
+    <div className="sm:col-span-2"><label htmlFor="description" className="sitaa-form-label">Descripción (opcional)</label><textarea id="description" name="description" rows={4} maxLength={5000} {...common("description")} /><FieldError field="description" message={fieldErrors.description} /></div>
 
     {access.allowedPrograms.length === 1 ? <>
       <input type="hidden" name="scope_type" value="program" />
       <input type="hidden" name="program_id" value={access.allowedPrograms[0].id} />
-      <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
+      <div className="sitaa-read-only sm:col-span-2">
         <p className="text-sm font-semibold text-slate-500">Programa académico</p>
         <p className="mt-1 font-bold text-slate-900">{access.allowedPrograms[0].name}</p>
       </div>
     </> : <>
       <input type="hidden" name="scope_type" value="program" />
       <div className="sm:col-span-2">
-        <label htmlFor="program_id" className="block text-sm font-semibold text-slate-700">Programa académico</label>
+        <label htmlFor="program_id" className="sitaa-form-label">Programa académico</label>
         <select id="program_id" name="program_id" required {...common("program_id")}>
           <option value="">Selecciona un programa</option>
           {access.allowedPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
@@ -244,7 +244,7 @@ function Fields({ state, formAction, options, access, mode, statusCode }: {
     {catalogSelect("service_type_code", "Tipo de servicio", "Selecciona un servicio", options.serviceTypes)}
     {catalogSelect("attention_category_code", "Categoría de atención", "Selecciona una categoría", options.attentionCategories)}
     <div>
-      <label htmlFor="modality_code" className="block text-sm font-semibold text-slate-700">Modalidad</label>
+      <label htmlFor="modality_code" className="sitaa-form-label">Modalidad</label>
       <select id="modality_code" name="modality_code" required key={state.revision + ":modality_code"} defaultValue={state.values.modality_code} onChange={handleModalityChange} aria-invalid={Boolean(fieldErrors.modality_code)} aria-describedby={fieldErrors.modality_code ? "modality_code-error" : undefined} className={inputClass("modality_code")}>
         <option value="">Selecciona una modalidad</option>
         {options.modalities.map((item) => <option key={item.id} value={item.code}>{label(item)}</option>)}
@@ -254,24 +254,24 @@ function Fields({ state, formAction, options, access, mode, statusCode }: {
     {isOnlineModality ? <div>
       <input type="hidden" name="location_type_code" value={ONLINE_LOCATION_TYPE_CODE} />
       <p className="block text-sm font-semibold text-slate-700">Tipo de ubicación</p>
-      <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-semibold text-slate-900">{onlineLocationLabel}</p>
+      <p className="sitaa-read-only mt-2 font-semibold">{onlineLocationLabel}</p>
       <FieldError field="location_type_code" message={fieldErrors.location_type_code} />
     </div> : <div>
-      <label htmlFor="location_type_code" className="block text-sm font-semibold text-slate-700">Tipo de ubicación</label>
+      <label htmlFor="location_type_code" className="sitaa-form-label">Tipo de ubicación</label>
       <select id="location_type_code" name="location_type_code" required {...common("location_type_code")}>
         <option value="">Selecciona un tipo de ubicación</option>
         {nonOnlineLocationTypes.map((item) => <option key={item.id} value={item.code}>{label(item)}</option>)}
       </select>
       <FieldError field="location_type_code" message={fieldErrors.location_type_code} />
     </div>}
-    <div><label htmlFor="location_detail" className="block text-sm font-semibold text-slate-700">Detalle de ubicación</label><input id="location_detail" name="location_detail" required maxLength={500} placeholder="Aula, edificio, enlace o datos de acceso" {...common("location_detail")} /><FieldError field="location_detail" message={fieldErrors.location_detail} /></div>
-    <div><label htmlFor="start_date" className="block text-sm font-semibold text-slate-700">Fecha de inicio</label><input id="start_date" name="start_date" type="date" required {...common("start_date")} /><FieldError field="start_date" message={fieldErrors.start_date} /></div>
-    <div><label htmlFor="start_time" className="block text-sm font-semibold text-slate-700">Hora de inicio</label><input id="start_time" name="start_time" type="time" required step={60} lang="es-MX" {...common("start_time", ["start_time-help"])} /><div id="start_time-help" className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError field="start_time" message={fieldErrors.start_time} /></div>
-    <div className="sm:col-span-2"><label htmlFor="duration_mode" className="block text-sm font-semibold text-slate-700">Duración</label><select id="duration_mode" name="duration_mode" required {...common("duration_mode")}><option value="one_hour">1 hora</option><option value="two_hours">2 horas</option><option value="custom">Personalizada</option></select><FieldError field="duration_mode" message={fieldErrors.duration_mode} /></div>
+    <div><label htmlFor="location_detail" className="sitaa-form-label">Detalle de ubicación</label><input id="location_detail" name="location_detail" required maxLength={500} placeholder="Aula, edificio, enlace o datos de acceso" {...common("location_detail")} /><FieldError field="location_detail" message={fieldErrors.location_detail} /></div>
+    <div><label htmlFor="start_date" className="sitaa-form-label">Fecha de inicio</label><input id="start_date" name="start_date" type="date" required {...common("start_date")} /><FieldError field="start_date" message={fieldErrors.start_date} /></div>
+    <div><label htmlFor="start_time" className="sitaa-form-label">Hora de inicio</label><input id="start_time" name="start_time" type="time" required step={60} lang="es-MX" {...common("start_time", ["start_time-help"])} /><div id="start_time-help" className="sitaa-help-text mt-2"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError field="start_time" message={fieldErrors.start_time} /></div>
+    <div className="sm:col-span-2"><label htmlFor="duration_mode" className="sitaa-form-label">Duración</label><select id="duration_mode" name="duration_mode" required {...common("duration_mode")}><option value="one_hour">1 hora</option><option value="two_hours">2 horas</option><option value="custom">Personalizada</option></select><FieldError field="duration_mode" message={fieldErrors.duration_mode} /></div>
     {liveValues.duration_mode === "custom" ? <>
-      <div><label htmlFor="end_date" className="block text-sm font-semibold text-slate-700">Fecha de término</label><input id="end_date" name="end_date" type="date" required min={liveValues.start_date || undefined} {...common("end_date")} /><FieldError field="end_date" message={fieldErrors.end_date} /></div>
-      <div><label htmlFor="end_time" className="block text-sm font-semibold text-slate-700">Hora de término</label><input id="end_time" name="end_time" type="time" required step={60} lang="es-MX" {...common("end_time", ["end_time-help"])} /><div id="end_time-help" className="mt-2 text-xs text-slate-500"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError field="end_time" message={fieldErrors.end_time} /></div>
-    </> : <div className="sm:col-span-2 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-700"><span className="font-semibold">Término calculado: </span>{calculatedEnd ? `${displayDate(calculatedEnd.endDate)} a las ${calculatedEnd.endTime}` : "Indica fecha y hora de inicio para calcularlo."}</div>}
+      <div><label htmlFor="end_date" className="sitaa-form-label">Fecha de término</label><input id="end_date" name="end_date" type="date" required min={liveValues.start_date || undefined} {...common("end_date")} /><FieldError field="end_date" message={fieldErrors.end_date} /></div>
+      <div><label htmlFor="end_time" className="sitaa-form-label">Hora de término</label><input id="end_time" name="end_time" type="time" required step={60} lang="es-MX" {...common("end_time", ["end_time-help"])} /><div id="end_time-help" className="sitaa-help-text mt-2"><p>Usa formato de 24 horas.</p><p>Ejemplo: 14:30.</p></div><FieldError field="end_time" message={fieldErrors.end_time} /></div>
+    </> : <div className="sitaa-read-only sm:col-span-2 text-sm"><span className="font-semibold">Término calculado: </span>{calculatedEnd ? `${displayDate(calculatedEnd.endDate)} a las ${calculatedEnd.endTime}` : "Indica fecha y hora de inicio para calcularlo."}</div>}
     <div className="sm:col-span-2 pt-2"><SubmitButtons mode={mode} statusCode={statusCode} confirmPublish={showPublishConfirmation} onCancelPublish={() => setShowPublishConfirmation(false)} /></div>
   </form>;
 }

@@ -60,11 +60,11 @@ export default async function ProfilePage({ searchParams }: Props) {
         </p>
       </div>
 
-      <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
-        {success && <div role="status" className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Tu perfil se actualizó correctamente.</div>}
-        {errorCode && errorMessages[errorCode] && <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessages[errorCode]}</div>}
+      <div className="sitaa-card mt-9 p-7 sm:p-10">
+        {success && <div role="status" className="sitaa-alert sitaa-alert--success mb-6">Tu perfil se actualizó correctamente.</div>}
+        {errorCode && errorMessages[errorCode] && <div role="alert" className="sitaa-alert sitaa-alert--error mb-6">{errorMessages[errorCode]}</div>}
 
-        <dl className="grid min-w-0 gap-5 rounded-2xl bg-slate-50 p-5 text-sm sm:grid-cols-2">
+        <dl className="sitaa-detail-card grid min-w-0 gap-5 p-5 text-sm sm:grid-cols-2">
           <div className="min-w-0 sm:col-span-2"><dt className="font-semibold text-slate-500">Correo</dt><dd className="sitaa-wrap-anywhere mt-1 text-slate-900">{user.email}</dd></div>
           <div><dt className="font-semibold text-slate-500">Tipo de cuenta</dt><dd className="mt-1 text-slate-900">{profile.account_kind === "technical" ? "Técnica interna" : "Institucional"}</dd></div>
           {profile.person_type && <div><dt className="font-semibold text-slate-500">Tipo de persona</dt><dd className="mt-1 text-slate-900">{personTypeLabels[profile.person_type]}</dd></div>}
@@ -73,10 +73,10 @@ export default async function ProfilePage({ searchParams }: Props) {
         </dl>
 
         <form action={updateProfile} className="mt-7 grid gap-5 sm:grid-cols-2">
-          <div className="sm:col-span-2"><label htmlFor="first_names" className="block text-sm font-semibold text-slate-700">Nombre(s)</label><input id="first_names" name="first_names" autoComplete="given-name" defaultValue={profile.first_names ?? ""} required maxLength={150} className="sitaa-field mt-2" /></div>
-          <div><label htmlFor="paternal_surname" className="block text-sm font-semibold text-slate-700">Apellido paterno {profile.account_kind === "technical" && <span className="font-normal text-slate-500">(opcional)</span>}</label><input id="paternal_surname" name="paternal_surname" autoComplete="family-name" defaultValue={profile.paternal_surname ?? ""} required={profile.account_kind !== "technical"} maxLength={150} className="sitaa-field mt-2" /></div>
-          <div><label htmlFor="maternal_surname" className="block text-sm font-semibold text-slate-700">Apellido materno <span className="font-normal text-slate-500">(opcional)</span></label><input id="maternal_surname" name="maternal_surname" autoComplete="additional-name" defaultValue={profile.maternal_surname ?? ""} maxLength={150} className="sitaa-field mt-2" /></div>
-          <p className="text-sm leading-6 text-slate-500 sm:col-span-2">SITAA construirá el nombre visible a partir de estos campos.</p>
+          <div className="sm:col-span-2"><label htmlFor="first_names" className="sitaa-form-label">Nombre(s)</label><input id="first_names" name="first_names" autoComplete="given-name" defaultValue={profile.first_names ?? ""} required maxLength={150} className="sitaa-field mt-2" /></div>
+          <div><label htmlFor="paternal_surname" className="sitaa-form-label">Apellido paterno {profile.account_kind === "technical" && <span className="font-normal text-[var(--sitaa-text-secondary)]">(opcional)</span>}</label><input id="paternal_surname" name="paternal_surname" autoComplete="family-name" defaultValue={profile.paternal_surname ?? ""} required={profile.account_kind !== "technical"} maxLength={150} className="sitaa-field mt-2" /></div>
+          <div><label htmlFor="maternal_surname" className="sitaa-form-label">Apellido materno <span className="font-normal text-[var(--sitaa-text-secondary)]">(opcional)</span></label><input id="maternal_surname" name="maternal_surname" autoComplete="additional-name" defaultValue={profile.maternal_surname ?? ""} maxLength={150} className="sitaa-field mt-2" /></div>
+          <p className="sitaa-help-text sm:col-span-2">SITAA construirá el nombre visible a partir de estos campos.</p>
           <div className="flex flex-col gap-3 sm:col-span-2 sm:flex-row">
             <button type="submit" className="sitaa-primary-action">Guardar nombres</button>
             <Link href="/dashboard" className="sitaa-secondary-action">Volver al panel</Link>
@@ -88,5 +88,5 @@ export default async function ProfilePage({ searchParams }: Props) {
 }
 
 function LoadError() {
-  return <section className="mx-auto max-w-4xl px-5 py-16"><div className="rounded-3xl border border-red-200 bg-white p-8"><h1 className="text-3xl font-bold text-slate-900">No fue posible cargar tu perfil</h1><p className="mt-4 text-slate-600">Intenta nuevamente más tarde.</p></div></section>;
+  return <section className="mx-auto max-w-4xl px-5 py-16"><div className="sitaa-alert sitaa-alert--error p-8"><h1 className="text-3xl font-bold">No fue posible cargar tu perfil</h1><p className="mt-4">Intenta nuevamente más tarde.</p></div></section>;
 }

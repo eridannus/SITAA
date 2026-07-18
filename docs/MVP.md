@@ -71,3 +71,4 @@ Validar un flujo completo para un periodo académico: configuración, planeació
 - La obligatoriedad académica se configura en el formulario y no se codifica globalmente.
 - Los filtros y exportaciones respetan los mismos permisos que la vista de origen.
 - Los flujos principales funcionan en una pantalla móvil.
+- Las interfaces siguen `docs/DESIGN_SYSTEM.md`: marca azul y oro, estados semánticos, contraste WCAG AA y controles táctiles accesibles.

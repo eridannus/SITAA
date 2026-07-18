@@ -10,7 +10,7 @@ export function AuthenticationCard({ errorMessage, nextPath }: { errorMessage?: 
         <span className="mx-auto mt-4 block h-1 w-16 rounded-full bg-[var(--sitaa-gold)]" aria-hidden="true" />
       </div>
 
-      {errorMessage && <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800">{errorMessage}</div>}
+      {errorMessage && <div role="alert" className="sitaa-alert sitaa-alert--error mt-5">{errorMessage}</div>}
 
       <div className="mt-6 flex flex-col gap-5">
         <form action={loginWithGoogle} className="w-full">

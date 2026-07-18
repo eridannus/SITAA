@@ -24,8 +24,8 @@ export default async function CheckinPage({ searchParams }: Props) {
   if (!context) redirect(loginPathWithNext(currentPath));
 
   return <main className="mx-auto max-w-3xl px-5 py-16 sm:px-8 sm:py-20">
-    <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Asistencia</p>
-    <h1 className="mt-3 text-3xl font-bold text-emerald-950 sm:text-4xl">Registrar asistencia</h1>
+    <p className="sitaa-section-eyebrow">Asistencia</p>
+    <h1 className="sitaa-section-title mt-3 text-3xl sm:text-4xl">Registrar asistencia</h1>
     <CheckinCodeForm returnHref="/activities" />
   </main>;
 }

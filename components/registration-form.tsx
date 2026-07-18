@@ -65,13 +65,13 @@ export function RegistrationForm({
       <input type="hidden" name="person_type" value={personType} />
 
       {state.message && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 sm:col-span-2">
+        <div role="alert" className="sitaa-alert sitaa-alert--error sm:col-span-2">
           {state.message}
         </div>
       )}
 
       <div className="min-w-0 sm:col-span-2">
-        <label htmlFor="first_names" className="block text-sm font-semibold text-slate-700">
+        <label htmlFor="first_names" className="sitaa-form-label">
           Nombre(s)
         </label>
         <input
@@ -86,24 +86,24 @@ export function RegistrationForm({
           aria-describedby={state.fieldErrors.first_names ? "first_names-error" : undefined}
           className={fieldClass(state.fieldErrors.first_names)}
         />
-        {state.fieldErrors.first_names && <p id="first_names-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.first_names}</p>}
+        {state.fieldErrors.first_names && <p id="first_names-error" className="mt-2 text-sm text-[var(--sitaa-error-foreground)]">{state.fieldErrors.first_names}</p>}
       </div>
 
       <div className="min-w-0">
-        <label htmlFor="paternal_surname" className="block text-sm font-semibold text-slate-700">Apellido paterno</label>
+        <label htmlFor="paternal_surname" className="sitaa-form-label">Apellido paterno</label>
         <input key={`paternal-${state.values.paternal_surname}`} id="paternal_surname" name="paternal_surname" autoComplete="family-name" required maxLength={150} defaultValue={state.values.paternal_surname} aria-invalid={Boolean(state.fieldErrors.paternal_surname)} aria-describedby={state.fieldErrors.paternal_surname ? "paternal_surname-error" : undefined} className={fieldClass(state.fieldErrors.paternal_surname)} />
-        {state.fieldErrors.paternal_surname && <p id="paternal_surname-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.paternal_surname}</p>}
+        {state.fieldErrors.paternal_surname && <p id="paternal_surname-error" className="mt-2 text-sm text-[var(--sitaa-error-foreground)]">{state.fieldErrors.paternal_surname}</p>}
       </div>
 
       <div className="min-w-0">
-        <label htmlFor="maternal_surname" className="block text-sm font-semibold text-slate-700">Apellido materno <span className="font-normal text-slate-500">(opcional)</span></label>
+        <label htmlFor="maternal_surname" className="sitaa-form-label">Apellido materno <span className="font-normal text-[var(--sitaa-text-secondary)]">(opcional)</span></label>
         <input key={`maternal-${state.values.maternal_surname}`} id="maternal_surname" name="maternal_surname" autoComplete="additional-name" maxLength={150} defaultValue={state.values.maternal_surname} aria-invalid={Boolean(state.fieldErrors.maternal_surname)} aria-describedby={state.fieldErrors.maternal_surname ? "maternal_surname-error" : "maternal_surname-help"} className={fieldClass(state.fieldErrors.maternal_surname)} />
-        <p id="maternal_surname-help" className="mt-2 text-xs leading-5 text-slate-500">Déjalo vacío si no cuentas con apellido materno.</p>
-        {state.fieldErrors.maternal_surname && <p id="maternal_surname-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.maternal_surname}</p>}
+        <p id="maternal_surname-help" className="sitaa-help-text mt-2">Déjalo vacío si no cuentas con apellido materno.</p>
+        {state.fieldErrors.maternal_surname && <p id="maternal_surname-error" className="mt-2 text-sm text-[var(--sitaa-error-foreground)]">{state.fieldErrors.maternal_surname}</p>}
       </div>
 
       <div className="min-w-0">
-        <label htmlFor="institutional_id_value" className="block text-sm font-semibold text-slate-700">
+        <label htmlFor="institutional_id_value" className="sitaa-form-label">
           {identifierLabel}
         </label>
         <input
@@ -122,14 +122,14 @@ export function RegistrationForm({
             : "institutional-id-help"}
           className={fieldClass(state.fieldErrors.institutional_id_value)}
         />
-        <p id="institutional-id-help" className="mt-2 text-xs leading-5 text-slate-500">
+        <p id="institutional-id-help" className="sitaa-help-text mt-2">
           Escribe sólo dígitos. Los ceros iniciales se conservarán.
         </p>
-        {state.fieldErrors.institutional_id_value && <p id="institutional-id-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.institutional_id_value}</p>}
+        {state.fieldErrors.institutional_id_value && <p id="institutional-id-error" className="mt-2 text-sm text-[var(--sitaa-error-foreground)]">{state.fieldErrors.institutional_id_value}</p>}
       </div>
 
       <div className="min-w-0">
-        <label htmlFor="primary_program_id" className="block text-sm font-semibold text-slate-700">
+        <label htmlFor="primary_program_id" className="sitaa-form-label">
           Programa académico principal
         </label>
         <select
@@ -145,7 +145,7 @@ export function RegistrationForm({
           <option value="" disabled>Selecciona un programa</option>
           {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
         </select>
-        {state.fieldErrors.primary_program_id && <p id="primary_program_id-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.primary_program_id}</p>}
+        {state.fieldErrors.primary_program_id && <p id="primary_program_id-error" className="mt-2 text-sm text-[var(--sitaa-error-foreground)]">{state.fieldErrors.primary_program_id}</p>}
       </div>
 
       <div className="flex flex-col gap-3 pt-2 sm:col-span-2 sm:flex-row sm:items-center">

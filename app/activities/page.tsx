@@ -7,6 +7,9 @@ import { getActivityFormOptions } from "@/lib/activities/get-activity-form-optio
 import { getVisibleActivities } from "@/lib/activities/get-visible-activities";
 import { finalizeExpiredAttendance } from "@/lib/attendance/finalize-expired-attendance";
 import type { ActivityFormValues, ActivityListItem } from "@/types/activities";
+import { Alert } from "@/components/ui/alert";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Actividades" };
@@ -78,6 +81,13 @@ function programIndicator(activity: ActivityListItem) {
   return null;
 }
 
+function activityStatusTone(statusCode: string): StatusTone {
+  if (statusCode === "scheduled") return "info";
+  if (statusCode === "validated") return "success";
+  if (statusCode === "cancelled") return "error";
+  return "neutral";
+}
+
 function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; studentOnly: boolean }) {
   const when = schedule(activity);
   const description = activity.description?.trim();
@@ -86,20 +96,19 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
   const repeatsOnlineLabel = normalizedLabel(activity.modalityLabel) === "en linea" && normalizedLabel(rawLocationHeading) === "en linea";
   const locationHeading = repeatsOnlineLabel ? "Acceso" : rawLocationHeading;
   const shouldRenderLocation = Boolean(locationDetail || (!repeatsOnlineLabel && activity.locationTypeLabel));
-  const statusBadgeClass = activity.status_code === "draft" ? "border border-amber-300 bg-amber-100 text-amber-900" : "border border-emerald-300 bg-emerald-100 text-emerald-900";
   const service = serviceIndicator(activity);
   const program = programIndicator(activity);
 
   return (
-    <article className="flex min-w-0 flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 sm:p-8">
+    <article className="sitaa-card flex min-w-0 flex-col p-6 transition hover:border-[var(--sitaa-info-border)] sm:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="break-words text-sm font-semibold text-emerald-700">{activity.activityTypeLabel}</p>
+          <p className="break-words text-sm font-semibold text-[var(--sitaa-blue)]">{activity.activityTypeLabel}</p>
           <h2 className="mt-2 break-words text-xl font-bold text-slate-900">{activity.title}</h2>
           {description ? <p className="mt-3 break-words leading-7 text-slate-600">{description}</p> : null}
         </div>
         <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
-          <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass}`}>{activity.statusLabel}</span>
+          <StatusBadge tone={activityStatusTone(activity.status_code)}>{activity.statusLabel}</StatusBadge>
           {(service || program) ? (
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-500" aria-label="Indicadores de actividad">
               {service ? <span title={service.label} aria-label={service.label} className="rounded-full border border-slate-200 px-2 py-0.5 tracking-wide">{service.text}</span> : null}
@@ -146,7 +155,7 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
             {locationDetail ? (
               isHttpUrl(locationDetail) ? (
                 <dd className="mt-1 min-w-0 break-all text-slate-900">
-                  <a className="cursor-pointer text-slate-900 underline decoration-emerald-500 underline-offset-4 transition hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2" href={locationDetail} target="_blank" rel="noopener noreferrer">
+                  <a className="sitaa-text-action break-all" href={locationDetail} target="_blank" rel="noopener noreferrer">
                     {locationDetail}
                   </a>
                 </dd>
@@ -167,13 +176,13 @@ function ActivityCard({ activity, studentOnly }: { activity: ActivityListItem; s
             {activity.viewerAttendanceStatus ? <p className="text-sm font-semibold text-slate-700">Asistencia: {attendanceStatusLabels[activity.viewerAttendanceStatus]}</p> : null}
           </div>
           {activity.isParticipant && activity.viewerAttendanceStatus === "pending" ? (
-            <Link href="/check-in?from=activities" className="inline-flex w-full cursor-pointer items-center justify-center rounded-full bg-emerald-800 px-6 py-4 text-center text-sm font-bold text-white transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 sm:ml-auto sm:w-auto">
+            <Link href="/check-in?from=activities" className="sitaa-primary-action w-full px-6 py-4 sm:ml-auto sm:w-auto">
               Registrar asistencia
             </Link>
           ) : null}
         </div>
       ) : (
-        <Link href={`/activities/${activity.id}`} className="mt-auto inline-flex cursor-pointer pt-6 text-sm font-bold text-emerald-800 hover:text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+        <Link href={`/activities/${activity.id}`} className="sitaa-text-action mt-auto pt-6">
           {activity.canEdit ? "Ver y editar →" : "Ver actividad →"}
         </Link>
       )}
@@ -217,14 +226,12 @@ export default async function ActivitiesPage({ searchParams }: Props) {
   return (
     <main className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
       <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-        <div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p><h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">Actividades</h1></div>
-        {canCreate && <Link href="/activities/new" className="rounded-full bg-emerald-800 px-6 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Nueva actividad</Link>}
+        <SectionHeading eyebrow="Operación académica" title="Actividades" />
+        {canCreate && <Link href="/activities/new" className="sitaa-primary-action px-6">Nueva actividad</Link>}
       </div>
-      {(created || deleted) && <div role="status" className="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{created ? "La actividad se creó correctamente." : "La actividad se eliminó correctamente."}</div>}
-      {activities.length === 0 ? <div className="mt-10 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><h2 className="text-xl font-bold text-slate-900">Aún no hay actividades visibles</h2><p className="mt-3 text-slate-600">{canCreate ? "Crea una actividad o espera a que te asignen acceso a una existente." : "Aún no tienes actividades asignadas. Cuando seas agregado como participante, aparecerán aquí."}</p></div> : <div className="mt-10 grid gap-6 lg:grid-cols-2">{activities.map((activity) => <ActivityCard key={activity.id} activity={activity} studentOnly={studentOnly} />)}</div>}
+      {(created || deleted) && <Alert tone="success" role="status" className="mt-8">{created ? "La actividad se creó correctamente." : "La actividad se eliminó correctamente."}</Alert>}
+      {activities.length === 0 ? <div className="sitaa-empty-state mt-10 text-center"><h2 className="text-xl font-bold text-[var(--sitaa-text)]">Aún no hay actividades visibles</h2><p className="mt-3 text-[var(--sitaa-text-secondary)]">{canCreate ? "Crea una actividad o espera a que te asignen acceso a una existente." : "Aún no tienes actividades asignadas. Cuando seas agregado como participante, aparecerán aquí."}</p></div> : <div className="mt-10 grid gap-6 lg:grid-cols-2">{activities.map((activity) => <ActivityCard key={activity.id} activity={activity} studentOnly={studentOnly} />)}</div>}
     </main>
   );
 }
-
-
 

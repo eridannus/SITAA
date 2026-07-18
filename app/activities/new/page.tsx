@@ -35,13 +35,13 @@ export default async function NewActivityPage() {
         : context.profile.person_type === "student"
           ? "Tu cuenta está registrada como alumno. Necesitas una asignación institucional elegible para crear actividades."
           : "Tu cuenta está registrada, pero no tiene una asignación institucional elegible para crear actividades."}</p>
-      <Link href="/activities" className="mt-7 inline-flex font-bold text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link>
+      <Link href="/activities" className="sitaa-text-action mt-7">Volver a actividades</Link>
     </section>;
   }
 
   const singleProgram = access.allowedPrograms.length === 1;
   return <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Operación académica</p><h1 className="mt-3 text-3xl font-bold text-emerald-950 sm:text-4xl">Nueva actividad</h1><p className="mt-4 text-slate-600">Registra la información base de la actividad.</p></div><Link href="/activities" className="rounded-full border border-slate-300 px-6 py-3 text-sm font-bold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 transition hover:opacity-90">Volver a actividades</Link></div>
+    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="sitaa-section-eyebrow">Operación académica</p><h1 className="sitaa-section-title mt-3 text-3xl sm:text-4xl">Nueva actividad</h1><p className="sitaa-section-description mt-4">Registra la información base de la actividad.</p></div><Link href="/activities" className="sitaa-secondary-action px-6">Volver a actividades</Link></div>
     <div className="mt-9 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
       <ActivityForm options={options} access={access} today={getMexicoCityToday()} initialValues={{
         title: "", scope_type: "program", description: "",

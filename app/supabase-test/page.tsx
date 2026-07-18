@@ -44,24 +44,24 @@ export default async function SupabaseTestPage() {
 
   return (
     <section className="mx-auto grid min-h-[65vh] max-w-6xl place-items-center px-5 py-16 sm:px-8">
-      <div className="w-full max-w-xl rounded-3xl border border-emerald-900/10 bg-white p-8 shadow-xl shadow-emerald-950/5 sm:p-12">
+      <div className="sitaa-card w-full max-w-xl p-8 sm:p-12">
         <div
           className={`grid size-14 place-items-center rounded-2xl text-2xl font-bold ${
             isConnected
-              ? "bg-emerald-100 text-emerald-800"
-              : "bg-amber-100 text-amber-800"
+              ? "border border-[var(--sitaa-success-border)] bg-[var(--sitaa-success-background)] text-[var(--sitaa-success-foreground)]"
+              : "border border-[var(--sitaa-warning-border)] bg-[var(--sitaa-warning-background)] text-[var(--sitaa-warning-foreground)]"
           }`}
           aria-hidden="true"
         >
           {isConnected ? "✓" : "!"}
         </div>
-        <p className="mt-7 text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">
+        <p className="sitaa-section-eyebrow mt-7">
           Diagnóstico de integración
         </p>
 
         {status.state === "connected" && (
           <>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">
+            <h1 className="sitaa-section-title mt-3 text-3xl sm:text-4xl">
               Supabase conectado
             </h1>
             <p className="mt-4 leading-7 text-slate-600">
