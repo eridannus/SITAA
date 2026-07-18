@@ -9,7 +9,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Mi perfil" };
 
 const errorMessages: Record<string, string> = {
-  "nombre-invalido": "Escribe un nombre completo válido (máximo 200 caracteres).",
+  "nombres-invalidos": "Escribe tu nombre o nombres (máximo 150 caracteres).",
+  "apellido-paterno-invalido": "Escribe tu apellido paterno (máximo 150 caracteres).",
+  "apellido-materno-invalido": "El apellido materno no puede exceder 150 caracteres.",
+  "nombre-combinado-invalido": "El nombre visible formado por nombres y apellidos no puede exceder 200 caracteres.",
   actualizacion: "No fue posible actualizar el perfil. Intenta nuevamente.",
   "perfil-inexistente": "Tu cuenta todavía no tiene un perfil SITAA.",
 };
@@ -48,12 +51,12 @@ export default async function ProfilePage({ searchParams }: Props) {
   const success = param(params.success) === "actualizado";
 
   return (
-    <main className="mx-auto max-w-4xl px-5 py-16 sm:px-8 sm:py-20">
+    <main className="mx-auto max-w-4xl px-4 py-10 sm:px-8 sm:py-14">
       <div className="max-w-2xl">
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Identidad institucional</p>
-        <h1 className="mt-3 text-3xl font-bold text-emerald-950 sm:text-4xl">Mi perfil</h1>
+        <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--sitaa-gold-dark)]">Identidad institucional</p>
+        <h1 className="mt-3 text-3xl font-bold text-[var(--sitaa-blue-dark)] sm:text-4xl">Mi perfil</h1>
         <p className="mt-4 leading-7 text-slate-600">
-          Puedes actualizar tu nombre completo. La clasificación, identificador, programa, correo, estado y roles requieren flujos controlados.
+          Puedes actualizar tus nombres y apellidos. La clasificación, identificador, programa, correo, estado y roles requieren flujos controlados.
         </p>
       </div>
 
@@ -62,19 +65,21 @@ export default async function ProfilePage({ searchParams }: Props) {
         {errorCode && errorMessages[errorCode] && <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessages[errorCode]}</div>}
 
         <dl className="grid min-w-0 gap-5 rounded-2xl bg-slate-50 p-5 text-sm sm:grid-cols-2">
-          <div className="min-w-0 sm:col-span-2"><dt className="font-semibold text-slate-500">Correo</dt><dd className="mt-1 break-all text-slate-900">{user.email}</dd></div>
+          <div className="min-w-0 sm:col-span-2"><dt className="font-semibold text-slate-500">Correo</dt><dd className="sitaa-wrap-anywhere mt-1 text-slate-900">{user.email}</dd></div>
           <div><dt className="font-semibold text-slate-500">Tipo de cuenta</dt><dd className="mt-1 text-slate-900">{profile.account_kind === "technical" ? "Técnica interna" : "Institucional"}</dd></div>
           {profile.person_type && <div><dt className="font-semibold text-slate-500">Tipo de persona</dt><dd className="mt-1 text-slate-900">{personTypeLabels[profile.person_type]}</dd></div>}
           {profile.institutional_id_type && profile.institutional_id_value && <div><dt className="font-semibold text-slate-500">{identifierLabels[profile.institutional_id_type]}</dt><dd className="mt-1 break-words text-slate-900">{profile.institutional_id_value}</dd></div>}
           {profile.account_kind !== "technical" && <div><dt className="font-semibold text-slate-500">Programa principal</dt><dd className="mt-1 break-words text-slate-900">{primaryProgram?.name ?? "Programa no disponible"}</dd></div>}
         </dl>
 
-        <form action={updateProfile} className="mt-7">
-          <label htmlFor="full_name" className="block text-sm font-semibold text-slate-700">Nombre completo</label>
-          <input id="full_name" name="full_name" autoComplete="name" defaultValue={profile.full_name ?? ""} required minLength={2} maxLength={200} className="mt-2 w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <button type="submit" className="cursor-pointer rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Guardar nombre</button>
-            <Link href="/dashboard" className="cursor-pointer rounded-full border border-slate-300 px-6 py-3 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800">Volver al panel</Link>
+        <form action={updateProfile} className="mt-7 grid gap-5 sm:grid-cols-2">
+          <div className="sm:col-span-2"><label htmlFor="first_names" className="block text-sm font-semibold text-slate-700">Nombre(s)</label><input id="first_names" name="first_names" autoComplete="given-name" defaultValue={profile.first_names ?? ""} required maxLength={150} className="sitaa-field mt-2" /></div>
+          <div><label htmlFor="paternal_surname" className="block text-sm font-semibold text-slate-700">Apellido paterno {profile.account_kind === "technical" && <span className="font-normal text-slate-500">(opcional)</span>}</label><input id="paternal_surname" name="paternal_surname" autoComplete="family-name" defaultValue={profile.paternal_surname ?? ""} required={profile.account_kind !== "technical"} maxLength={150} className="sitaa-field mt-2" /></div>
+          <div><label htmlFor="maternal_surname" className="block text-sm font-semibold text-slate-700">Apellido materno <span className="font-normal text-slate-500">(opcional)</span></label><input id="maternal_surname" name="maternal_surname" autoComplete="additional-name" defaultValue={profile.maternal_surname ?? ""} maxLength={150} className="sitaa-field mt-2" /></div>
+          <p className="text-sm leading-6 text-slate-500 sm:col-span-2">SITAA construirá el nombre visible a partir de estos campos.</p>
+          <div className="flex flex-col gap-3 sm:col-span-2 sm:flex-row">
+            <button type="submit" className="sitaa-primary-action">Guardar nombres</button>
+            <Link href="/dashboard" className="sitaa-secondary-action">Volver al panel</Link>
           </div>
         </form>
       </div>

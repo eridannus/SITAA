@@ -450,3 +450,15 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 **Consecuencias:** registro público Google, ciclo `pending_registration`, finalización institucional, activación básica, cuenta técnica, guardas de registro y login heredado quedan vigentes. Las fases B–F continúan abiertas y `technical_admin` conserva temporalmente su acceso académico amplio hasta la Fase E.
 
 **Estado:** Aceptada; reconciliación cerrada sin deriva inexplicada.
+
+## DEC-043 — Identidad visual y nombres personales estructurados
+
+**Contexto:** la experiencia pública todavía usa una portada extensa y estilos verdes dispersos. Además, la finalización del registro captura únicamente `full_name`, aunque `profiles` ya dispone de `first_names`, `paternal_surname` y `maternal_surname`.
+
+**Decisión:** 0006 formaliza esos tres campos existentes como fuente autoritativa del nombre para cuentas activas; un trigger normaliza espacios y mantiene `full_name` como valor derivado de compatibilidad. No se dividirán nombres históricos automáticamente: el preflight bloqueará cuentas activas incompletas para que su correspondencia sea revisada fuera de archivos versionados. La aplicación capturará y editará los componentes por separado. El orden futuro será apellido paterno, apellido materno y nombre(s), con comparación local en español cuando corresponda.
+
+La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM, una puerta de acceso compacta y una navegación autenticada con avatar y menú de cuenta. El fondo animado será decorativo, no interceptará interacción y respetará `prefers-reduced-motion`. Los reportes y las exportaciones seguirán fuera de alcance, pero en el futuro expondrán columnas separadas para nombre(s) y apellidos.
+
+**Consecuencias:** `full_name` no se elimina y continúa atendiendo consumidores antiguos. La migración 0006 requiere aplicación coordinada con la versión compatible de la aplicación y no debe ejecutarse hasta resolver el preflight. La cuenta Google refuerza visualmente la identidad autenticada sin convertir metadata del proveedor en identidad institucional editable.
+
+**Estado:** Aceptada; 0006 queda creada localmente, pendiente de revisión y aplicación manual.

@@ -26,7 +26,8 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - No revelar si un correo está registrado mediante mensajes de error diferenciados.
 - Revocar acceso al desactivar perfiles o vencer asignaciones.
 - No permitir que el usuario cambie por autoservicio tipo de cuenta/persona, identificador, programa principal, estado o roles.
-- El autoservicio activo de Fase A permite únicamente `profiles.full_name`; el correo cambia por Google/Supabase Auth y nunca sobrescribe identidad institucional o nombre canónico.
+- Con 0006, el autoservicio activo permite únicamente `first_names`, `paternal_surname` y `maternal_surname`; privilegios de columna y trigger impiden cambiar clasificación, identificador, programa, correo, estado o roles. `full_name` se deriva en la base y no se escribe directamente.
+- La migración 0006 no divide nombres existentes. Su preflight de sólo lectura expone conteos y bloquea cualquier cuenta activa sin componentes revisados, evitando incorporar PII o correspondencias adivinadas al repositorio.
 - La aplicación bloquea perfiles pendientes o inactivos. La revocación coordinada de sesiones Auth y la administración de bajas permanecen para una migración posterior de Fase B.
 
 ### Administración de cuentas y roles

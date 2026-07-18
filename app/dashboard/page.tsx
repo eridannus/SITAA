@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Avatar } from "@/components/avatar";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
+import { getDisplayName, getInitials, getSafeGoogleAvatarUrl } from "@/lib/auth/user-display";
 import type {
   AssignmentScope,
   InstitutionalIdType,
   PersonType,
   ServiceArea,
 } from "@/types/sitaa";
-import { logout } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -48,19 +49,6 @@ function getRoleLabel(
   return role?.label?.trim() || role?.name?.trim() || roleCode;
 }
 
-export function LogoutButton() {
-  return (
-    <form action={logout}>
-      <button
-        type="submit"
-        className="rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:border-red-300 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-4 focus:ring-red-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
-      >
-        Cerrar sesión
-      </button>
-    </form>
-  );
-}
-
 export default async function DashboardPage() {
   const context = await getAuthenticatedUserContext();
 
@@ -81,9 +69,6 @@ export default async function DashboardPage() {
           <p className="mt-4 leading-7 text-slate-600">
             Intenta nuevamente. Si el problema continúa, contacta a la persona administradora de SITAA.
           </p>
-          <div className="mt-8">
-            <LogoutButton />
-          </div>
         </div>
       </section>
     );
@@ -103,43 +88,39 @@ export default async function DashboardPage() {
             La cuenta de acceso existe, pero todavía no tiene un perfil institucional. Contacta a la persona administradora para completar la activación.
           </p>
           <p className="mt-4 break-all text-sm text-slate-500">Cuenta: {context.user.email}</p>
-          <div className="mt-8">
-            <LogoutButton />
-          </div>
         </div>
       </section>
     );
   }
 
   const { profile, primaryProgram, activeRoleAssignments, user } = context;
+  const displayName = getDisplayName(profile, user);
 
   return (
-    <section className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
-      <div className="flex flex-col gap-6 rounded-3xl border border-emerald-950/10 bg-white p-8 shadow-xl shadow-emerald-950/5 sm:p-12 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">
-            Panel principal
-          </p>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">
-            {profile.full_name || "Usuario de SITAA"}
-          </h1>
-          <dl className="mt-6 grid min-w-0 gap-4 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="font-semibold text-slate-500">Correo</dt>
-              <dd className="mt-1 break-all text-base text-slate-900">{user.email}</dd>
-            </div>
-            <div>
+    <section className="mx-auto max-w-6xl px-4 py-10 sm:px-8 sm:py-14">
+      <div className="sitaa-surface rounded-3xl p-6 sm:p-9">
+        <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
+          <Avatar imageUrl={getSafeGoogleAvatarUrl(user)} initials={getInitials(displayName)} alt={`Foto de perfil de ${displayName}`} size="large" />
+          <div className="min-w-0">
+            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--sitaa-gold-dark)]">Panel principal</p>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--sitaa-blue-dark)] sm:text-4xl">{displayName}</h1>
+            <p className="mt-2 text-[var(--sitaa-text-secondary)]">Resumen de tu cuenta institucional y accesos vigentes.</p>
+          </div>
+        </div>
+
+        <dl className="mt-8 grid min-w-0 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-2xl bg-[var(--sitaa-surface-subdued)] p-4">
               <dt className="font-semibold text-slate-500">Tipo de cuenta</dt>
               <dd className="mt-1 text-base text-slate-900">{profile.account_kind === "technical" ? "Técnica interna" : "Institucional"}</dd>
             </div>
             {profile.person_type && (
-              <div>
+              <div className="rounded-2xl bg-[var(--sitaa-surface-subdued)] p-4">
                 <dt className="font-semibold text-slate-500">Tipo de persona</dt>
                 <dd className="mt-1 text-base text-slate-900">{personTypeLabels[profile.person_type]}</dd>
               </div>
             )}
             {profile.institutional_id_type && profile.institutional_id_value && (
-              <div>
+              <div className="rounded-2xl bg-[var(--sitaa-surface-subdued)] p-4">
                 <dt className="font-semibold text-slate-500">
                   {institutionalIdTypeLabels[profile.institutional_id_type]}
                 </dt>
@@ -147,44 +128,47 @@ export default async function DashboardPage() {
               </div>
             )}
             {primaryProgram ? (
-              <div>
+              <div className="rounded-2xl bg-[var(--sitaa-surface-subdued)] p-4">
                 <dt className="font-semibold text-slate-500">Programa académico principal</dt>
                 <dd className="mt-1 text-base text-slate-900">{primaryProgram.name}</dd>
               </div>
             ) : profile.account_kind !== "technical" ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                 <dt className="font-semibold text-amber-800">Programa académico principal</dt>
                 <dd className="mt-1 text-sm font-semibold text-amber-900">Programa no asignado</dd>
               </div>
             ) : null}
-          </dl>
-        </div>
-        <div className="flex flex-wrap gap-3">
+            <div className="min-w-0 rounded-2xl bg-[var(--sitaa-surface-subdued)] p-4 sm:col-span-2 lg:col-span-3">
+              <dt className="font-semibold text-slate-500">Correo</dt>
+              <dd className="sitaa-wrap-anywhere mt-1 text-base text-slate-900">{user.email}</dd>
+            </div>
+        </dl>
+
+        <div className="mt-7 flex flex-wrap gap-3">
           <Link
             href="/activities"
-            className="rounded-full bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus:outline-none focus:ring-4 focus:ring-emerald-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+            className="sitaa-primary-action"
           >
             Actividades
           </Link>
           <Link
             href="/catalogs"
-            className="rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+            className="sitaa-secondary-action"
           >
             Catálogos
           </Link>
           <Link
             href="/profile"
-            className="rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+            className="sitaa-secondary-action"
           >
             Mi perfil
           </Link>
-          <LogoutButton />
         </div>
       </div>
 
-      <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-8 sm:p-10">
+      <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 sm:p-9">
         <div>
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--sitaa-gold-dark)]">
             Acceso vigente
           </p>
           <h2 className="mt-2 text-2xl font-bold text-slate-900">Asignaciones de rol activas</h2>

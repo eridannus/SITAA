@@ -88,6 +88,7 @@ La versión instalada de `@supabase/supabase-js` ofrece operaciones públicas y 
 | --- | --- | --- |
 | Registro institucional propio | Google OAuth + RPC autenticado posterior | Configuración del proveedor; no usa `service_role` en la aplicación |
 | Vinculación Google propia | Flujo Supabase Auth | Se conserva `auth.users.id`; no se sobrescribe identidad SITAA |
+| Edición de nombre propio | UPDATE de columnas estructuradas protegido por RLS, grants y trigger | No permite cambiar cuenta, persona, identificador, programa, correo, estado ni roles; `full_name` se deriva |
 | Recuperación propia | `auth.resetPasswordForEmail` | Panel administrativo debe envolverla para autorización y auditoría |
 | Leer/editar perfil propio no crítico | Cliente SSR bajo RLS | No requerido |
 | Listar usuarios Auth | No | `auth.admin.listUsers` |

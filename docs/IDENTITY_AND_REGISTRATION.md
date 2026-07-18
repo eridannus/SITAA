@@ -1,6 +1,6 @@
 # Identidad y registro
 
-**Estado funcional:** Fase A implementada y operativa. 0004 y 0005 están aplicadas, verificadas y reconciliadas con el snapshot posterior a 0005.
+**Estado funcional:** Fase A implementada y operativa. 0004 y 0005 están aplicadas, verificadas y reconciliadas. 0006 está creada localmente y no aplicada.
 
 ## Principio
 
@@ -30,7 +30,8 @@ Google autentica la cuenta. SITAA conserva identidad institucional y autorizaci�
 
 - `student` deriva `student_account`; `professor` deriva `worker_number`.
 - El identificador se guarda como texto de 1–50 dígitos y conserva ceros iniciales.
-- `full_name` normalizado admite 2–200 caracteres.
+- `first_names` y `paternal_surname` admiten 1–150 caracteres normalizados; `maternal_surname` es opcional y usa el mismo límite.
+- `full_name` permanece como valor derivado de compatibilidad y no se captura como un campo único desde 0006.
 - El correo verificado de Google se normaliza en minúsculas y admite hasta 254 caracteres.
 - El programa principal debe existir y estar activo.
 - La unicidad es por `(institutional_id_type, institutional_id_value)`.
@@ -43,7 +44,7 @@ Google autentica la cuenta. SITAA conserva identidad institucional y autorizaci�
 2. El servidor guarda sólo `student` o `professor` en una cookie breve `HttpOnly`, `SameSite=Lax` y segura en producción. Es una pista de UX, no autorización.
 3. El trigger crea exactamente un perfil mínimo `pending_registration` para un Google nuevo, aunque `email_confirmed_at` todavía sea nulo durante el `INSERT` inicial de Auth.
 4. `/auth/callback` intercambia PKCE y dirige a `/complete-registration/student`, `/complete-registration/professor` o al selector `/complete-registration`.
-5. El usuario autenticado captura nombre, identificador y programa en un formulario de tipo fijo.
+5. El usuario autenticado captura nombre(s), apellido paterno, apellido materno opcional, identificador y programa en un formulario de tipo fijo.
 6. `complete_own_google_registration` exige una identidad `auth.identities` Google enlazada, correo coincidente y verificación final; después valida perfil pendiente, formato, programa y unicidad, actualiza el mismo perfil transaccionalmente y no crea roles.
 
 No existe tabla de intents, escritura anónima de registro, consulta pública de disponibilidad ni PII institucional antes de Google. La duplicidad del identificador sólo se comunica al usuario autenticado que completa su propio perfil.
@@ -54,7 +55,13 @@ Un perfil activo va al panel; uno inactivo va al estado de cuenta; uno pendiente
 
 ### Cuenta técnica
 
-Sólo un proceso administrativo confiable puede fijar `app_metadata.sitaa_account_kind=technical`. Requiere correo confirmado y nombre válido; no crea identidad académica ni rol. Metadata pública no puede solicitarla.
+Sólo un proceso administrativo confiable puede fijar `app_metadata.sitaa_account_kind=technical`. Requiere correo confirmado y nombre(s) estructurado; los apellidos son opcionales. Durante la transición, metadata confiable `sitaa_full_name` puede poblar `first_names` completo sin intentar dividirlo. No crea identidad académica ni rol y metadata pública no puede solicitarla.
+
+## Contrato de nombres 0006
+
+Los campos estructurados son autoritativos y `full_name` se reconstruye en la base. Se recortan extremos y se colapsan espacios repetidos, conservando Unicode, acentos y apóstrofes. No se adivinan límites de apellido a partir de nombres completos históricos. El preflight detiene la aplicación hasta que las cuentas activas ambiguas tengan una correspondencia revisada fuera de archivos versionados.
+
+Para orden alfabético futuro se usa apellido paterno, apellido materno y nombre(s), en ese orden. Los reportes y exportaciones futuros mostrarán tres columnas separadas; continúan fuera del alcance de 0006.
 
 ## Invariantes de seguridad
 

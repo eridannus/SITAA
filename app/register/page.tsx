@@ -3,6 +3,7 @@ import Link from "next/link";
 import { guardPublicRegistrationEntry } from "@/lib/auth/guard-public-registration";
 
 export const metadata: Metadata = { title: "Registro" };
+export const dynamic = "force-dynamic";
 
 const choices = [
   {
@@ -22,12 +23,12 @@ const choices = [
 export default async function RegisterPage() {
   await guardPublicRegistrationEntry();
   return (
-    <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
+    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-8 sm:py-14">
       <div className="max-w-2xl">
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">
+        <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--sitaa-gold-dark)]">
           Crear cuenta
         </p>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight text-emerald-950 sm:text-4xl">
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-[var(--sitaa-blue-dark)] sm:text-4xl">
           Elige tu tipo de registro
         </h1>
         <p className="mt-4 leading-7 text-slate-600">
@@ -35,19 +36,19 @@ export default async function RegisterPage() {
         </p>
       </div>
 
-      <div className="mt-10 grid gap-6 md:grid-cols-2">
+      <div className="mt-8 grid gap-5 md:grid-cols-2">
         {choices.map((choice) => (
           <Link
             key={choice.href}
             href={choice.href}
-            className="group flex min-h-64 cursor-pointer flex-col rounded-3xl border border-slate-200 bg-white p-8 shadow-sm transition hover:border-emerald-400 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+            className="group flex min-h-52 cursor-pointer flex-col rounded-3xl border border-slate-200 bg-white p-7 shadow-sm transition hover:border-[var(--sitaa-blue)] hover:shadow-lg"
           >
-            <p className="text-sm font-bold uppercase tracking-[0.16em] text-emerald-700">
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-[var(--sitaa-gold-dark)]">
               {choice.eyebrow}
             </p>
             <h2 className="mt-4 text-2xl font-bold text-slate-900">{choice.title}</h2>
             <p className="mt-4 flex-1 leading-7 text-slate-600">{choice.description}</p>
-            <span className="mt-7 text-sm font-bold text-emerald-800 group-hover:text-emerald-950">
+            <span className="mt-7 text-sm font-bold text-[var(--sitaa-blue)]">
               Continuar →
             </span>
           </Link>

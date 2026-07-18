@@ -12,6 +12,8 @@ La fuente de verdad histórica y evolutiva es la cadena:
 4. `supabase/migrations/0004_identity_registration_foundation.sql`: aplicada y verificada.
 5. `supabase/migrations/0005_fix_google_oauth_user_creation.sql`: aplicada y verificada.
 
+`0006_structured_person_names.sql` está creada localmente como siguiente cambio, pero no forma parte del estado vivo ni se ha aplicado.
+
 El snapshot regenerado bajo `supabase/reconciliation/live/` fue comparado localmente contra esa cadena. No se conectó a Supabase durante esta reconciliación documental.
 
 ## Inventario posterior a 0005
@@ -96,6 +98,6 @@ El detalle probatorio está en `supabase/reconciliation/0005_post_apply_reconcil
 
 ## Inmutabilidad y siguiente migración
 
-`0001`–`0005` forman historia aplicada y verificada y no se reescriben. `0006` es el siguiente número disponible; no está creado ni reservado para una implementación concreta.
+`0001`–`0005` forman historia aplicada y verificada y no se reescriben. `0006` formaliza nombres personales estructurados, está pendiente de preflight, revisión y aplicación manual coordinada. No se ha conectado a Supabase para crearla.
 
 Todo trabajo futuro de base de datos debe revisar la cadena completa, crear una nueva migración numerada, incluir verificación y rollback cuando corresponda, aplicarse manualmente a Supabase, regenerar el snapshot después de cambios significativos, comparar el estado vivo contra la cadena y actualizar `docs/DATABASE_CHANGELOG.md`.

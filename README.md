@@ -26,7 +26,7 @@ npm run start  # Inicia la compilación de producción
 
 ## Rutas iniciales
 
-- `/`: página principal.
+- `/`: puerta compacta de autenticación con identidad visual azul y oro.
 - `/health`: comprobación básica del servicio; muestra `SITAA OK`.
 - `/supabase-test`: verifica la configuración y consulta `public.system_health`.
 - `/login`: Google como acceso principal y correo/contraseña heredado como opción secundaria.
@@ -37,7 +37,7 @@ npm run start  # Inicia la compilación de producción
 - `/complete-registration/student` y `/complete-registration/professor`: identidad institucional autenticada de tipo fijo.
 - `/dashboard`: panel protegido con perfil institucional y asignaciones de rol activas.
 - `/catalogs`: visor protegido de catálogos operativos activos.
-- `/profile`: edición protegida de identidad institucional básica.
+- `/profile`: edición protegida de nombre(s) y apellidos estructurados.
 - `/activities`: listado protegido de actividades visibles.
 - `/activities/new`: alta protegida de una actividad básica.
 
@@ -60,7 +60,9 @@ El registro autentica primero con Google y sólo después solicita identidad ins
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 
-La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-17T23:20:07Z` quedó reconciliado contra 0001–0005 sin deriva inexplicada; `0006` es el siguiente número disponible.
+La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-17T23:20:07Z` quedó reconciliado contra 0001–0005 sin deriva inexplicada. 0006 está creada, no aplicada, y formaliza los nombres personales estructurados conservando `full_name` como compatibilidad derivada.
+
+La navegación autenticada usa avatar Google validado o iniciales, menú de cuenta accesible y estados seleccionados de alto contraste. El acceso público emplea una tarjeta única que cabe en el viewport; el fondo canvas es decorativo, pausa en pestañas ocultas y respeta movimiento reducido.
 
 ## Alcance actual
 

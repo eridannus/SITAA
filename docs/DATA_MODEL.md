@@ -1,6 +1,6 @@
 # Modelo de datos
 
-> **Vigencia:** este documento describe el esquema reconciliado después de 0005. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
+> **Vigencia:** este documento describe el esquema reconciliado después de 0005 y el cambio 0006 creado, todavía no aplicado. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
 
 ## Tablas implementadas
 
@@ -11,7 +11,7 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 | `divisions` | Divisiones académicas | `id`, `code`, `name`, `is_active` |
 | `academic_programs` | Carreras o programas | `id`, `division_id`, `code`, `name`, `is_active` |
 | `roles` | Catálogo estable de roles | `id`, `code`, `label`, `description`, `is_active` |
-| `profiles` | Identidad de cuenta estable vinculada a Auth | `id`, `email`, `full_name`, nombres heredados, `account_kind`, `account_status`, `person_type`, `institutional_id_type`, `institutional_id_value`, `primary_program_id`, `activated_at`, `deactivated_at` |
+| `profiles` | Identidad de cuenta estable vinculada a Auth | `id`, `email`, `first_names`, `paternal_surname`, `maternal_surname`, `full_name`, `account_kind`, `account_status`, `person_type`, `institutional_id_type`, `institutional_id_value`, `primary_program_id`, `activated_at`, `deactivated_at` |
 | `role_assignments` | Asignaciones múltiples, vigentes o históricas | `id`, `user_id`, `role_code`, `scope_type`, `service_area`, `division_id`, `program_id`, `starts_at`, `ends_at`, `status`, `is_active` |
 | `academic_periods` | Semestres académicos operativos y rangos oficiales | `id`, `code`, `label` o `name`, `description`, rangos oficiales de fecha, `is_active` |
 | `activity_types` | Tipos de actividad | `id`, `code`, `label` o `name`, `description`, `is_active` |
@@ -32,18 +32,21 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 - El modelo aprobado exige `student_account` para alumnos y `worker_number` para profesores; ambos valores son texto de dígitos y conservan ceros iniciales.
 - La unicidad se aplica al par (`institutional_id_type`, `institutional_id_value`) mediante índice parcial para cuentas institucionales. El mismo valor puede existir una vez por cada tipo.
 - `primary_program_id` es obligatorio para una cuenta institucional completa y no concede permisos. Una cuenta `technical` queda exenta de persona, programa e identificador.
-- `full_name` es la representación normalizada de nombres y apellidos; no sustituye sus campos separados.
+- 0006 formaliza `first_names`, `paternal_surname` y `maternal_surname` como fuente autoritativa. Nombre(s) y apellido paterno son obligatorios para cuentas institucionales activas; el apellido materno es opcional. Las cuentas técnicas requieren nombre(s) y permiten apellidos opcionales.
+- `full_name` se conserva como representación derivada de compatibilidad. Un trigger normaliza espacios y lo reconstruye sin eliminar acentos ni forzar mayúsculas.
 - Los roles y responsabilidades se obtienen exclusivamente de `role_assignments`.
 - El semestre, cuando un comité lo requiera, se captura en el contexto de participación, la actividad o una respuesta de formulario versionada; nunca como atributo actual de `profiles`.
-- Desde 0004, el autoservicio directo de `profiles` se limita a `full_name`; clasificación, identificador, programa, correo, estado y timestamps quedan protegidos por privilegios de columna y trigger.
+- Con 0006, el autoservicio directo de `profiles` se limita a los tres componentes del nombre; `full_name` deja de escribirse directamente. Clasificación, identificador, programa, correo, estado y timestamps permanecen protegidos por privilegios de columna y trigger.
 - `account_status` distingue `pending_registration|active|inactive`; `is_active` se conserva como compatibilidad y refleja únicamente `active`.
 - `pending_registration` admite temporalmente identidad institucional incompleta para el Auth user Google; no concede acceso operativo.
 
-### Registro institucional autenticado (implementado por 0004)
+### Registro institucional autenticado
 
 - 0004 no agrega una tabla de registro temporal: nombre, identificador y programa se reciben sólo después de Google OAuth.
-- `complete_own_google_registration(person_type, full_name, institutional_id_value, primary_program_id)` valida y completa el mismo `profile` pendiente dentro de una transacción autenticada.
+- 0006 añade el overload `complete_own_google_registration(person_type, first_names, paternal_surname, maternal_surname, institutional_id_value, primary_program_id)`. El overload post-0005 permanece para rollback, pero pierde `EXECUTE` de `authenticated` mientras 0006 esté activo.
 - La disponibilidad del identificador no se expone a `anon`; unicidad y carreras se resuelven al completar el perfil mediante el índice parcial.
+- No se divide `full_name` de perfiles históricos. El preflight sólo reporta conteos y bloquea cuentas activas sin correspondencia estructurada revisada.
+- El orden canónico futuro es `paternal_surname`, `maternal_surname`, `first_names`. Aplicaciones que ordenen en memoria usarán comparación local en español. CSV y PDF futuros expondrán columnas separadas; no se implementan en 0006.
 
 ### Evolución prevista de asignaciones
 

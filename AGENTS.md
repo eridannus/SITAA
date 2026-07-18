@@ -39,7 +39,7 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 
 ## Estado actual
 
-La aplicación y las migraciones `0001`–`0005` ya existen, están aplicadas, verificadas y reconciliadas. `0006` es el siguiente número disponible, pero no está creado ni reservado. No modificar migraciones aplicadas ni Supabase cuando el ticket sea exclusivamente documental. Las siguientes etapas de identidad y autorización deben partir de los documentos canónicos y de los planes de prueba vigentes.
+La aplicación y las migraciones `0001`–`0005` ya existen, están aplicadas, verificadas y reconciliadas. `0006_structured_person_names.sql` está creada localmente, pero no aplicada; no modificar migraciones aplicadas ni conectarse a Supabase sin autorización expresa. Las siguientes etapas de identidad y autorización deben partir de los documentos canónicos y de los planes de prueba vigentes.
 
 La Fase A está implementada y operativa: usa Google OAuth para registro público, sin restricción de dominio ni scopes elevados. El acceso por correo/contraseña es sólo heredado. La identidad institucional se captura únicamente después de autenticar; no introducir signup público por contraseña, PII preautenticación, endpoints anónimos de disponibilidad, secretos OAuth, datos institucionales en URLs o `localStorage`, ni lógica que confíe en email como llave primaria.
 

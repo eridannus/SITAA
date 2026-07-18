@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 import { completeGoogleRegistration } from "@/app/register/actions";
@@ -17,7 +16,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-full bg-emerald-800 px-7 py-3 text-sm font-bold text-white transition hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:opacity-70"
+      className="sitaa-primary-action"
     >
       {pending ? "Completando…" : "Completar registro"}
     </button>
@@ -25,11 +24,7 @@ function SubmitButton() {
 }
 
 function fieldClass(error?: string) {
-  return `mt-2 w-full min-w-0 rounded-xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:ring-4 ${
-    error
-      ? "border-red-400 focus:border-red-600 focus:ring-red-100"
-      : "border-slate-300 focus:border-emerald-700 focus:ring-emerald-100"
-  }`;
+  return `sitaa-field mt-2 ${error ? "sitaa-field-invalid" : ""}`;
 }
 
 export function RegistrationForm({
@@ -45,7 +40,9 @@ export function RegistrationForm({
     fieldErrors: {},
     values: {
       person_type: personType,
-      full_name: "",
+      first_names: "",
+      paternal_surname: "",
+      maternal_surname: "",
       institutional_id_value: "",
       primary_program_id: "",
     },
@@ -74,23 +71,35 @@ export function RegistrationForm({
       )}
 
       <div className="min-w-0 sm:col-span-2">
-        <label htmlFor="full_name" className="block text-sm font-semibold text-slate-700">
-          Nombre completo
+        <label htmlFor="first_names" className="block text-sm font-semibold text-slate-700">
+          Nombre(s)
         </label>
         <input
-          key={`name-${state.values.full_name}`}
-          id="full_name"
-          name="full_name"
-          autoComplete="name"
+          key={`first-names-${state.values.first_names}`}
+          id="first_names"
+          name="first_names"
+          autoComplete="given-name"
           required
-          minLength={2}
-          maxLength={200}
-          defaultValue={state.values.full_name}
-          aria-invalid={Boolean(state.fieldErrors.full_name)}
-          aria-describedby={state.fieldErrors.full_name ? "full_name-error" : undefined}
-          className={fieldClass(state.fieldErrors.full_name)}
+          maxLength={150}
+          defaultValue={state.values.first_names}
+          aria-invalid={Boolean(state.fieldErrors.first_names)}
+          aria-describedby={state.fieldErrors.first_names ? "first_names-error" : undefined}
+          className={fieldClass(state.fieldErrors.first_names)}
         />
-        {state.fieldErrors.full_name && <p id="full_name-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.full_name}</p>}
+        {state.fieldErrors.first_names && <p id="first_names-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.first_names}</p>}
+      </div>
+
+      <div className="min-w-0">
+        <label htmlFor="paternal_surname" className="block text-sm font-semibold text-slate-700">Apellido paterno</label>
+        <input key={`paternal-${state.values.paternal_surname}`} id="paternal_surname" name="paternal_surname" autoComplete="family-name" required maxLength={150} defaultValue={state.values.paternal_surname} aria-invalid={Boolean(state.fieldErrors.paternal_surname)} aria-describedby={state.fieldErrors.paternal_surname ? "paternal_surname-error" : undefined} className={fieldClass(state.fieldErrors.paternal_surname)} />
+        {state.fieldErrors.paternal_surname && <p id="paternal_surname-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.paternal_surname}</p>}
+      </div>
+
+      <div className="min-w-0">
+        <label htmlFor="maternal_surname" className="block text-sm font-semibold text-slate-700">Apellido materno <span className="font-normal text-slate-500">(opcional)</span></label>
+        <input key={`maternal-${state.values.maternal_surname}`} id="maternal_surname" name="maternal_surname" autoComplete="additional-name" maxLength={150} defaultValue={state.values.maternal_surname} aria-invalid={Boolean(state.fieldErrors.maternal_surname)} aria-describedby={state.fieldErrors.maternal_surname ? "maternal_surname-error" : "maternal_surname-help"} className={fieldClass(state.fieldErrors.maternal_surname)} />
+        <p id="maternal_surname-help" className="mt-2 text-xs leading-5 text-slate-500">Déjalo vacío si no cuentas con apellido materno.</p>
+        {state.fieldErrors.maternal_surname && <p id="maternal_surname-error" className="mt-2 text-sm text-red-700">{state.fieldErrors.maternal_surname}</p>}
       </div>
 
       <div className="min-w-0">
@@ -141,12 +150,6 @@ export function RegistrationForm({
 
       <div className="flex flex-col gap-3 pt-2 sm:col-span-2 sm:flex-row sm:items-center">
         <SubmitButton />
-        <Link
-          href="/complete-registration"
-          className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-full border border-slate-300 px-7 py-3 text-sm font-bold text-slate-700 transition hover:border-emerald-700 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
-        >
-          Cambiar tipo de registro
-        </Link>
       </div>
     </form>
   );

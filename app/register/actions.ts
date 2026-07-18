@@ -33,7 +33,9 @@ function normalizePersonType(value: string): RegistrationPersonType | "" {
 function registrationValuesFrom(formData: FormData): RegistrationFormValues {
   return {
     person_type: normalizePersonType(text(formData, "person_type")),
-    full_name: text(formData, "full_name").replace(/\s+/g, " "),
+    first_names: text(formData, "first_names").replace(/\s+/g, " "),
+    paternal_surname: text(formData, "paternal_surname").replace(/\s+/g, " "),
+    maternal_surname: text(formData, "maternal_surname").replace(/\s+/g, " "),
     institutional_id_value: text(formData, "institutional_id_value"),
     primary_program_id: text(formData, "primary_program_id"),
   };
@@ -50,8 +52,11 @@ function validationError(
 function validateRegistration(values: RegistrationFormValues) {
   const errors: Partial<Record<RegistrationField, string>> = {};
   if (!values.person_type) errors.person_type = "El tipo de registro no es válido.";
-  if (values.full_name.length < 2 || values.full_name.length > 200) {
-    errors.full_name = "Escribe tu nombre completo (de 2 a 200 caracteres).";
+  if (values.first_names.length < 1 || values.first_names.length > 150) errors.first_names = "Escribe tu nombre o nombres (máximo 150 caracteres).";
+  if (values.paternal_surname.length < 1 || values.paternal_surname.length > 150) errors.paternal_surname = "Escribe tu apellido paterno (máximo 150 caracteres).";
+  if (values.maternal_surname.length > 150) errors.maternal_surname = "El apellido materno no puede exceder 150 caracteres.";
+  if ([values.first_names, values.paternal_surname, values.maternal_surname].filter(Boolean).join(" ").length > 200) {
+    errors.first_names = "El nombre visible formado por nombres y apellidos no puede exceder 200 caracteres.";
   }
   if (!digitsPattern.test(values.institutional_id_value)) {
     errors.institutional_id_value = "Usa únicamente dígitos, sin espacios, letras ni signos.";
@@ -78,9 +83,10 @@ function mapRegistrationError(message: string, code?: string) {
       message: "El programa seleccionado no está disponible.",
     };
   }
-  if (normalized.includes("full_name")) {
-    return { field: "full_name" as RegistrationField, message: "El nombre completo no es válido." };
-  }
+  if (normalized.includes("first_names")) return { field: "first_names" as RegistrationField, message: "El nombre o nombres no son válidos." };
+  if (normalized.includes("paternal_surname")) return { field: "paternal_surname" as RegistrationField, message: "El apellido paterno no es válido." };
+  if (normalized.includes("maternal_surname")) return { field: "maternal_surname" as RegistrationField, message: "El apellido materno no es válido." };
+  if (normalized.includes("full_name")) return { field: "first_names" as RegistrationField, message: "El nombre formado por nombres y apellidos es demasiado largo." };
   if (normalized.includes("identifier")) {
     return {
       field: "institutional_id_value" as RegistrationField,
@@ -150,7 +156,9 @@ export async function completeGoogleRegistration(
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.rpc("complete_own_google_registration", {
       requested_person_type: values.person_type,
-      requested_full_name: values.full_name,
+      requested_first_names: values.first_names,
+      requested_paternal_surname: values.paternal_surname,
+      requested_maternal_surname: values.maternal_surname || null,
       requested_institutional_id_value: values.institutional_id_value,
       requested_primary_program_id: values.primary_program_id,
     });

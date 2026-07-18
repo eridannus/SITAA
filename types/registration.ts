@@ -2,7 +2,9 @@ export type RegistrationPersonType = "student" | "professor";
 
 export interface RegistrationFormValues {
   person_type: RegistrationPersonType | "";
-  full_name: string;
+  first_names: string;
+  paternal_surname: string;
+  maternal_surname: string;
   institutional_id_value: string;
   primary_program_id: string;
 }

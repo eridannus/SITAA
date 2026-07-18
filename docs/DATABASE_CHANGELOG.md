@@ -58,7 +58,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-El siguiente número disponible es `0006`. No está creado ni reservado para una implementación concreta. Todo cambio futuro debe:
+`0006` fue creado localmente para nombres personales estructurados y todavía no se ha aplicado. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0005`;
@@ -109,3 +109,12 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Resultado: sin deriva inexplicada; informe en `supabase/reconciliation/0005_post_apply_reconciliation.md`.
 - Datos operativos: se documentó de forma genérica una separación administrativa única entre cuenta técnica y cuenta académica. No se convirtió en migración reutilizable.
 - Fase A: cerrada y operativa. Las fases B–F permanecen pendientes.
+
+## 0006_structured_person_names.sql — creada, no aplicada
+
+- Formaliza las columnas preexistentes `first_names`, `paternal_surname` y `maternal_surname` como autoridad del nombre personal.
+- Mantiene `full_name` como compatibilidad derivada mediante trigger; no lo elimina ni divide nombres históricos.
+- Añade una firma estructurada del RPC de finalización Google, retira `EXECUTE` del overload post-0005 y protege la edición propia mediante grants de columna y trigger.
+- El preflight expone sólo conteos y bloquea cuentas activas o inactivas sin correspondencia estructurada revisada.
+- Incluye verificador transaccional, rollback conservador y `docs/TEST_PLAN_0006.md`.
+- Estado: pendiente de revisión, preflight y aplicación manual coordinada; el snapshot vivo sigue representando 0001–0005.
