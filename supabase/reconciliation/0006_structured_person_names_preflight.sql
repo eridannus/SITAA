@@ -14,7 +14,10 @@ with function_oids as (
     f.*,
     case when completion_oid is null then '' else lower(pg_get_functiondef(completion_oid)) end as completion_def,
     case when auth_handler_oid is null then '' else lower(pg_get_functiondef(auth_handler_oid)) end as auth_handler_def,
-    case when profile_enforcer_oid is null then '' else lower(pg_get_functiondef(profile_enforcer_oid)) end as profile_enforcer_def
+    case when profile_enforcer_oid is null then '' else lower(pg_get_functiondef(profile_enforcer_oid)) end as profile_enforcer_def,
+    case when profile_enforcer_oid is null then null else (
+      select p.prosecdef from pg_proc p where p.oid = profile_enforcer_oid
+    ) end as profile_enforcer_is_definer
   from function_oids f
 ), categories(category, affected_rows, classification) as (
   select 'missing_structured_name_column', count(*), 'blocking'
@@ -94,7 +97,7 @@ with function_oids as (
   union all
   select 'unexpected_post_0005_profile_enforcement_definition',
     (profile_enforcer_oid is null or not (
-      profile_enforcer_def like '%security invoker%'
+      profile_enforcer_is_definer = false
       and profile_enforcer_def like '%set search_path to ''pg_catalog'', ''public''%'
       and profile_enforcer_def like '%to_jsonb(new) - ''full_name'' - ''updated_at''%'
       and profile_enforcer_def like '%sólo puedes actualizar tu nombre completo.%'

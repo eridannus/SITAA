@@ -14,6 +14,7 @@ declare
   structured_completion_oid oid := to_regprocedure('public.complete_own_google_registration(text,text,text,text,text,uuid)');
   auth_handler_oid oid := to_regprocedure('public.handle_sitaa_auth_user_created()');
   profile_enforcer_oid oid := to_regprocedure('public.enforce_sitaa_profile_identity()');
+  profile_enforcer_is_definer boolean;
   definition text;
 begin
   select count(*) into affected
@@ -108,8 +109,10 @@ begin
     failures := failures || jsonb_build_object('category', 'unexpected_post_0005_profile_enforcement_definition', 'affected_rows', 1);
   else
     definition := lower(pg_get_functiondef(profile_enforcer_oid));
+    select p.prosecdef into profile_enforcer_is_definer
+    from pg_proc p where p.oid = profile_enforcer_oid;
     if not (
-      definition like '%security invoker%'
+      profile_enforcer_is_definer = false
       and definition like '%set search_path to ''pg_catalog'', ''public''%'
       and definition like '%to_jsonb(new) - ''full_name'' - ''updated_at''%'
       and definition like '%sólo puedes actualizar tu nombre completo.%'

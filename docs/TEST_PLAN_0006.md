@@ -29,6 +29,8 @@ La salida normal del preflight contiene categorías y conteos, nunca nombres, co
 | Funciones, triggers y definiciones post‑0005 | Bloqueante | Sin faltantes ni desviaciones semánticas |
 | Privilegios de finalización y `profiles` | Bloqueante | Contrato post‑0005 exacto |
 
+La seguridad invocadora de `enforce_sitaa_profile_identity()` se comprueba con `pg_proc.prosecdef = false`; no se depende de que `pg_get_functiondef()` imprima la frase opcional `SECURITY INVOKER`.
+
 El preflight embebido repite todas las condiciones bloqueantes y aborta la transacción con categorías y conteos agregados.
 
 ## Verificación transaccional automatizada
