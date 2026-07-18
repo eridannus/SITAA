@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "SITAA", template: "%s | SITAA" },
   description: "Sistema Integral de Tutorías y Asesorías Académicas.",
+  icons: {
+    icon: [{ url: "/brand/sitaa-mark.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
