@@ -58,10 +58,10 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0006` fue creado localmente para nombres personales estructurados y todavía no se ha aplicado. Todo cambio futuro debe:
+`0001`–`0006` están aplicadas, verificadas y reconciliadas. `0007` es el siguiente número disponible. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
-2. crear una nueva migración numerada, sin reescribir `0001`–`0005`;
+2. crear una nueva migración numerada, sin reescribir `0001`–`0006`;
 3. incluir verificación y rollback cuando sea apropiado;
 4. aplicarse manualmente a Supabase;
 5. regenerar el snapshot vivo después de cambios significativos;
@@ -110,7 +110,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Datos operativos: se documentó de forma genérica una separación administrativa única entre cuenta técnica y cuenta académica. No se convirtió en migración reutilizable.
 - Fase A: cerrada y operativa. Las fases B–F permanecen pendientes.
 
-## 0006_structured_person_names.sql — aplicada; verificador pendiente de repetición
+## 0006_structured_person_names.sql — aplicada y verificada
 
 - Formaliza las columnas preexistentes `first_names`, `paternal_surname` y `maternal_surname` como autoridad del nombre personal.
 - Mantiene `full_name` como compatibilidad derivada mediante trigger; no lo elimina ni divide nombres históricos.
@@ -119,6 +119,18 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - El verificador transaccional cubre límites de nombres e identificadores, identidad Google, programas, ciclo de cuenta, edición propia, ACL y regresiones 0002–0005; termina con `ROLLBACK`.
 - El rollback revoca primero los permisos 0006, restaura el contrato post‑0005 sin borrar columnas ni valores y se autoverifica antes de confirmar.
 - Incluye `docs/TEST_PLAN_0006.md`, alineado con los contratos de preflight, verificación y rollback.
-- Estado: migración aplicada y aplicación compatible desplegada. La primera ejecución del verificador detectó un defecto exclusivo del arnés: `authenticated` no podía consultar `pg_temp.sitaa_0006_cases` mediante `pg_temp.case_id(text)`.
-- Corrección del arnés: grants temporales y acotados de `SELECT` sobre la tabla de lookup y `EXECUTE` sobre sus dos helpers; no cambia ningún objeto o privilegio persistente. El verificador debe repetirse y conservar su `ROLLBACK` final.
-- El snapshot vivo versionado todavía representa 0001–0005 y requiere reconciliación posterior autorizada.
+- Estado: preflight aprobado, migración confirmada con `COMMIT`, aplicación compatible desplegada, verificador aprobado con código de salida 0 y `ROLLBACK`, y smoke tests de producción aprobados.
+- Corrección del arnés: grants temporales y acotados de `SELECT` sobre la tabla de lookup y `EXECUTE` sobre sus dos helpers; desaparecen con la sesión/transacción y no cambian ningún objeto o privilegio persistente.
+- Resultado: nombres estructurados operativos; `full_name` permanece como compatibilidad derivada. Reportes y exportaciones CSV/PDF siguen pendientes.
+
+## Reconciliación posterior a 0006 — 2026-07-18
+
+- Snapshot comparado: `2026-07-18T04:05:40Z`, estado `SUCCESS`.
+- Cadena reconciliada: `0001 + 0002 + 0003 + 0004 + 0005 + 0006`.
+- Inventario vivo: 17 tablas, 156 columnas, 72 restricciones, 38 índices, 8 triggers públicos, 39 firmas de función, 23 políticas y 51 semillas controladas.
+- Privilegios vivos: 112 grants de rutina, 261 de tabla, 6 de secuencia y 413 entradas ACL expandidas.
+- Resultado: sin deriva inexplicada; informe en `supabase/reconciliation/0006_post_apply_reconciliation.md`.
+- Diferencias ambientales: timestamp/formato, omisión semánticamente equivalente de `SECURITY INVOKER` y representación ACL de `MAINTAIN`.
+- Diferencias operativas controladas: backfill revisado de nombres y separación administrativa previamente documentada; no se exportaron datos personales.
+- Contrato visual: `docs/DESIGN_SYSTEM.md` es obligatorio para toda la aplicación y `npm run check:ui` forma parte de la validación.
+- Siguiente número disponible: `0007`; no se crea en este cierre.

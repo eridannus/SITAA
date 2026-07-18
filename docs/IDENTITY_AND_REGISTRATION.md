@@ -1,6 +1,6 @@
 # Identidad y registro
 
-**Estado funcional:** Fase A implementada y operativa. 0004 y 0005 están aplicadas, verificadas y reconciliadas. 0006 está creada localmente y no aplicada.
+**Estado funcional:** Fase A implementada y operativa. 0004, 0005 y 0006 están aplicadas, verificadas y reconciliadas. Los nombres estructurados son el contrato vivo y `full_name` permanece como compatibilidad derivada.
 
 ## Principio
 
@@ -59,7 +59,7 @@ Sólo un proceso administrativo confiable puede fijar `app_metadata.sitaa_accoun
 
 ## Contrato de nombres 0006
 
-Los campos estructurados son autoritativos y `full_name` se reconstruye en la base. Se recortan extremos y se colapsan espacios repetidos, conservando Unicode, acentos y apóstrofes. No se adivinan límites de apellido a partir de nombres completos históricos. El preflight detiene la aplicación hasta que las cuentas activas ambiguas tengan una correspondencia revisada fuera de archivos versionados.
+Los campos estructurados son autoritativos y `full_name` se reconstruye en la base. Se recortan extremos y se colapsan espacios repetidos, conservando Unicode, acentos y apóstrofes. No se adivinaron límites de apellido a partir de nombres completos históricos: el preflight aprobado exigió que las cuentas activas tuvieran una correspondencia revisada fuera de archivos versionados antes de aplicar 0006.
 
 Para orden alfabético futuro se usa apellido paterno, apellido materno y nombre(s), en ese orden. Los reportes y exportaciones futuros mostrarán tres columnas separadas; continúan fuera del alcance de 0006.
 

@@ -41,9 +41,11 @@ function	check_in_activity(text)	postgres	postgres	service_role	EXECUTE	false	po
 function	close_activity_attendance_checkin(uuid)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	close_activity_attendance_checkin(uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	close_activity_attendance_checkin(uuid)	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
-function	complete_own_google_registration(text,text,text,uuid)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
-function	complete_own_google_registration(text,text,text,uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
-function	complete_own_google_registration(text,text,text,uuid)	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
+function	complete_own_google_registration(text,text,text,text,text,uuid)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres
+function	complete_own_google_registration(text,text,text,text,text,uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres
+function	complete_own_google_registration(text,text,text,text,text,uuid)	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres
+function	complete_own_google_registration(text,text,text,uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
+function	complete_own_google_registration(text,text,text,uuid)	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
 function	enforce_sitaa_profile_identity()	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
 function	enforce_sitaa_profile_identity()	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
 function	finalize_expired_attendance()	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
@@ -81,6 +83,8 @@ function	has_any_active_role(text[])	postgres	postgres	service_role	EXECUTE	fals
 function	is_activity_participant(uuid)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	is_activity_participant(uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	is_activity_participant(uuid)	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
+function	normalize_sitaa_profile_names()	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
+function	normalize_sitaa_profile_names()	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
 function	open_activity_attendance_checkin(uuid)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	open_activity_attendance_checkin(uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	open_activity_attendance_checkin(uuid)	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres

@@ -61,7 +61,7 @@ El registro autentica primero con Google y sólo después solicita identidad ins
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 
-La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-17T23:20:07Z` quedó reconciliado contra 0001–0005 sin deriva inexplicada. 0006 está creada, no aplicada, y formaliza los nombres personales estructurados conservando `full_name` como compatibilidad derivada.
+La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-18T04:05:40Z` quedó reconciliado contra 0001–0006 sin deriva inexplicada. 0006 está aplicada y verificada: los nombres personales estructurados son autoritativos y `full_name` se conserva como compatibilidad derivada. `0007` es el siguiente número disponible.
 
 La navegación autenticada usa avatar Google validado o iniciales, menú de cuenta accesible y estados seleccionados de alto contraste. El acceso público emplea una tarjeta única que cabe en el viewport; el fondo canvas es decorativo, pausa en pestañas ocultas y respeta movimiento reducido.
 

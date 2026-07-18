@@ -17,9 +17,9 @@ El dump se obtuvo con `--no-privileges`, pero los grants y ACL vivos se capturan
 - `0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
 - `0004_identity_registration_foundation.sql`: aplicada y verificada; introduce Google OAuth y finalización institucional autenticada, sin intents.
 - `0005_fix_google_oauth_user_creation.sql`: aplicada y verificada; corrige la secuencia temprana de `email_confirmed_at` y endurece la verificación final.
-- Snapshot posterior: `2026-07-17T23:20:07Z`, reconciliado contra 0001–0005 sin deriva inexplicada.
-- `0006_structured_person_names.sql`: creada localmente, no aplicada; formaliza nombres estructurados y conserva `full_name` derivado.
-- Siguiente número disponible después de su aplicación: `0007`; este ticket no lo crea.
+- `0006_structured_person_names.sql`: aplicada y verificada; formaliza nombres estructurados y conserva `full_name` derivado.
+- Snapshot posterior: `2026-07-18T04:05:40Z`, reconciliado contra 0001–0006 sin deriva inexplicada.
+- Siguiente número disponible: `0007`; este cierre no lo crea.
 
 ## Cierre de 0005
 
@@ -32,7 +32,7 @@ El rollback de 0005 es exclusivamente de emergencia: no transforma datos, pero r
 Después de esta reconciliación:
 
 - `0001_baseline_current_schema.sql` no se reescribe, excepto para corregir un defecto comprobado de la baseline.
-- `0001`–`0005` no se reescriben, salvo para corregir un artefacto histórico comprobado y documentado.
+- `0001`–`0006` no se reescriben, salvo para corregir un artefacto histórico comprobado y documentado.
 - Cada cambio posterior usa el siguiente número libre y continúa incrementalmente; las migraciones aplicadas no se reescriben.
 - Una migración se crea antes o junto con cualquier SQL aplicado a Supabase.
 - Si el SQL se aplica manualmente desde Supabase SQL Editor, el mismo archivo debe quedar comprometido en Git.
@@ -40,7 +40,7 @@ Después de esta reconciliación:
 - La verificación y el rollback se versionan cuando el riesgo o el alcance lo requieren.
 - Después de cambios significativos se regenera el snapshot, se compara contra toda la cadena y se actualiza `docs/DATABASE_CHANGELOG.md`.
 
-0006 no debe aplicarse hasta que `reconciliation/0006_structured_person_names_preflight.sql` reporte cero cuentas incompatibles. Cualquier correspondencia histórica se revisa fuera del repositorio y no se incluyen nombres reales en SQL, pruebas ni documentación. La aplicación se coordina con la versión que usa el nuevo RPC; después se ejecutan el verificador y los smoke tests de `docs/TEST_PLAN_0006.md`.
+0006 se aplicó después de que `reconciliation/0006_structured_person_names_preflight.sql` reportó cero categorías bloqueantes. La aplicación compatible fue desplegada y el verificador terminó con código 0 y `ROLLBACK`. Su corrección de arnés concede acceso sólo a fixtures `pg_temp`, por lo que no cambia privilegios de producción ni la migración aplicada.
 
 ## Generación de snapshots
 
@@ -54,7 +54,7 @@ El entorno proporciona `SUPABASE_DB_URL` como secreto. El script prefiere `pg_du
 
 Los resultados se almacenan en `supabase/reconciliation/live/`. Son artefactos para comparar el estado vivo y construir migraciones; no son migraciones para ejecutar directamente.
 
-La reconciliación cerrada el 2026-07-17 comparó el snapshot `2026-07-17T23:20:07Z` contra `0001`–`0005`. No se detectó deriva inexplicada; los detalles están en `reconciliation/0005_post_apply_reconciliation.md`.
+La reconciliación cerrada el 2026-07-18 comparó el snapshot `2026-07-18T04:05:40Z` contra `0001`–`0006`. No se detectó deriva inexplicada; los detalles están en `reconciliation/0006_post_apply_reconciliation.md`.
 
 ## Reglas de seguridad
 

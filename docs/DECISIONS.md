@@ -50,6 +50,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-036 | Roles académicos V2 y autoridad de asignación | Aceptada |
 | DEC-044 | Puerta pública y navegación autenticada | Aceptada |
 | DEC-045 | Sistema visual canónico y estados semánticos | Aceptada |
+| DEC-046 | Cierre reconciliado de 0006 | Aceptada |
 | DEC-037 | Administración confiable y filtrado posterior a autorización | Aceptada |
 | DEC-038 | Implementación por fases y check-in abierto posterior | Aceptada |
 | DEC-039 | Sincronización Auth/profile en Fase A | Aceptada |
@@ -471,9 +472,9 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM, una puerta de acceso compacta y una navegación autenticada con avatar y menú de cuenta. El fondo animado será decorativo, no interceptará interacción y respetará `prefers-reduced-motion`. Los reportes y las exportaciones seguirán fuera de alcance, pero en el futuro expondrán columnas separadas para nombre(s) y apellidos.
 
-**Consecuencias:** `full_name` no se elimina y continúa atendiendo consumidores antiguos. La migración 0006 requiere aplicación coordinada con la versión compatible de la aplicación y no debe ejecutarse hasta resolver el preflight. La cuenta Google refuerza visualmente la identidad autenticada sin convertir metadata del proveedor en identidad institucional editable.
+**Consecuencias:** `full_name` no se elimina y continúa atendiendo consumidores antiguos. La aplicación coordinada exigió aprobar el preflight antes de ejecutar 0006. La cuenta Google refuerza visualmente la identidad autenticada sin convertir metadata del proveedor en identidad institucional editable.
 
-**Estado:** Aceptada; 0006 queda creada localmente, pendiente de revisión y aplicación manual.
+**Estado:** Implementada, aplicada, verificada y reconciliada en 0006.
 
 ## DEC-044 — Puerta pública y navegación autenticada
 
@@ -484,3 +485,13 @@ La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM
 **Consecuencias:** la puerta cerrada no muestra navegación global ni genera desplazamiento documental normal. El dashboard deja de duplicar enlaces disponibles en el encabezado o menú de cuenta. Ocultar Catálogos no sustituye RLS ni cambia privilegios de las tablas; es una autorización adicional de la interfaz administrativa calculada desde asignaciones activas.
 
 **Estado:** Aceptada.
+
+## DEC-046 — Cierre reconciliado de 0006
+
+**Contexto:** 0006 fue aplicada después de aprobar su preflight, desplegar la aplicación compatible y revisar los nombres estructurados. El verificador transaccional terminó con código 0 y `ROLLBACK`; su única corrección fue conceder al rol de prueba acceso a helpers `pg_temp`, sin cambiar privilegios productivos. El snapshot `2026-07-18T04:05:40Z` se generó después de los smoke tests.
+
+**Decisión:** fijar `0001`–`0006` como cadena aplicada, verificada y reconciliada, sin deriva inexplicada. `first_names`, `paternal_surname` y `maternal_surname` son autoritativos; `full_name` es compatibilidad derivada. `0007` es el siguiente número disponible. `docs/DESIGN_SYSTEM.md` es el contrato obligatorio para toda interfaz: marca azul y oro, acciones primarias azules, oro/ámbar para advertencia, rojo para destrucción y verde sólo para éxito semántico; `npm run check:ui` es una validación obligatoria.
+
+**Consecuencias:** las migraciones aplicadas permanecen inmutables. Los grants temporales del verificador desaparecen con su sesión/transacción y no amplían producción. Reportes y exportaciones CSV/PDF siguen pendientes. Cualquier cambio posterior requiere una nueva migración, snapshot y reconciliación cuando corresponda.
+
+**Estado:** Aceptada y cerrada sin deriva inexplicada.

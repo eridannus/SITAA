@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict DSUDxIJjPxJfgBGgk82wH4V2Rds5gJGaCoRxUcdElPS7c6esAjlrMmXIN130MV0
+\restrict lDMwf5GaKGrZWuerG8FKF4RkJ1Y5hgJ3W4oUQ1EXcBZD0kwzJiJmcjajfFFaBAS
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -682,6 +682,63 @@ $_$;
 
 
 --
+-- Name: complete_own_google_registration(text, text, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.complete_own_google_registration(requested_person_type text, requested_first_names text, requested_paternal_surname text, requested_maternal_surname text, requested_institutional_id_value text, requested_primary_program_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'auth'
+    AS $_$
+declare
+  current_user_id uuid := auth.uid();
+  target_profile public.profiles%rowtype;
+  auth_email text; auth_email_confirmed_at timestamptz; identity_email text; identity_email_verified text;
+  normalized_first_names text := regexp_replace(btrim(coalesce(requested_first_names, '')), '\s+', ' ', 'g');
+  normalized_paternal text := regexp_replace(btrim(coalesce(requested_paternal_surname, '')), '\s+', ' ', 'g');
+  normalized_maternal text := nullif(regexp_replace(btrim(coalesce(requested_maternal_surname, '')), '\s+', ' ', 'g'), '');
+  normalized_identifier text := coalesce(requested_institutional_id_value, '');
+  identifier_type text;
+begin
+  if current_user_id is null then raise exception 'sitaa_authentication_required' using errcode = '42501'; end if;
+  select * into target_profile from public.profiles where id = current_user_id for update;
+  if not found then raise exception 'sitaa_profile_missing' using errcode = '42501'; end if;
+  if target_profile.account_kind <> 'institutional' or target_profile.account_status <> 'pending_registration' then raise exception 'sitaa_registration_not_pending' using errcode = '42501'; end if;
+
+  select lower(btrim(u.email)), u.email_confirmed_at into auth_email, auth_email_confirmed_at from auth.users u where u.id = current_user_id;
+  if not found then raise exception 'sitaa_auth_user_missing' using errcode = '42501'; end if;
+  if not exists (select 1 from auth.identities i where i.user_id = current_user_id and i.provider = 'google') then raise exception 'sitaa_google_identity_required' using errcode = '42501'; end if;
+  select lower(btrim(i.identity_data ->> 'email')), lower(btrim(coalesce(i.identity_data ->> 'email_verified', '')))
+  into identity_email, identity_email_verified
+  from auth.identities i where i.user_id = current_user_id and i.provider = 'google'
+    and lower(btrim(i.identity_data ->> 'email')) = auth_email order by i.created_at asc limit 1;
+  if not found or nullif(auth_email, '') is null or auth_email <> lower(btrim(target_profile.email)) or identity_email <> auth_email then raise exception 'sitaa_google_identity_email_mismatch' using errcode = '23514'; end if;
+  if auth_email_confirmed_at is null and identity_email_verified not in ('true', 't', '1') then raise exception 'sitaa_google_email_not_verified' using errcode = '23514'; end if;
+
+  if requested_person_type not in ('student', 'professor') then raise exception 'sitaa_invalid_registration_type' using errcode = '23514'; end if;
+  if char_length(normalized_first_names) not between 1 and 150 then raise exception 'sitaa_invalid_first_names' using errcode = '23514'; end if;
+  if char_length(normalized_paternal) not between 1 and 150 then raise exception 'sitaa_invalid_paternal_surname' using errcode = '23514'; end if;
+  if coalesce(char_length(normalized_maternal), 0) > 150 then raise exception 'sitaa_invalid_maternal_surname' using errcode = '23514'; end if;
+  if char_length(concat_ws(' ', normalized_first_names, normalized_paternal, normalized_maternal)) > 200 then raise exception 'sitaa_invalid_full_name' using errcode = '23514'; end if;
+  if normalized_identifier !~ '^[0-9]+$' then raise exception 'sitaa_invalid_institutional_identifier' using errcode = '23514'; end if;
+  if char_length(normalized_identifier) > 50 then raise exception 'sitaa_identifier_too_long' using errcode = '23514'; end if;
+  if not exists (select 1 from public.academic_programs ap where ap.id = requested_primary_program_id and ap.is_active) then raise exception 'sitaa_invalid_registration_program' using errcode = '23514'; end if;
+
+  identifier_type := case when requested_person_type = 'student' then 'student_account' else 'worker_number' end;
+  if exists (select 1 from public.profiles p where p.id <> current_user_id and p.institutional_id_type = identifier_type and p.institutional_id_value = normalized_identifier) then raise exception 'sitaa_identifier_conflict' using errcode = '23505'; end if;
+
+  begin
+    update public.profiles set first_names = normalized_first_names, paternal_surname = normalized_paternal,
+      maternal_surname = normalized_maternal, person_type = requested_person_type,
+      primary_program_id = requested_primary_program_id, institutional_id_type = identifier_type,
+      institutional_id_value = normalized_identifier, account_status = 'active', is_active = true,
+      activated_at = coalesce(activated_at, now()), deactivated_at = null
+    where id = current_user_id;
+  exception when unique_violation then raise exception 'sitaa_identifier_conflict' using errcode = '23505'; end;
+end;
+$_$;
+
+
+--
 -- Name: enforce_sitaa_profile_identity(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -694,18 +751,14 @@ begin
     if old.account_status <> 'active' then
       raise exception 'La cuenta debe completar su registro antes de editar el perfil.' using errcode = '42501';
     end if;
-    if (to_jsonb(new) - 'full_name' - 'updated_at')
-       is distinct from (to_jsonb(old) - 'full_name' - 'updated_at') then
-      raise exception 'Sólo puedes actualizar tu nombre completo.' using errcode = '42501';
+    if (to_jsonb(new) - 'first_names' - 'paternal_surname' - 'maternal_surname' - 'full_name' - 'updated_at')
+       is distinct from (to_jsonb(old) - 'first_names' - 'paternal_surname' - 'maternal_surname' - 'full_name' - 'updated_at') then
+      raise exception 'Sólo puedes actualizar tus nombres y apellidos.' using errcode = '42501';
     end if;
   end if;
 
-  if new.account_kind = 'institutional'
-     and new.account_status in ('active', 'inactive')
-     and not exists (
-       select 1 from public.academic_programs ap
-       where ap.id = new.primary_program_id and ap.is_active
-     ) then
+  if new.account_kind = 'institutional' and new.account_status in ('active', 'inactive')
+     and not exists (select 1 from public.academic_programs ap where ap.id = new.primary_program_id and ap.is_active) then
     raise exception 'El programa académico no existe o está inactivo.' using errcode = '23514';
   end if;
 
@@ -714,12 +767,9 @@ begin
     new.activated_at := coalesce(new.activated_at, now());
     new.deactivated_at := null;
   elsif new.account_status = 'pending_registration' then
-    new.is_active := false;
-    new.activated_at := null;
-    new.deactivated_at := null;
+    new.is_active := false; new.activated_at := null; new.deactivated_at := null;
   elsif new.account_status = 'inactive' then
-    new.is_active := false;
-    new.deactivated_at := coalesce(new.deactivated_at, now());
+    new.is_active := false; new.deactivated_at := coalesce(new.deactivated_at, now());
   end if;
   return new;
 end;
@@ -1191,69 +1241,41 @@ declare
   normalized_email text := lower(btrim(coalesce(new.email, '')));
   trusted_kind text := new.raw_app_meta_data ->> 'sitaa_account_kind';
   provider text := lower(coalesce(new.raw_app_meta_data ->> 'provider', ''));
-  is_google boolean := provider = 'google'
-    or coalesce(new.raw_app_meta_data -> 'providers', '[]'::jsonb) ? 'google';
-  public_technical_request boolean :=
-    new.raw_user_meta_data ? 'sitaa_account_kind'
+  is_google boolean := provider = 'google' or coalesce(new.raw_app_meta_data -> 'providers', '[]'::jsonb) ? 'google';
+  public_technical_request boolean := new.raw_user_meta_data ? 'sitaa_account_kind'
     or new.raw_user_meta_data ->> 'sitaa_registration_type' = 'technical';
-  provisional_name text := regexp_replace(
-    btrim(coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name', '')),
-    '\s+', ' ', 'g'
-  );
-  technical_name text;
+  provisional_name text := regexp_replace(btrim(coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name', '')), '\s+', ' ', 'g');
+  technical_first_names text := regexp_replace(btrim(coalesce(new.raw_app_meta_data ->> 'sitaa_first_names', new.raw_app_meta_data ->> 'sitaa_full_name', '')), '\s+', ' ', 'g');
+  technical_paternal_surname text := nullif(regexp_replace(btrim(coalesce(new.raw_app_meta_data ->> 'sitaa_paternal_surname', '')), '\s+', ' ', 'g'), '');
+  technical_maternal_surname text := nullif(regexp_replace(btrim(coalesce(new.raw_app_meta_data ->> 'sitaa_maternal_surname', '')), '\s+', ' ', 'g'), '');
 begin
-  if normalized_email = '' or char_length(normalized_email) > 254 then
-    raise exception 'sitaa_invalid_registration_email' using errcode = '23514';
-  end if;
-  if public_technical_request then
-    raise exception 'sitaa_public_technical_account_forbidden' using errcode = '42501';
-  end if;
-  if trusted_kind is not null and trusted_kind <> 'technical' then
-    raise exception 'sitaa_unsupported_account_kind' using errcode = '23514';
-  end if;
-  if trusted_kind = 'technical' and is_google then
-    raise exception 'sitaa_ambiguous_account_metadata' using errcode = '23514';
-  end if;
+  if normalized_email = '' or char_length(normalized_email) > 254 then raise exception 'sitaa_invalid_registration_email' using errcode = '23514'; end if;
+  if public_technical_request then raise exception 'sitaa_public_technical_account_forbidden' using errcode = '42501'; end if;
+  if trusted_kind is not null and trusted_kind <> 'technical' then raise exception 'sitaa_unsupported_account_kind' using errcode = '23514'; end if;
+  if trusted_kind = 'technical' and is_google then raise exception 'sitaa_ambiguous_account_metadata' using errcode = '23514'; end if;
 
   if trusted_kind = 'technical' then
-    technical_name := regexp_replace(
-      btrim(coalesce(new.raw_app_meta_data ->> 'sitaa_full_name', '')), '\s+', ' ', 'g'
-    );
-    if new.email_confirmed_at is null then
-      raise exception 'sitaa_unverified_technical_email' using errcode = '23514';
+    if new.email_confirmed_at is null then raise exception 'sitaa_unverified_technical_email' using errcode = '23514'; end if;
+    if char_length(technical_first_names) not between 1 and 150
+       or coalesce(char_length(technical_paternal_surname), 0) > 150
+       or coalesce(char_length(technical_maternal_surname), 0) > 150
+       or char_length(concat_ws(' ', technical_first_names, technical_paternal_surname, technical_maternal_surname)) > 200 then
+      raise exception 'sitaa_invalid_structured_name' using errcode = '23514';
     end if;
-    if char_length(technical_name) not between 2 and 200 then
-      raise exception 'sitaa_invalid_full_name' using errcode = '23514';
-    end if;
-    insert into public.profiles (
-      id, email, full_name, is_active, account_kind, account_status, activated_at
-    ) values (
-      new.id, normalized_email, technical_name, true, 'technical', 'active', new.email_confirmed_at
-    );
+    insert into public.profiles (id, email, first_names, paternal_surname, maternal_surname, full_name, is_active, account_kind, account_status, activated_at)
+    values (new.id, normalized_email, technical_first_names, technical_paternal_surname, technical_maternal_surname,
+      concat_ws(' ', technical_first_names, technical_paternal_surname, technical_maternal_surname), true, 'technical', 'active', new.email_confirmed_at);
     return new;
   end if;
 
   if is_google then
-    if char_length(provisional_name) not between 2 and 200 then
-      provisional_name := null;
-    end if;
-    insert into public.profiles (
-      id, email, full_name, is_active, account_kind, account_status,
-      person_type, primary_program_id, institutional_id_type,
-      institutional_id_value, activated_at, deactivated_at
-    ) values (
-      new.id, normalized_email, provisional_name, false, 'institutional',
-      'pending_registration', null, null, null, null, null, null
-    );
+    if char_length(provisional_name) not between 2 and 200 then provisional_name := null; end if;
+    insert into public.profiles (id, email, full_name, is_active, account_kind, account_status, person_type, primary_program_id, institutional_id_type, institutional_id_value, activated_at, deactivated_at)
+    values (new.id, normalized_email, provisional_name, false, 'institutional', 'pending_registration', null, null, null, null, null, null);
     return new;
   end if;
-
-  if provider = 'email' or coalesce(new.raw_app_meta_data -> 'providers', '[]'::jsonb) ? 'email' then
-    raise exception 'sitaa_public_password_signup_disabled' using errcode = '42501';
-  end if;
-  if provider <> '' then
-    raise exception 'sitaa_unsupported_auth_provider' using errcode = '23514';
-  end if;
+  if provider = 'email' or coalesce(new.raw_app_meta_data -> 'providers', '[]'::jsonb) ? 'email' then raise exception 'sitaa_public_password_signup_disabled' using errcode = '42501'; end if;
+  if provider <> '' then raise exception 'sitaa_unsupported_auth_provider' using errcode = '23514'; end if;
   raise exception 'sitaa_missing_or_invalid_account_metadata' using errcode = '23514';
 end;
 $$;
@@ -1313,6 +1335,27 @@ CREATE FUNCTION public.is_activity_participant(target_activity_id uuid) RETURNS 
     where ap.activity_id = target_activity_id
       and ap.profile_id = auth.uid()
   );
+$$;
+
+
+--
+-- Name: normalize_sitaa_profile_names(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.normalize_sitaa_profile_names() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+begin
+  new.first_names := nullif(regexp_replace(btrim(coalesce(new.first_names, '')), '\s+', ' ', 'g'), '');
+  new.paternal_surname := nullif(regexp_replace(btrim(coalesce(new.paternal_surname, '')), '\s+', ' ', 'g'), '');
+  new.maternal_surname := nullif(regexp_replace(btrim(coalesce(new.maternal_surname, '')), '\s+', ' ', 'g'), '');
+
+  if new.first_names is not null then
+    new.full_name := concat_ws(' ', new.first_names, new.paternal_surname, new.maternal_surname);
+  end if;
+  return new;
+end;
 $$;
 
 
@@ -2076,16 +2119,20 @@ CREATE TABLE public.profiles (
     account_status text DEFAULT 'pending_registration'::text NOT NULL,
     activated_at timestamp with time zone,
     deactivated_at timestamp with time zone,
-    CONSTRAINT profiles_account_identity_check CHECK ((((account_kind = 'institutional'::text) AND (account_status = 'pending_registration'::text) AND (person_type IS NULL) AND (primary_program_id IS NULL) AND (institutional_id_type IS NULL) AND (institutional_id_value IS NULL)) OR ((account_kind = 'institutional'::text) AND (account_status = ANY (ARRAY['active'::text, 'inactive'::text])) AND (person_type = ANY (ARRAY['student'::text, 'professor'::text])) AND (primary_program_id IS NOT NULL) AND (institutional_id_type IS NOT NULL) AND (institutional_id_value IS NOT NULL) AND (full_name IS NOT NULL) AND (((person_type = 'student'::text) AND (institutional_id_type = 'student_account'::text)) OR ((person_type = 'professor'::text) AND (institutional_id_type = 'worker_number'::text)))) OR ((account_kind = 'technical'::text) AND (account_status = ANY (ARRAY['active'::text, 'inactive'::text])) AND (person_type IS NULL) AND (primary_program_id IS NULL) AND (institutional_id_type IS NULL) AND (institutional_id_value IS NULL) AND (full_name IS NOT NULL)))),
+    CONSTRAINT profiles_account_identity_check CHECK ((((account_kind = 'institutional'::text) AND (account_status = 'pending_registration'::text) AND (person_type IS NULL) AND (primary_program_id IS NULL) AND (institutional_id_type IS NULL) AND (institutional_id_value IS NULL) AND (first_names IS NULL) AND (paternal_surname IS NULL) AND (maternal_surname IS NULL)) OR ((account_kind = 'institutional'::text) AND (account_status = ANY (ARRAY['active'::text, 'inactive'::text])) AND (person_type = ANY (ARRAY['student'::text, 'professor'::text])) AND (primary_program_id IS NOT NULL) AND (institutional_id_type IS NOT NULL) AND (institutional_id_value IS NOT NULL) AND (first_names IS NOT NULL) AND (paternal_surname IS NOT NULL) AND (full_name IS NOT NULL) AND (((person_type = 'student'::text) AND (institutional_id_type = 'student_account'::text)) OR ((person_type = 'professor'::text) AND (institutional_id_type = 'worker_number'::text)))) OR ((account_kind = 'technical'::text) AND (account_status = ANY (ARRAY['active'::text, 'inactive'::text])) AND (person_type IS NULL) AND (primary_program_id IS NULL) AND (institutional_id_type IS NULL) AND (institutional_id_value IS NULL) AND (first_names IS NOT NULL) AND (full_name IS NOT NULL)))),
     CONSTRAINT profiles_account_kind_check CHECK ((account_kind = ANY (ARRAY['institutional'::text, 'technical'::text]))),
     CONSTRAINT profiles_account_lifecycle_check CHECK ((((account_status = 'active'::text) AND is_active AND (activated_at IS NOT NULL) AND (deactivated_at IS NULL)) OR ((account_status = 'pending_registration'::text) AND (NOT is_active) AND (activated_at IS NULL) AND (deactivated_at IS NULL)) OR ((account_status = 'inactive'::text) AND (NOT is_active) AND (deactivated_at IS NOT NULL)))),
     CONSTRAINT profiles_account_status_check CHECK ((account_status = ANY (ARRAY['pending_registration'::text, 'active'::text, 'inactive'::text]))),
     CONSTRAINT profiles_email_check CHECK ((((char_length(email) >= 1) AND (char_length(email) <= 254)) AND (email = lower(btrim(email))))),
+    CONSTRAINT profiles_first_names_check CHECK (((first_names IS NULL) OR (((char_length(first_names) >= 1) AND (char_length(first_names) <= 150)) AND (first_names = regexp_replace(btrim(first_names), '\s+'::text, ' '::text, 'g'::text))))),
     CONSTRAINT profiles_full_name_check CHECK (((full_name IS NULL) OR (((char_length(full_name) >= 2) AND (char_length(full_name) <= 200)) AND (full_name = regexp_replace(btrim(full_name), '\s+'::text, ' '::text, 'g'::text))))),
     CONSTRAINT profiles_identifier_digits_check CHECK (((institutional_id_value IS NULL) OR (institutional_id_value ~ '^[0-9]+$'::text))),
     CONSTRAINT profiles_identifier_length_check CHECK (((institutional_id_value IS NULL) OR ((char_length(institutional_id_value) >= 1) AND (char_length(institutional_id_value) <= 50)))),
     CONSTRAINT profiles_institutional_id_type_check CHECK (((institutional_id_type IS NULL) OR (institutional_id_type = ANY (ARRAY['student_account'::text, 'worker_number'::text])))),
-    CONSTRAINT profiles_person_type_check CHECK (((person_type IS NULL) OR (person_type = ANY (ARRAY['student'::text, 'professor'::text]))))
+    CONSTRAINT profiles_maternal_surname_check CHECK (((maternal_surname IS NULL) OR (((char_length(maternal_surname) >= 1) AND (char_length(maternal_surname) <= 150)) AND (maternal_surname = regexp_replace(btrim(maternal_surname), '\s+'::text, ' '::text, 'g'::text))))),
+    CONSTRAINT profiles_paternal_surname_check CHECK (((paternal_surname IS NULL) OR (((char_length(paternal_surname) >= 1) AND (char_length(paternal_surname) <= 150)) AND (paternal_surname = regexp_replace(btrim(paternal_surname), '\s+'::text, ' '::text, 'g'::text))))),
+    CONSTRAINT profiles_person_type_check CHECK (((person_type IS NULL) OR (person_type = ANY (ARRAY['student'::text, 'professor'::text])))),
+    CONSTRAINT profiles_structured_full_name_check CHECK (((first_names IS NULL) OR (full_name = concat_ws(' '::text, first_names, paternal_surname, maternal_surname))))
 );
 
 
@@ -2465,6 +2512,13 @@ CREATE TRIGGER enforce_sitaa_profile_identity BEFORE INSERT OR UPDATE ON public.
 --
 
 CREATE TRIGGER guard_activity_participants_pending_deadline BEFORE UPDATE OF attendance_status ON public.activity_participants FOR EACH ROW EXECUTE FUNCTION public.guard_activity_participant_pending_deadline();
+
+
+--
+-- Name: profiles normalize_sitaa_profile_names; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER normalize_sitaa_profile_names BEFORE INSERT OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.normalize_sitaa_profile_names();
 
 
 --
@@ -2985,5 +3039,5 @@ ALTER TABLE public.system_health ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DSUDxIJjPxJfgBGgk82wH4V2Rds5gJGaCoRxUcdElPS7c6esAjlrMmXIN130MV0
+\unrestrict lDMwf5GaKGrZWuerG8FKF4RkJ1Y5hgJ3W4oUQ1EXcBZD0kwzJiJmcjajfFFaBAS
 

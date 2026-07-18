@@ -2,9 +2,9 @@
 
 ## Estado y alcance
 
-`0006_structured_person_names.sql` está creada y no aplicada. Este plan valida el contrato post‑0005 de entrada, la migración de nombres estructurados, su interfaz coordinada y el rollback exacto. No modifica roles, OAuth, ciclo de cuenta, actividades ni permisos académicos.
+`0006_structured_person_names.sql` está aplicada, verificada y reconciliada. Este plan conserva el contrato ejecutado para validar la entrada post‑0005, la migración de nombres estructurados, su interfaz coordinada y el rollback exacto. No modifica roles, OAuth, ciclo de cuenta, actividades ni permisos académicos.
 
-## Orden obligatorio
+## Orden ejecutado
 
 1. Confirmar que 0001–0005 conservan sus hashes aprobados.
 2. Ejecutar `0006_structured_person_names_preflight.sql` con acceso de revisión y confirmar que todas las filas `blocking` tengan `affected_rows = 0`.
@@ -12,6 +12,8 @@
 4. Aplicar 0006 sólo en una ventana manual autorizada y coordinada con la aplicación compatible.
 5. Ejecutar `0006_structured_person_names_verify.sql`; debe finalizar con `ROLLBACK`.
 6. Conservar `0006_structured_person_names_rollback.sql` sólo para una decisión de emergencia revisada.
+
+El preflight terminó con todas las categorías bloqueantes en cero; la migración confirmó `COMMIT`; la aplicación compatible fue desplegada; el verificador finalizó con código de salida 0 y `ROLLBACK`; y los smoke tests de producción fueron aprobados. El resultado exitoso supersede el fallo anterior del arnés temporal.
 
 La salida normal del preflight contiene categorías y conteos, nunca nombres, correos ni identificadores. Cualquier correspondencia histórica necesaria se revisa de forma privada y no se guarda en Git.
 
@@ -104,7 +106,7 @@ El rollback:
 - `npm run build`
 - revisión estática de delimitadores SQL, firmas, grants y ausencia de `CASCADE` o borrados;
 - escaneo de secretos, PII y mojibake;
-- confirmación de que 0001–0005, snapshots y la aplicación no cambiaron;
+- confirmación de que 0001–0006, snapshots y la aplicación no cambiaron durante la validación local;
 - confirmación de que no existe 0007 y no hubo conexión remota.
 
 ## Criterios de salida

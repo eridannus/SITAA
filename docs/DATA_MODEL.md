@@ -1,6 +1,6 @@
 # Modelo de datos
 
-> **Vigencia:** este documento describe el esquema reconciliado después de 0005 y el cambio 0006 creado, todavía no aplicado. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
+> **Vigencia:** este documento describe el esquema vivo reconciliado después de 0006. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
 
 ## Tablas implementadas
 
@@ -23,7 +23,7 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 | `participant_roles` | Roles dentro de una actividad | `id`, `code`, `label` o `name`, `description`, `is_active` |
 | `activities` | Núcleo operativo de tutorías, asesorías y acompañamiento | `id`, `title`, `description`, `academic_period_id`, `scope_type`, `division_id`, `program_id`, códigos de catálogos, ubicación, `start_date`, `start_time`, `end_date`, `end_time`, `duration_mode`, `starts_at`, `ends_at`, `responsible_profile_id`, `created_by`, `status_code` |
 
-`profiles` contiene identidad estable y no almacena rol ni semestre actual. Una cuenta sin perfil existe en Auth, pero todavía no está activada en SITAA.
+`profiles` contiene identidad estable y no almacena rol ni semestre actual. Todo Auth user admitido por SITAA tiene exactamente un perfil; un perfil `pending_registration` existe pero todavía no está activado para la operación normal.
 
 ### Reglas del perfil
 
