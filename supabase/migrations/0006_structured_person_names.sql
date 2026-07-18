@@ -8,49 +8,173 @@ begin;
 -- -----------------------------------------------------------------------------
 do $preflight$
 declare
-  incompatible_count bigint;
+  failures jsonb := '[]'::jsonb;
+  affected bigint;
+  completion_oid oid := to_regprocedure('public.complete_own_google_registration(text,text,text,uuid)');
+  structured_completion_oid oid := to_regprocedure('public.complete_own_google_registration(text,text,text,text,text,uuid)');
+  auth_handler_oid oid := to_regprocedure('public.handle_sitaa_auth_user_created()');
+  profile_enforcer_oid oid := to_regprocedure('public.enforce_sitaa_profile_identity()');
+  definition text;
 begin
-  if to_regprocedure('public.complete_own_google_registration(text,text,text,uuid)') is null
-     or to_regprocedure('public.handle_sitaa_auth_user_created()') is null
-     or to_regprocedure('public.enforce_sitaa_profile_identity()') is null then
-    raise exception 'SITAA 0006 requiere el estado post-0005.' using errcode = 'P0001';
+  select count(*) into affected
+  from (values ('first_names'), ('paternal_surname'), ('maternal_surname')) expected(column_name)
+  where not exists (
+    select 1 from information_schema.columns c
+    where c.table_schema = 'public' and c.table_name = 'profiles'
+      and c.column_name = expected.column_name and c.data_type = 'text'
+  );
+  if affected > 0 then
+    failures := failures || jsonb_build_object('category', 'missing_structured_name_column', 'affected_rows', affected);
   end if;
 
-  if not exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'profiles'
-      and column_name in ('first_names', 'paternal_surname', 'maternal_surname')
-    group by table_schema, table_name having count(*) = 3
-  ) then
-    raise exception 'SITAA 0006 requiere las columnas estructuradas reconciliadas en profiles.' using errcode = 'P0001';
+  select count(*) into affected from public.profiles p
+  where p.account_status in ('active', 'inactive') and nullif(btrim(p.first_names), '') is null;
+  if affected > 0 then
+    failures := failures || jsonb_build_object('category', 'active_or_inactive_without_first_names', 'affected_rows', affected);
   end if;
 
-  select count(*) into incompatible_count
-  from public.profiles p
-  where p.account_status in ('active', 'inactive')
-    and (
-      nullif(btrim(p.first_names), '') is null
-      or (p.account_kind = 'institutional' and nullif(btrim(p.paternal_surname), '') is null)
-      or char_length(regexp_replace(btrim(coalesce(p.first_names, '')), '\s+', ' ', 'g')) > 150
-      or char_length(regexp_replace(btrim(coalesce(p.paternal_surname, '')), '\s+', ' ', 'g')) > 150
-      or char_length(regexp_replace(btrim(coalesce(p.maternal_surname, '')), '\s+', ' ', 'g')) > 150
-      or char_length(concat_ws(' ',
-        nullif(regexp_replace(btrim(coalesce(p.first_names, '')), '\s+', ' ', 'g'), ''),
-        nullif(regexp_replace(btrim(coalesce(p.paternal_surname, '')), '\s+', ' ', 'g'), ''),
-        nullif(regexp_replace(btrim(coalesce(p.maternal_surname, '')), '\s+', ' ', 'g'), '')
-      )) > 200
-    );
-  if incompatible_count > 0 then
-    raise exception 'SITAA 0006 preflight failed: % perfiles activos o inactivos requieren correspondencia de nombres revisada.', incompatible_count
-      using errcode = 'P0001';
+  select count(*) into affected from public.profiles p
+  where p.account_kind = 'institutional' and p.account_status in ('active', 'inactive')
+    and nullif(btrim(p.paternal_surname), '') is null;
+  if affected > 0 then
+    failures := failures || jsonb_build_object('category', 'institutional_without_paternal_surname', 'affected_rows', affected);
   end if;
 
-  if exists (
-    select 1 from public.profiles p
-    where p.account_status = 'pending_registration'
-      and (p.first_names is not null or p.paternal_surname is not null or p.maternal_surname is not null)
-  ) then
-    raise exception 'SITAA 0006 preflight failed: perfiles pendientes contienen identidad estructurada parcial.' using errcode = 'P0001';
+  select count(*) into affected from public.profiles p
+  where p.account_status = 'pending_registration'
+    and (p.first_names is not null or p.paternal_surname is not null or p.maternal_surname is not null);
+  if affected > 0 then
+    failures := failures || jsonb_build_object('category', 'pending_with_partial_structured_identity', 'affected_rows', affected);
+  end if;
+
+  select count(*) into affected from public.profiles p
+  where coalesce(char_length(regexp_replace(btrim(p.first_names), '\s+', ' ', 'g')), 0) > 150
+     or coalesce(char_length(regexp_replace(btrim(p.paternal_surname), '\s+', ' ', 'g')), 0) > 150
+     or coalesce(char_length(regexp_replace(btrim(p.maternal_surname), '\s+', ' ', 'g')), 0) > 150;
+  if affected > 0 then
+    failures := failures || jsonb_build_object('category', 'structured_component_too_long', 'affected_rows', affected);
+  end if;
+
+  select count(*) into affected from public.profiles p
+  where p.first_names is not null and char_length(concat_ws(' ',
+    nullif(regexp_replace(btrim(coalesce(p.first_names, '')), '\s+', ' ', 'g'), ''),
+    nullif(regexp_replace(btrim(coalesce(p.paternal_surname, '')), '\s+', ' ', 'g'), ''),
+    nullif(regexp_replace(btrim(coalesce(p.maternal_surname, '')), '\s+', ' ', 'g'), '')
+  )) > 200;
+  if affected > 0 then
+    failures := failures || jsonb_build_object('category', 'derived_full_name_too_long', 'affected_rows', affected);
+  end if;
+
+  if completion_oid is null then
+    failures := failures || jsonb_build_object('category', 'missing_post_0005_completion_function', 'affected_rows', 1);
+  else
+    definition := lower(pg_get_functiondef(completion_oid));
+    if not (
+      definition like '%security definer%'
+      and definition like '%set search_path to ''pg_catalog'', ''public'', ''auth''%'
+      and definition like '%requested_full_name%'
+      and definition like '%sitaa_google_identity_required%'
+      and definition like '%sitaa_google_identity_email_mismatch%'
+      and definition like '%sitaa_google_email_not_verified%'
+      and definition like '%sitaa_registration_not_pending%'
+      and definition like '%sitaa_identifier_conflict%'
+      and definition not like '%requested_first_names%'
+    ) then
+      failures := failures || jsonb_build_object('category', 'unexpected_post_0005_completion_definition', 'affected_rows', 1);
+    end if;
+  end if;
+
+  if auth_handler_oid is null then
+    failures := failures || jsonb_build_object('category', 'missing_post_0005_auth_trigger_function', 'affected_rows', 1);
+  else
+    definition := lower(pg_get_functiondef(auth_handler_oid));
+    if not (
+      definition like '%security definer%'
+      and definition like '%set search_path to ''pg_catalog'', ''public'', ''auth''%'
+      and definition like '%if is_google then%'
+      and definition like '%pending_registration%'
+      and definition like '%provisional_name%'
+      and definition like '%sitaa_unverified_technical_email%'
+      and definition like '%sitaa_public_password_signup_disabled%'
+      and definition like '%sitaa_unsupported_auth_provider%'
+      and definition like '%sitaa_missing_or_invalid_account_metadata%'
+      and definition not like '%sitaa_google_email_not_verified%'
+    ) then
+      failures := failures || jsonb_build_object('category', 'unexpected_post_0005_auth_trigger_definition', 'affected_rows', 1);
+    end if;
+  end if;
+
+  if profile_enforcer_oid is null then
+    failures := failures || jsonb_build_object('category', 'unexpected_post_0005_profile_enforcement_definition', 'affected_rows', 1);
+  else
+    definition := lower(pg_get_functiondef(profile_enforcer_oid));
+    if not (
+      definition like '%security invoker%'
+      and definition like '%set search_path to ''pg_catalog'', ''public''%'
+      and definition like '%to_jsonb(new) - ''full_name'' - ''updated_at''%'
+      and definition like '%sólo puedes actualizar tu nombre completo.%'
+      and definition not like '%first_names%'
+      and definition not like '%paternal_surname%'
+    ) then
+      failures := failures || jsonb_build_object('category', 'unexpected_post_0005_profile_enforcement_definition', 'affected_rows', 1);
+    end if;
+  end if;
+
+  select count(*) into affected
+  from (values
+    ('on_sitaa_auth_user_created', 'handle_sitaa_auth_user_created'),
+    ('on_sitaa_auth_user_email_changed', 'sync_sitaa_profile_email_from_auth')
+  ) expected(trigger_name, function_name)
+  where not exists (
+    select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+    join pg_namespace n on n.oid = c.relnamespace join pg_proc p on p.oid = t.tgfoid
+    where not t.tgisinternal and n.nspname = 'auth' and c.relname = 'users'
+      and t.tgname = expected.trigger_name and p.proname = expected.function_name
+  );
+  if affected > 0 then
+    failures := failures || jsonb_build_object('category', 'missing_post_0005_auth_trigger', 'affected_rows', affected);
+  end if;
+
+  select count(*) into affected
+  from (values
+    ('enforce_sitaa_profile_identity', 'enforce_sitaa_profile_identity'),
+    ('set_profiles_updated_at', 'set_updated_at')
+  ) expected(trigger_name, function_name)
+  where not exists (
+    select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+    join pg_namespace n on n.oid = c.relnamespace join pg_proc p on p.oid = t.tgfoid
+    where not t.tgisinternal and n.nspname = 'public' and c.relname = 'profiles'
+      and t.tgname = expected.trigger_name and p.proname = expected.function_name
+  );
+  if affected > 0 then
+    failures := failures || jsonb_build_object('category', 'missing_post_0005_profile_trigger', 'affected_rows', affected);
+  end if;
+
+  if completion_oid is null
+     or not has_function_privilege('authenticated', completion_oid, 'EXECUTE')
+     or has_function_privilege('anon', completion_oid, 'EXECUTE')
+     or exists (
+       select 1 from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+       where p.oid = completion_oid and acl.grantee = 0 and acl.privilege_type = 'EXECUTE'
+     )
+     or structured_completion_oid is not null then
+    failures := failures || jsonb_build_object('category', 'unexpected_completion_privileges', 'affected_rows', 1);
+  end if;
+
+  if not has_column_privilege('authenticated', 'public.profiles', 'full_name', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.profiles', 'UPDATE')
+     or exists (
+       select 1 from pg_attribute a
+       where a.attrelid = 'public.profiles'::regclass and a.attnum > 0 and not a.attisdropped
+         and a.attname <> 'full_name'
+         and has_column_privilege('authenticated', 'public.profiles', a.attname, 'UPDATE')
+     ) then
+    failures := failures || jsonb_build_object('category', 'unexpected_profile_update_privileges', 'affected_rows', 1);
+  end if;
+
+  if jsonb_array_length(failures) > 0 then
+    raise exception 'SITAA 0006 preflight bloqueante: %', failures using errcode = 'P0001';
   end if;
 end;
 $preflight$;
@@ -261,7 +385,7 @@ declare
   normalized_first_names text := regexp_replace(btrim(coalesce(requested_first_names, '')), '\s+', ' ', 'g');
   normalized_paternal text := regexp_replace(btrim(coalesce(requested_paternal_surname, '')), '\s+', ' ', 'g');
   normalized_maternal text := nullif(regexp_replace(btrim(coalesce(requested_maternal_surname, '')), '\s+', ' ', 'g'), '');
-  normalized_identifier text := btrim(coalesce(requested_institutional_id_value, ''));
+  normalized_identifier text := coalesce(requested_institutional_id_value, '');
   identifier_type text;
 begin
   if current_user_id is null then raise exception 'sitaa_authentication_required' using errcode = '42501'; end if;

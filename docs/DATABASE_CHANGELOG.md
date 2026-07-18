@@ -115,6 +115,8 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Formaliza las columnas preexistentes `first_names`, `paternal_surname` y `maternal_surname` como autoridad del nombre personal.
 - Mantiene `full_name` como compatibilidad derivada mediante trigger; no lo elimina ni divide nombres históricos.
 - Añade una firma estructurada del RPC de finalización Google, retira `EXECUTE` del overload post-0005 y protege la edición propia mediante grants de columna y trigger.
-- El preflight expone sólo conteos y bloquea cuentas activas o inactivas sin correspondencia estructurada revisada.
-- Incluye verificador transaccional, rollback conservador y `docs/TEST_PLAN_0006.md`.
+- El preflight expone sólo categorías y conteos; valida datos, definiciones, triggers y privilegios del contrato post‑0005. La migración repite internamente toda condición bloqueante.
+- El verificador transaccional cubre límites de nombres e identificadores, identidad Google, programas, ciclo de cuenta, edición propia, ACL y regresiones 0002–0005; termina con `ROLLBACK`.
+- El rollback revoca primero los permisos 0006, restaura el contrato post‑0005 sin borrar columnas ni valores y se autoverifica antes de confirmar.
+- Incluye `docs/TEST_PLAN_0006.md`, alineado con los contratos de preflight, verificación y rollback.
 - Estado: pendiente de revisión, preflight y aplicación manual coordinada; el snapshot vivo sigue representando 0001–0005.
