@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { logout } from "@/app/dashboard/actions";
 import { Avatar } from "@/components/avatar";
+import { HomeIcon } from "@/components/home-icon";
 
-export function AccountMenu({ displayName, email, imageUrl, initials }: {
+export function AccountMenu({ displayName, email, imageUrl, initials, canViewCatalogs }: {
   displayName: string;
   email: string;
   imageUrl: string | null;
   initials: string;
+  canViewCatalogs: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -46,9 +48,11 @@ export function AccountMenu({ displayName, email, imageUrl, initials }: {
             <p className="sitaa-wrap-anywhere mt-1 text-sm text-[var(--sitaa-text-secondary)]">{email}</p>
           </div>
           <div className="border-b border-slate-200 py-1 lg:hidden">
-            <Link href="/dashboard" role="menuitem" onClick={() => setOpen(false)} className="flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Panel</Link>
+            <Link href="/dashboard" role="menuitem" onClick={() => setOpen(false)} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]"><HomeIcon />Inicio</Link>
             <Link href="/activities" role="menuitem" onClick={() => setOpen(false)} className="flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Actividades</Link>
-            <Link href="/catalogs" role="menuitem" onClick={() => setOpen(false)} className="flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Catálogos</Link>
+            {canViewCatalogs && (
+              <Link href="/catalogs" role="menuitem" onClick={() => setOpen(false)} className="flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Catálogos</Link>
+            )}
           </div>
           <Link href="/profile" role="menuitem" onClick={() => setOpen(false)} className="mt-1 flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Mi perfil</Link>
           <form action={logout}>

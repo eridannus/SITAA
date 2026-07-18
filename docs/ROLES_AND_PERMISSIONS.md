@@ -49,6 +49,7 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - El enlace divisional cubre tutorías y asesorías de **Diseño Gráfico** y **Arquitectura** dentro de su asignación.
 - `technical_secretary` solo ve nombre del evento, fecha, hora, lugar, responsable, asistencia estimada y requerimientos logísticos.
 - `technical_admin` no obtiene por su rol lectura de contenido académico sensible.
+- La interfaz administrativa `/catalogs` se muestra y autoriza en servidor sólo cuando existe una asignación vigente `technical_admin`. Esta restricción no elimina la lectura de catálogos controlados que necesitan registro, actividades u otros flujos institucionales.
 - Los participantes y asistencias siempre referencian perfiles SITAA.
 - Sólo quienes pueden editar una actividad pueden agregar o retirar participantes; la búsqueda usa perfiles registrados y roles de participante controlados.
 - La persona responsable, tutor, profesor o editor autorizado puede marcar y corregir asistencia manualmente para participantes registrados, incluyendo estado y notas, ya sea de forma individual o mediante pase de lista compacto.

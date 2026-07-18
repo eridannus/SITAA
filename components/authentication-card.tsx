@@ -12,13 +12,15 @@ export function AuthenticationCard({ errorMessage, nextPath }: { errorMessage?: 
 
       {errorMessage && <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800">{errorMessage}</div>}
 
-      <form action={loginWithGoogle} className="mt-6">
-        {nextPath && <input type="hidden" name="next" value={nextPath} />}
-        <button type="submit" className="sitaa-primary-action w-full">Iniciar sesión con Google</button>
-      </form>
-      <Link href="/register" className="sitaa-secondary-action mt-3 w-full">Registrarme</Link>
+      <div className="mt-6 flex flex-col gap-5">
+        <form action={loginWithGoogle} className="w-full">
+          {nextPath && <input type="hidden" name="next" value={nextPath} />}
+          <button type="submit" className="sitaa-primary-action w-full">Iniciar sesión con Google</button>
+        </form>
+        <Link href="/register" className="sitaa-secondary-action w-full">Registrarme</Link>
+      </div>
 
-      <details className="group mt-5 border-t border-slate-200 pt-4">
+      <details className="group mt-6 border-t border-slate-200 pt-4">
         <summary className="min-h-11 cursor-pointer list-none rounded-lg px-2 py-2 text-center text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)] marker:content-none">
           Acceso heredado con correo y contraseña
         </summary>

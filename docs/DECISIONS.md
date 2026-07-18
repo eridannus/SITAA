@@ -48,6 +48,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-034 | Dominio canónico de producción | Aceptada |
 | DEC-035 | Identidad y registro institucional separados | Aceptada |
 | DEC-036 | Roles académicos V2 y autoridad de asignación | Aceptada |
+| DEC-044 | Puerta pública y navegación autenticada | Aceptada |
 | DEC-037 | Administración confiable y filtrado posterior a autorización | Aceptada |
 | DEC-038 | Implementación por fases y check-in abierto posterior | Aceptada |
 | DEC-039 | Sincronización Auth/profile en Fase A | Aceptada |
@@ -462,3 +463,13 @@ La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM
 **Consecuencias:** `full_name` no se elimina y continúa atendiendo consumidores antiguos. La migración 0006 requiere aplicación coordinada con la versión compatible de la aplicación y no debe ejecutarse hasta resolver el preflight. La cuenta Google refuerza visualmente la identidad autenticada sin convertir metadata del proveedor en identidad institucional editable.
 
 **Estado:** Aceptada; 0006 queda creada localmente, pendiente de revisión y aplicación manual.
+
+## DEC-044 — Puerta pública y navegación autenticada
+
+**Contexto:** la primera revisión visual en producción mostró que la puerta pública heredaba el encabezado autenticado, podía desplazar toda la página en vistas móviles y presentaba acciones demasiado próximas. La navegación seleccionada no garantizaba contraste y exponía la interfaz administrativa de catálogos a usuarios institucionales ordinarios.
+
+**Decisión:** el layout raíz queda neutral y los árboles autenticados incorporan el encabezado mediante layouts anidados, sin ocultamiento posterior por pathname. `/` y `/login` ocupan el viewport dinámico completo, respetan áreas seguras y limitan cualquier desbordamiento excepcional al interior de la tarjeta. La navegación usa clases semánticas con texto blanco explícito en el estado seleccionado, denomina `Inicio` al destino `/dashboard` y conserva rutas móviles en el menú de cuenta. La interfaz `/catalogs` requiere una asignación vigente `technical_admin` tanto para mostrarse como para abrirse directamente; los catálogos controlados siguen disponibles como datos de referencia para los flujos que los consumen.
+
+**Consecuencias:** la puerta cerrada no muestra navegación global ni genera desplazamiento documental normal. El dashboard deja de duplicar enlaces disponibles en el encabezado o menú de cuenta. Ocultar Catálogos no sustituye RLS ni cambia privilegios de las tablas; es una autorización adicional de la interfaz administrativa calculada desde asignaciones activas.
+
+**Estado:** Aceptada.

@@ -21,6 +21,15 @@ export interface AuthenticatedUserContext {
   error: UserContextError;
 }
 
+export function hasActiveRole(
+  context: AuthenticatedUserContext | null,
+  roleCode: string,
+) {
+  return context?.activeRoleAssignments.some(
+    (assignment) => assignment.role_code === roleCode && assignment.is_active === true,
+  ) ?? false;
+}
+
 function effectiveAccountStatus(profile: Profile): AccountStatus {
   if (profile.account_status) return profile.account_status;
   return profile.is_active === false ? "inactive" : "active";

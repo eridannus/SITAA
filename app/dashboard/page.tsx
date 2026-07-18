@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Avatar } from "@/components/avatar";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
@@ -14,7 +13,7 @@ import type {
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Panel",
+  title: "Inicio",
 };
 
 const scopeLabels: Record<AssignmentScope, string> = {
@@ -102,7 +101,7 @@ export default async function DashboardPage() {
         <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
           <Avatar imageUrl={getSafeGoogleAvatarUrl(user)} initials={getInitials(displayName)} alt={`Foto de perfil de ${displayName}`} size="large" />
           <div className="min-w-0">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--sitaa-gold-dark)]">Panel principal</p>
+            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--sitaa-gold-dark)]">Inicio</p>
             <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--sitaa-blue-dark)] sm:text-4xl">{displayName}</h1>
             <p className="mt-2 text-[var(--sitaa-text-secondary)]">Resumen de tu cuenta institucional y accesos vigentes.</p>
           </div>
@@ -144,26 +143,6 @@ export default async function DashboardPage() {
             </div>
         </dl>
 
-        <div className="mt-7 flex flex-wrap gap-3">
-          <Link
-            href="/activities"
-            className="sitaa-primary-action"
-          >
-            Actividades
-          </Link>
-          <Link
-            href="/catalogs"
-            className="sitaa-secondary-action"
-          >
-            Catálogos
-          </Link>
-          <Link
-            href="/profile"
-            className="sitaa-secondary-action"
-          >
-            Mi perfil
-          </Link>
-        </div>
       </div>
 
       <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 sm:p-9">

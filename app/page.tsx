@@ -11,9 +11,9 @@ export default async function HomePage() {
   if (user) redirect("/dashboard");
 
   return (
-    <section className="relative isolate grid min-h-[calc(100svh-4.5rem)] place-items-center overflow-hidden px-4 py-4 sm:px-6">
+    <section className="sitaa-public-gateway">
       <NodeNetworkBackground />
-      <div className="relative z-10 w-full max-w-md"><AuthenticationCard /></div>
+      <div className="sitaa-public-card-scroll"><AuthenticationCard /></div>
     </section>
   );
 }

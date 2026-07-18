@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import {
+  getAuthenticatedUserContext,
+  hasActiveRole,
+} from "@/lib/auth/get-authenticated-user-context";
 import { getActiveCatalogs } from "@/lib/catalogs/get-active-catalogs";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { CatalogRow, OperationalCatalogs } from "@/types/catalogs";
 
 export const dynamic = "force-dynamic";
@@ -97,13 +100,14 @@ function CatalogCard({ section, items }: { section: CatalogSection; items: Catal
 }
 
 export default async function CatalogsPage() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const context = await getAuthenticatedUserContext();
 
-  if (!user) {
+  if (!context) {
     redirect("/login?error=sesion-requerida");
+  }
+
+  if (!hasActiveRole(context, "technical_admin")) {
+    redirect("/dashboard");
   }
 
   let catalogs: OperationalCatalogs;

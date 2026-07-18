@@ -17,15 +17,18 @@ export function NodeNetworkBackground() {
     let nodes: NodePoint[] = [];
     let frame = 0;
     let visible = !document.hidden;
+    let viewportWidth = 1;
+    let viewportHeight = 1;
 
     const resize = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+      const bounds = canvas.getBoundingClientRect();
+      const width = Math.max(1, Math.round(bounds.width));
+      const height = Math.max(1, Math.round(bounds.height));
       const ratio = Math.min(window.devicePixelRatio || 1, 1.75);
+      viewportWidth = width;
+      viewportHeight = height;
       canvas.width = Math.round(width * ratio);
       canvas.height = Math.round(height * ratio);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       const count = Math.max(18, Math.min(58, Math.round((width * height) / 26000)));
       nodes = Array.from({ length: count }, (_, index) => ({
@@ -38,8 +41,8 @@ export function NodeNetworkBackground() {
     };
 
     const draw = (move: boolean) => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+      const width = viewportWidth;
+      const height = viewportHeight;
       context.clearRect(0, 0, width, height);
       const gradient = context.createLinearGradient(0, height, width, 0);
       gradient.addColorStop(0, "rgba(0, 43, 92, 0.08)");
@@ -91,16 +94,20 @@ export function NodeNetworkBackground() {
     restart();
     window.addEventListener("resize", resize);
     window.addEventListener("resize", restart);
+    window.visualViewport?.addEventListener("resize", resize);
+    window.visualViewport?.addEventListener("resize", restart);
     document.addEventListener("visibilitychange", onVisibility);
     reducedMotion.addEventListener("change", restart);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", resize);
       window.removeEventListener("resize", restart);
+      window.visualViewport?.removeEventListener("resize", resize);
+      window.visualViewport?.removeEventListener("resize", restart);
       document.removeEventListener("visibilitychange", onVisibility);
       reducedMotion.removeEventListener("change", restart);
     };
   }, []);
 
-  return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 h-full w-full" />;
+  return <canvas ref={canvasRef} aria-hidden="true" className="sitaa-node-canvas" />;
 }

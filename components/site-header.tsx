@@ -1,26 +1,24 @@
 import Link from "next/link";
-import type { User } from "@supabase/supabase-js";
 import { AccountMenu } from "@/components/account-menu";
 import { AuthenticatedNavigation } from "@/components/authenticated-navigation";
+import {
+  getAuthenticatedUserContext,
+  hasActiveRole,
+  type AuthenticatedUserContext,
+} from "@/lib/auth/get-authenticated-user-context";
 import { getDisplayName, getInitials, getSafeGoogleAvatarUrl } from "@/lib/auth/user-display";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { Profile } from "@/types/sitaa";
 
 export async function SiteHeader() {
-  let user: User | null = null;
-  let profile: Profile | null = null;
+  let context: AuthenticatedUserContext | null = null;
   try {
-    const supabase = await createSupabaseServerClient();
-    const result = await supabase.auth.getUser();
-    user = result.data.user;
-    if (user) {
-      const profileResult = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
-      profile = profileResult.data as Profile | null;
-    }
+    context = await getAuthenticatedUserContext();
   } catch {
-    user = null;
+    context = null;
   }
 
+  const user = context?.user ?? null;
+  const profile = context?.profile ?? null;
+  const canViewCatalogs = hasActiveRole(context, "technical_admin");
   const displayName = getDisplayName(profile, user);
   return (
     <header className="relative z-40 border-b border-blue-950/10 bg-white/95 backdrop-blur">
@@ -34,8 +32,14 @@ export async function SiteHeader() {
         </Link>
         {user ? (
           <div className="flex items-center gap-2 sm:gap-4">
-            <AuthenticatedNavigation />
-            <AccountMenu displayName={displayName} email={user.email ?? ""} imageUrl={getSafeGoogleAvatarUrl(user)} initials={getInitials(displayName)} />
+            <AuthenticatedNavigation canViewCatalogs={canViewCatalogs} />
+            <AccountMenu
+              displayName={displayName}
+              email={user.email ?? ""}
+              imageUrl={getSafeGoogleAvatarUrl(user)}
+              initials={getInitials(displayName)}
+              canViewCatalogs={canViewCatalogs}
+            />
           </div>
         ) : <Link href="/login" className="sitaa-secondary-action hidden sm:inline-flex">Iniciar sesión</Link>}
       </div>
