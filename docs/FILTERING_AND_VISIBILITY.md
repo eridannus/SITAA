@@ -118,7 +118,7 @@ Reglas:
 
 ## Directorio administrativo B.1
 
-El conjunto se construye sólo después de verificar perfil activo y asignación actual exacta `technical_admin/system/technical` sin programa/división. La interfaz y todas las RPC repiten el control; los filtros nunca son autoridad.
+El conjunto se construye sólo después de verificar perfil activo y asignación actual exacta `technical_admin/system/technical` sin programa/división. La interfaz y todas las RPC repiten el control; los filtros nunca son autoridad. La vigencia usa fechas calendario inclusivas de `America/Mexico_City`, tanto en Next.js como en 0007, sin depender de la zona horaria de la sesión PostgreSQL.
 
 Secuencia específica:
 

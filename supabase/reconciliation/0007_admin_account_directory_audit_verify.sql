@@ -5,7 +5,60 @@ begin;
 do $static_contract$
 declare
   rpc regprocedure;
+  mexico_date_helper regprocedure := to_regprocedure('public.sitaa_current_mexico_date()');
+  authority_definition text;
+  search_definition text;
+  assignments_definition text;
+  metadata_definition text;
 begin
+  if mexico_date_helper is null
+     or not exists (
+       select 1
+       from pg_proc p
+       where p.oid = mexico_date_helper
+         and p.prorettype = 'date'::regtype
+         and p.provolatile = 's'
+         and p.prosecdef = false
+         and p.prolang = (select oid from pg_language where lanname = 'sql')
+         and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog']::text[]
+         and lower(pg_get_functiondef(p.oid)) like '%america/mexico_city%'
+     )
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid = mexico_date_helper
+         and acl.privilege_type = 'EXECUTE'
+         and (
+           acl.grantee = 0
+           or acl.grantee = (select oid from pg_roles where rolname = 'anon')
+           or acl.grantee = (select oid from pg_roles where rolname = 'authenticated')
+           or acl.grantee = (select oid from pg_roles where rolname = 'service_role')
+         )
+     ) then
+    raise exception '0007: helper privado de fecha institucional inválido.';
+  end if;
+
+  authority_definition := lower(pg_get_functiondef('public.is_b1_account_admin()'::regprocedure));
+  search_definition := lower(pg_get_functiondef(
+    'public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)'::regprocedure
+  ));
+  assignments_definition := lower(pg_get_functiondef(
+    'public.get_admin_account_assignments_b1(uuid)'::regprocedure
+  ));
+  metadata_definition := lower(pg_get_functiondef(
+    'public.admin_audit_metadata_is_safe(jsonb)'::regprocedure
+  ));
+  if authority_definition not like '%public.sitaa_current_mexico_date()%'
+     or authority_definition ~ '\mcurrent_date\M'
+     or search_definition not like '%public.sitaa_current_mexico_date()%'
+     or search_definition ~ '\mcurrent_date\M'
+     or assignments_definition not like '%public.sitaa_current_mexico_date()%'
+     or assignments_definition ~ '\mcurrent_date\M'
+     or metadata_definition !~ 'octet_length\(candidate::text\)\s*>\s*16384' then
+    raise exception '0007: contrato temporal o límite de metadata no coincide con la migración.';
+  end if;
+
   if not exists(select 1 from pg_roles where rolname='service_role' and rolbypassrls=true)
      or to_regclass('public.admin_audit_events') is null
      or not exists (
@@ -109,11 +162,14 @@ begin
 end;
 $static_contract$;
 
+set local time zone 'UTC';
+
 create temporary table sitaa_0007_context (
   run_id uuid not null,
   run_marker text not null,
   wildcard_marker text not null,
   identifier_seed text not null,
+  institutional_today date not null,
   division_id uuid not null,
   program_id uuid not null
 ) on commit drop;
@@ -123,8 +179,26 @@ select run_id,
   'v7' || replace(run_id::text,'-',''),
   'v7' || replace(run_id::text,'-','') || E'%_\\ruta',
   translate(replace(run_id::text,'-',''),'abcdef','012345'),
+  (current_timestamp at time zone 'America/Mexico_City')::date,
   gen_random_uuid(), gen_random_uuid()
 from generated;
+
+set local time zone 'Pacific/Kiritimati';
+
+do $institutional_date_contract$
+declare
+  expected_date date := (
+    select institutional_today from pg_temp.sitaa_0007_context limit 1
+  );
+begin
+  if current_setting('TimeZone') <> 'Pacific/Kiritimati'
+     or public.sitaa_current_mexico_date() is distinct from expected_date
+     or public.sitaa_current_mexico_date() is distinct from
+       (current_timestamp at time zone 'America/Mexico_City')::date then
+    raise exception '0007: la fecha institucional depende de la zona horaria de sesión.';
+  end if;
+end;
+$institutional_date_contract$;
 
 insert into public.divisions (id, code, name)
 select division_id, 'v7d_' || left(replace(division_id::text,'-',''), 16), 'División sintética 0007'
@@ -278,26 +352,26 @@ insert into public.role_assignments (
   starts_at, ends_at, is_active, assigned_by
 )
 values
-  (pg_temp.case_id('admin_exact'),'technical_admin','system','technical',null,null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('ordinary_student'),'student','own','both',null,null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('ordinary_professor'),'professor','program','both',null,(select program_id from sitaa_0007_context),current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_bad_scope'),'technical_admin','own','technical',null,null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_bad_service'),'technical_admin','system','both',null,null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_bad_program'),'technical_admin','program','technical',null,(select program_id from sitaa_0007_context),current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_bad_division'),'technical_admin','division','technical',(select division_id from sitaa_0007_context),null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_future'),'technical_admin','system','technical',null,null,current_date+1,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_expired'),'technical_admin','system','technical',null,null,current_date-2,current_date-1,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_inactive_assignment'),'technical_admin','system','technical',null,null,current_date,null,false,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_start_today'),'technical_admin','system','technical',null,null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_end_today'),'technical_admin','system','technical',null,null,current_date-1,current_date,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_inactive'),'technical_admin','system','technical',null,null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('target_account'),'student','own','both',null,null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('same_row_target'),'professor','program','advising',null,(select program_id from sitaa_0007_context),current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('same_row_target'),'peer_tutor','own','tutoring',null,null,current_date,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('target_account'),'peer_tutor','own','tutoring',null,null,current_date+1,null,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('target_account'),'professor','program','advising',null,(select program_id from sitaa_0007_context),current_date-3,current_date-1,true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('target_account'),'student','own','both',null,null,current_date,null,false,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_inactive'),'technical_admin','system','technical',null,null,current_date,null,true,pg_temp.case_id('admin_exact'));
+  (pg_temp.case_id('admin_exact'),'technical_admin','system','technical',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('ordinary_student'),'student','own','both',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('ordinary_professor'),'professor','program','both',null,(select program_id from sitaa_0007_context),(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_bad_scope'),'technical_admin','own','technical',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_bad_service'),'technical_admin','system','both',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_bad_program'),'technical_admin','program','technical',null,(select program_id from sitaa_0007_context),(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_bad_division'),'technical_admin','division','technical',(select division_id from sitaa_0007_context),null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_future'),'technical_admin','system','technical',null,null,(select institutional_today + 1 from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_expired'),'technical_admin','system','technical',null,null,(select institutional_today - 2 from sitaa_0007_context),(select institutional_today - 1 from sitaa_0007_context),true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_inactive_assignment'),'technical_admin','system','technical',null,null,(select institutional_today from sitaa_0007_context),null,false,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_start_today'),'technical_admin','system','technical',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_end_today'),'technical_admin','system','technical',null,null,(select institutional_today - 1 from sitaa_0007_context),(select institutional_today from sitaa_0007_context),true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_inactive'),'technical_admin','system','technical',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('target_account'),'student','own','both',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('same_row_target'),'professor','program','advising',null,(select program_id from sitaa_0007_context),(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('same_row_target'),'peer_tutor','own','tutoring',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('target_account'),'peer_tutor','own','tutoring',null,null,(select institutional_today + 1 from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('target_account'),'professor','program','advising',null,(select program_id from sitaa_0007_context),(select institutional_today - 3 from sitaa_0007_context),(select institutional_today - 1 from sitaa_0007_context),true,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('target_account'),'student','own','both',null,null,(select institutional_today from sitaa_0007_context),null,false,pg_temp.case_id('admin_exact')),
+  (pg_temp.case_id('admin_inactive'),'technical_admin','system','technical',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact'));
 
 create function pg_temp.insert_google_identity(target_label text, identity_email text)
 returns void language plpgsql set search_path = auth, pg_temp, pg_catalog, information_schema as $$
@@ -472,6 +546,7 @@ do $authorized_cases$
 declare
   target_id uuid := pg_temp.case_id('target_account');
   program_value uuid := (select program_id from pg_temp.sitaa_0007_context limit 1);
+  today_value date := (select institutional_today from pg_temp.sitaa_0007_context limit 1);
   result_count bigint;
   masked_value text;
   expected_identifier text := pg_temp.case_identifier('target_account');
@@ -580,6 +655,14 @@ begin
   ) then raise exception '0007: clasificación V1 de asignación incorrecta.'; end if;
   if (select count(distinct presentation_status) from public.get_admin_account_assignments_b1(target_id)
       where presentation_status in ('current','future','expired','inactive')) <> 4
+     or not exists (
+       select 1 from public.get_admin_account_assignments_b1(target_id)
+       where presentation_status = 'future' and starts_at = today_value + 1
+     )
+     or not exists (
+       select 1 from public.get_admin_account_assignments_b1(target_id)
+       where presentation_status = 'expired' and ends_at = today_value - 1
+     )
      or not exists(select 1 from public.get_admin_account_assignments_b1(pg_temp.case_id('admin_inactive'))
        where presentation_status='suspended_by_account_status') then
     raise exception '0007: faltan estados de presentación V1.';

@@ -4,6 +4,7 @@ begin;
 do $guard$
 declare
   expected_functions regprocedure[] := array[
+    to_regprocedure('public.sitaa_current_mexico_date()'),
     to_regprocedure('public.is_b1_account_admin()'),
     to_regprocedure('public.admin_audit_metadata_is_safe(jsonb)'),
     to_regprocedure('public.prevent_admin_audit_event_mutation()'),
@@ -79,6 +80,33 @@ begin
     raise exception 'sitaa_0007_rollback_contract_incomplete' using errcode = 'P0001';
   end if;
 
+  if not exists (
+       select 1
+       from pg_proc p
+       where p.oid = 'public.sitaa_current_mexico_date()'::regprocedure
+         and p.prorettype = 'date'::regtype
+         and p.provolatile = 's'
+         and p.prosecdef = false
+         and p.prolang = (select oid from pg_language where lanname = 'sql')
+         and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog']::text[]
+         and lower(pg_get_functiondef(p.oid)) like '%america/mexico_city%'
+     )
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid = 'public.sitaa_current_mexico_date()'::regprocedure
+         and acl.privilege_type = 'EXECUTE'
+         and (
+           acl.grantee = 0
+           or acl.grantee = (select oid from pg_roles where rolname = 'anon')
+           or acl.grantee = (select oid from pg_roles where rolname = 'authenticated')
+           or acl.grantee = (select oid from pg_roles where rolname = 'service_role')
+         )
+     ) then
+    raise exception 'sitaa_0007_rollback_mexico_date_contract_incomplete' using errcode = 'P0001';
+  end if;
+
   foreach rpc in array array[
     'public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)'::regprocedure,
     'public.get_admin_account_detail_b1(uuid)'::regprocedure,
@@ -96,6 +124,24 @@ begin
       raise exception 'sitaa_0007_rollback_rpc_contract_incomplete' using errcode = 'P0001';
     end if;
   end loop;
+
+  if lower(pg_get_functiondef('public.is_b1_account_admin()'::regprocedure))
+       not like '%public.sitaa_current_mexico_date()%'
+     or lower(pg_get_functiondef('public.is_b1_account_admin()'::regprocedure)) ~ '\mcurrent_date\M'
+     or lower(pg_get_functiondef(
+       'public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)'::regprocedure
+     )) not like '%public.sitaa_current_mexico_date()%'
+     or lower(pg_get_functiondef(
+       'public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)'::regprocedure
+     )) ~ '\mcurrent_date\M'
+     or lower(pg_get_functiondef('public.get_admin_account_assignments_b1(uuid)'::regprocedure))
+       not like '%public.sitaa_current_mexico_date()%'
+     or lower(pg_get_functiondef('public.get_admin_account_assignments_b1(uuid)'::regprocedure))
+       ~ '\mcurrent_date\M'
+     or lower(pg_get_functiondef('public.admin_audit_metadata_is_safe(jsonb)'::regprocedure))
+       !~ 'octet_length\(candidate::text\)\s*>\s*16384' then
+    raise exception 'sitaa_0007_rollback_runtime_contract_incomplete' using errcode = 'P0001';
+  end if;
 
   if has_function_privilege('authenticated','public.is_b1_account_admin()','EXECUTE')
      or has_function_privilege('anon','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
@@ -129,6 +175,8 @@ revoke all on function public.get_admin_account_audit_history_b1(uuid,integer,in
 revoke all on table public.admin_audit_events from public, anon, authenticated, service_role;
 revoke all on function public.admin_audit_metadata_is_safe(jsonb)
   from public, anon, authenticated, service_role;
+revoke all on function public.sitaa_current_mexico_date()
+  from public, anon, authenticated, service_role;
 
 drop function public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer);
 drop function public.get_admin_account_detail_b1(uuid);
@@ -141,6 +189,7 @@ drop function public.prevent_admin_audit_event_mutation();
 drop table public.admin_audit_events;
 drop function public.admin_audit_metadata_is_safe(jsonb);
 drop function public.is_b1_account_admin();
+drop function public.sitaa_current_mexico_date();
 
 drop index public.profiles_admin_directory_sort_idx;
 drop index public.profiles_admin_directory_filters_idx;
@@ -148,6 +197,7 @@ drop index public.profiles_admin_directory_filters_idx;
 do $verify$
 begin
   if to_regclass('public.admin_audit_events') is not null
+     or to_regprocedure('public.sitaa_current_mexico_date()') is not null
      or to_regprocedure('public.is_b1_account_admin()') is not null
      or to_regprocedure('public.admin_audit_metadata_is_safe(jsonb)') is not null
      or to_regprocedure('public.prevent_admin_audit_event_mutation()') is not null

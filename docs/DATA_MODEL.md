@@ -27,7 +27,7 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 
 ### Objeto preparado localmente por 0007 (no aplicado)
 
-`admin_audit_events` está definido en la migración local 0007 como bitácora administrativa append-only: UUID, actor y objetivo en `profiles`, acción, resultado, motivo opcional, asignación V1 opcional, metadata JSON acotada y fecha. Sus referencias usan borrado restrictivo, RLS no concede acceso directo a clientes y dos triggers bloquean actualización, eliminación y truncado. `service_role` conserva únicamente `SELECT` e `INSERT`; B.1 sólo consulta una proyección sanitizada mediante RPC, no escribe eventos ni devuelve metadata sin procesar.
+`admin_audit_events` está definido en la migración local 0007 como bitácora administrativa append-only: UUID, actor y objetivo en `profiles`, acción, resultado, motivo opcional, asignación V1 opcional, metadata de objeto JSON limitada a 16 384 bytes y fecha. Sus referencias usan borrado restrictivo, RLS no concede acceso directo a clientes y dos triggers bloquean actualización, eliminación y truncado. `service_role` conserva únicamente `SELECT` e `INSERT`; B.1 sólo consulta una proyección sanitizada mediante RPC, no escribe eventos ni devuelve metadata sin procesar.
 
 Este objeto no forma parte del inventario vivo posterior a 0006 hasta completar la aplicación, verificación y reconciliación coordinadas.
 
@@ -57,6 +57,8 @@ Este objeto no forma parte del inventario vivo posterior a 0006 hasta completar 
 ### Evolución prevista de asignaciones
 
 `role_assignments` ya conserva cuenta, rol, alcance, servicio, programa/división, vigencia, activo, `assigned_by` y timestamps. Para cumplir el modelo V2 debe añadir o formalizar fecha de asignación, `revoked_by`, `revoked_at` y nota administrativa. Las asignaciones se revocan o desactivan, no se borran. La tabla `roles` requerirá códigos separados para profesor tutor, profesor asesor, coordinación, secretaría técnica de programa y secretaría auxiliar divisional.
+
+En el directorio B.1, `starts_at` y `ends_at` se evalúan como fechas calendario inclusivas de `America/Mexico_City`. La aplicación y las RPC 0007 comparten la misma regla y no dependen de la zona horaria de la sesión PostgreSQL.
 
 Los catálogos operativos se consultan por `code` y muestran `label` o `name`. Sólo los valores con `is_active = true` se presentan en la operación normal. Son datos controlados previos a la implementación de actividades; el visor actual es de solo lectura.
 

@@ -118,7 +118,7 @@ begin
      or exists (
        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname in (
-         'is_b1_account_admin', 'admin_audit_metadata_is_safe',
+         'sitaa_current_mexico_date', 'is_b1_account_admin', 'admin_audit_metadata_is_safe',
          'prevent_admin_audit_event_mutation', 'search_admin_accounts_b1',
          'get_admin_account_detail_b1', 'get_admin_account_assignments_b1',
          'get_admin_account_audit_history_b1'
@@ -235,6 +235,19 @@ begin
 end;
 $preflight$;
 
+-- Fecha calendario institucional, independiente de la zona horaria de la sesión.
+create function public.sitaa_current_mexico_date()
+returns date
+language sql
+stable
+security invoker
+set search_path = pg_catalog
+as $function$
+  select (current_timestamp at time zone 'America/Mexico_City')::date;
+$function$;
+revoke all on function public.sitaa_current_mexico_date()
+  from public, anon, authenticated, service_role;
+
 -- Autorización privada exacta de Fase B.1.
 create function public.is_b1_account_admin()
 returns boolean
@@ -256,8 +269,8 @@ as $function$
       and ra.program_id is null
       and ra.division_id is null
       and ra.is_active = true
-      and ra.starts_at <= current_date
-      and (ra.ends_at is null or ra.ends_at >= current_date)
+      and ra.starts_at <= public.sitaa_current_mexico_date()
+      and (ra.ends_at is null or ra.ends_at >= public.sitaa_current_mexico_date())
   );
 $function$;
 revoke all on function public.is_b1_account_admin() from public, anon, authenticated;
@@ -429,8 +442,8 @@ begin
     (
       select count(*) from public.role_assignments current_ra
       where current_ra.user_id = p.id and current_ra.is_active = true
-        and current_ra.starts_at <= current_date
-        and (current_ra.ends_at is null or current_ra.ends_at >= current_date)
+        and current_ra.starts_at <= public.sitaa_current_mexico_date()
+        and (current_ra.ends_at is null or current_ra.ends_at >= public.sitaa_current_mexico_date())
     ),
     count(*) over()
   from public.profiles p
@@ -450,8 +463,8 @@ begin
       or exists (
         select 1 from public.role_assignments filtered_ra
         where filtered_ra.user_id = p.id and filtered_ra.is_active = true
-          and filtered_ra.starts_at <= current_date
-          and (filtered_ra.ends_at is null or filtered_ra.ends_at >= current_date)
+          and filtered_ra.starts_at <= public.sitaa_current_mexico_date()
+          and (filtered_ra.ends_at is null or filtered_ra.ends_at >= public.sitaa_current_mexico_date())
           and (role_code_filter is null or filtered_ra.role_code = role_code_filter)
           and (service_area_filter is null or filtered_ra.service_area = service_area_filter)
           and (scope_type_filter is null or filtered_ra.scope_type = scope_type_filter)
@@ -526,8 +539,8 @@ begin
     ra.is_active, ra.assigned_by, ra.created_at,
     case
       when not ra.is_active then 'inactive'
-      when ra.starts_at > current_date then 'future'
-      when ra.ends_at is not null and ra.ends_at < current_date then 'expired'
+      when ra.starts_at > public.sitaa_current_mexico_date() then 'future'
+      when ra.ends_at is not null and ra.ends_at < public.sitaa_current_mexico_date() then 'expired'
       when p.account_status <> 'active' then 'suspended_by_account_status'
       else 'current'
     end

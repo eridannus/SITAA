@@ -104,7 +104,7 @@ from (
     (case when to_regclass('public.admin_audit_events') is null then 0 else 1 end
      + (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
        where n.nspname='public' and p.proname in (
-         'is_b1_account_admin','admin_audit_metadata_is_safe',
+         'sitaa_current_mexico_date','is_b1_account_admin','admin_audit_metadata_is_safe',
          'prevent_admin_audit_event_mutation','search_admin_accounts_b1',
          'get_admin_account_detail_b1','get_admin_account_assignments_b1',
          'get_admin_account_audit_history_b1'))
@@ -194,7 +194,9 @@ from (
   select 'malformed_current_technical_admin_assignments', 'informational', count(*)::bigint
   from public.role_assignments ra
   where ra.role_code='technical_admin' and ra.is_active
-    and ra.starts_at<=current_date and (ra.ends_at is null or ra.ends_at>=current_date)
+    and ra.starts_at<=(current_timestamp at time zone 'America/Mexico_City')::date
+    and (ra.ends_at is null
+      or ra.ends_at>=(current_timestamp at time zone 'America/Mexico_City')::date)
     and (ra.scope_type is distinct from 'system' or ra.service_area is distinct from 'technical'
       or ra.program_id is not null or ra.division_id is not null)
 ) checks

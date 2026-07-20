@@ -42,12 +42,13 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 #### Fase B.1 preparada en 0007
 
 - El directorio administrativo es de sólo lectura y exige perfil `active` más una asignación actual `technical_admin/system/technical`, sin programa ni división. Una asignación mal formada no concede acceso.
+- La vigencia B.1 usa la fecha calendario de `America/Mexico_City`, con `starts_at` y `ends_at` inclusivos. La aplicación y las RPC 0007 comparten ese contrato; la autorización en base no depende de la zona horaria de la sesión PostgreSQL.
 - La guarda de interfaz se repite dentro de cada RPC `SECURITY DEFINER`; una invocación directa no autorizada falla con `42501`.
 - No se crean políticas transversales de `profiles` ni `role_assignments`; las políticas propias existentes permanecen intactas.
 - La lista minimiza datos y enmascara el identificador salvo sus últimos cuatro caracteres como máximo. El valor completo sólo aparece en la ficha individual autorizada.
 - Auth se resume únicamente como correo confirmado o no confirmado: el booleano acepta `email_confirmed_at` o una identidad Google verificada cuyo correo normalizado coincide. No se devuelven contraseñas, tokens, cookies, metadata, identidades OAuth ni enlaces de recuperación.
 - `admin_audit_events` se prepara append-only, con RLS sin políticas de cliente y triggers contra `UPDATE`, `DELETE` y `TRUNCATE`. `PUBLIC`, `anon` y `authenticated` no tienen acceso directo; `service_role`, cuya propiedad `rolbypassrls=true` es precondición bloqueante, recibe explícitamente sólo `SELECT` e `INSERT` sobre la tabla y `EXECUTE` sobre `admin_audit_metadata_is_safe(jsonb)`. Ningún privilegio depende de defaults ambientales y la aplicación no crea un cliente `service_role`.
-- Las llaves superiores de metadata se normalizan a minúsculas y sin separadores antes de rechazar términos sensibles como `password`, `token`, `cookie`, `secret`, `authorization`, `credential`, `recovery`, `session`, `bearer` o `apikey`.
+- La metadata debe ser un objeto JSON de hasta 16 384 bytes. Sus llaves superiores se normalizan a minúsculas y sin separadores antes de rechazar términos sensibles como `password`, `token`, `cookie`, `secret`, `authorization`, `credential`, `recovery`, `session`, `bearer` o `apikey`.
 - La aplicación no utiliza `service_role` ni escribe auditoría en B.1. Las mutaciones de cuenta quedan en B.2/B.3 y las de rol en Fase C.
 - No incorporar nombres, correos ni identificadores personales a semillas SQL.
 

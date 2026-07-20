@@ -18,7 +18,7 @@ Preparado localmente:
 - historial administrativo sanitizado, sin devolver `metadata`;
 - ninguna mutación de cuentas, Auth o roles.
 
-El acceso exige simultáneamente perfil activo y una asignación actual `technical_admin` con alcance `system`, área `technical` y programa/división nulos. La aplicación y cada RPC verifican el contrato completo.
+El acceso exige simultáneamente perfil activo y una asignación actual `technical_admin` con alcance `system`, área `technical` y programa/división nulos. La aplicación y cada RPC verifican el contrato completo. La vigencia compara fechas calendario `YYYY-MM-DD` de `America/Mexico_City`: inicio y término son inclusivos, y la base no depende de la zona horaria de la sesión PostgreSQL.
 
 ### B.2 — Ciclo de vida e identidad administrativa
 
@@ -42,7 +42,7 @@ La lista devuelve únicamente nombre estructurado/derivado, correo, clasificaci�
 
 ## Auditoría administrativa
 
-`admin_audit_events` se prepara en 0007 como bitácora append-only. Tiene referencias restrictivas a actor, objetivo y asignación opcional; acción y resultado controlados; motivo acotado; y metadata JSON de objeto, tamaño limitado y llaves superiores normalizadas antes de detectar términos sensibles. RLS está activa, no hay políticas de cliente y los triggers impiden `UPDATE`, `DELETE` y `TRUNCATE`. El ACL explícito de `service_role` es sólo `SELECT`/`INSERT` sobre la tabla y `EXECUTE` sobre el validador de metadata; 0007 bloquea si ese rol no conserva `rolbypassrls=true`.
+`admin_audit_events` se prepara en 0007 como bitácora append-only. Tiene referencias restrictivas a actor, objetivo y asignación opcional; acción y resultado controlados; motivo acotado; y metadata que debe ser un objeto JSON de hasta 16 384 bytes, con llaves superiores normalizadas antes de detectar términos sensibles. RLS está activa, no hay políticas de cliente y los triggers impiden `UPDATE`, `DELETE` y `TRUNCATE`. El ACL explícito de `service_role` es sólo `SELECT`/`INSERT` sobre la tabla y `EXECUTE` sobre el validador de metadata; 0007 bloquea si ese rol no conserva `rolbypassrls=true`.
 
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 
