@@ -125,7 +125,7 @@ Secuencia específica:
 1. verificar autoridad B.1;
 2. normalizar y validar texto/filtros;
 3. devolver cero filas si no existe ningún criterio;
-4. aplicar consulta acento-insensible de 2 a 200 caracteres sobre nombre, correo o identificador;
+4. aplicar consulta acento-insensible de 2 a 200 caracteres sobre nombre, correo o identificador, escapando `\`, `%` y `_` como literales;
 5. aplicar programa, cuenta, estado y persona;
 6. aplicar rol, servicio y alcance sobre la misma fila actual de `role_assignments`;
 7. ordenar por apellido paterno, apellido materno, nombres y UUID;

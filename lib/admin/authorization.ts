@@ -1,4 +1,7 @@
-import type { AuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
+import {
+  isCurrentRoleAssignment,
+  type AuthenticatedUserContext,
+} from "@/lib/auth/get-authenticated-user-context";
 
 /** Exact Phase B.1 authority. Database RPCs repeat this contract independently. */
 export function canAccessAccountAdministration(
@@ -14,6 +17,7 @@ export function canAccessAccountAdministration(
 
   return context.activeRoleAssignments.some(
     (assignment) =>
+      isCurrentRoleAssignment(assignment) &&
       assignment.role_code === "technical_admin" &&
       assignment.scope_type === "system" &&
       assignment.service_area === "technical" &&

@@ -27,7 +27,7 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 
 ### Objeto preparado localmente por 0007 (no aplicado)
 
-`admin_audit_events` está definido en la migración local 0007 como bitácora administrativa append-only: UUID, actor y objetivo en `profiles`, acción, resultado, motivo opcional, asignación V1 opcional, metadata JSON acotada y fecha. Sus referencias usan borrado restrictivo, RLS no concede acceso directo a clientes y un trigger bloquea actualización o eliminación. B.1 sólo consulta una proyección sanitizada mediante RPC; no escribe eventos ni devuelve metadata sin procesar.
+`admin_audit_events` está definido en la migración local 0007 como bitácora administrativa append-only: UUID, actor y objetivo en `profiles`, acción, resultado, motivo opcional, asignación V1 opcional, metadata JSON acotada y fecha. Sus referencias usan borrado restrictivo, RLS no concede acceso directo a clientes y dos triggers bloquean actualización, eliminación y truncado. `service_role` conserva únicamente `SELECT` e `INSERT`; B.1 sólo consulta una proyección sanitizada mediante RPC, no escribe eventos ni devuelve metadata sin procesar.
 
 Este objeto no forma parte del inventario vivo posterior a 0006 hasta completar la aplicación, verificación y reconciliación coordinadas.
 

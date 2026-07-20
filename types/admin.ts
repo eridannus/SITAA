@@ -42,6 +42,8 @@ export interface AdminAccountSearchResult {
   total: number;
   page: number;
   pageSize: number;
+  outOfRange: boolean;
+  lastPage: number;
 }
 
 export interface AdminAccountDetail {

@@ -92,6 +92,9 @@ export default async function AdminAccountsPage({ searchParams }: Props) {
         : "unavailable";
     }
   }
+  if (filters && result?.outOfRange) {
+    redirect(`/admin/accounts?${filtersToSearchParams(filters, result.lastPage)}`);
+  }
 
   const hasCriteria = filters ? hasAdminAccountCriteria(filters) : false;
   const pages = result ? Math.max(1, Math.ceil(result.total / result.pageSize)) : 1;

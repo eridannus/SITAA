@@ -20,11 +20,14 @@ Debe ejecutarse y revisarse antes de la migración. Abre una transacción de só
 Todos los conteos bloqueantes deben ser cero:
 
 - tablas y columnas post-0006 requeridas;
-- código `technical_admin` y extensión `unaccent` verificada;
+- código `technical_admin` y función exacta `extensions.unaccent(text)`;
 - correspondencia uno-a-uno entre Auth y `profiles`;
 - integridad referencial de `role_assignments`;
 - ausencia de tabla, funciones, trigger o políticas 0007;
-- políticas propias de perfiles/asignaciones y grants cliente esperados.
+- RLS, políticas propias con roles/comandos exactos y grants cliente post-0006, incluidos sólo los tres nombres estructurados actualizables;
+- roles `anon`, `authenticated` y `service_role`, forma V1 real y ausencia de conflictos 0007.
+
+El único dato informativo es el conteo agregado de asignaciones `technical_admin` actuales mal formadas; no bloquea ni expone filas.
 
 La migración repite esas condiciones dentro de su misma transacción antes de ejecutar DDL.
 
@@ -32,30 +35,21 @@ La migración repite esas condiciones dentro de su misma transacción antes de e
 
 Usa UUID sintéticos, correos `example.invalid`, objetos `pg_temp` y finaliza en `ROLLBACK`. Los grants del arnés se limitan a tablas y helpers temporales necesarios para probar con `SET LOCAL ROLE authenticated`.
 
-Casos mínimos:
+Matriz mínima de 64 comprobaciones:
 
-1. Una cuenta activa con asignación exacta `technical_admin/system/technical` puede buscar.
-2. Un alumno ordinario recibe `42501`.
-3. Un profesor ordinario recibe `42501`.
-4. Un `technical_admin` con alcance o servicio mal formado recibe `42501`.
-5. Un administrador técnico inactivo recibe `42501`.
-6. Sin texto ni filtros se devuelven cero filas.
-7. El texto encuentra nombre de forma acento-insensible, correo e identificador sintéticos.
-8. Funcionan programa, tipo/estado de cuenta, persona, rol, servicio y alcance.
-9. Rol, servicio y alcance no combinan asignaciones distintas.
-10. Se rechazan página menor a uno y tamaño mayor a 50.
-11. El identificador de lista se enmascara y conserva como máximo los últimos cuatro caracteres.
-12. Sólo la ficha autorizada devuelve el identificador completo.
-13. Auth se representa únicamente mediante el booleano `auth_email_confirmed`.
-14. Las asignaciones se clasifican con semántica V1, sin campos de revocación de Fase C.
-15. El historial devuelve la proyección sanitizada y omite `metadata`.
-16. `authenticated` no lee ni escribe directamente `admin_audit_events`.
-17. El trigger impide actualizar o eliminar eventos.
-18. Llaves sensibles y metadata mayor al límite se rechazan.
-19. RLS continúa mostrando únicamente perfil y asignaciones propias.
-20. Persisten contratos esenciales de registro, nombres estructurados, borradores, participantes, asistencia y check-in de 0002–0006.
+1–4. Existen las cuatro RPC con firmas estables; historial usa entrada `requested_profile_id`, salida `target_profile_id`, nombres PostgREST coordinados y helpers privados sin `EXECUTE` cliente.
+5–10. Se rechazan paginaciones `NULL`, cero, negativas o superiores al máximo; página 1 000 000/tamaño 50 y offset 1 000 000 son válidos sin desbordamiento.
+11–14. `%`, `_` y `\` son literales; patrones compuestos sólo encuentran marcadores UUID sintéticos y no amplían el conjunto.
+15–26. Accede únicamente `technical_admin/system/technical/null/null` con perfil activo y asignación actual; se niegan alumno, profesor, alcance/servicio incorrectos, programa/división no nulos, perfil o asignación inactivos, futuro y vencido; ambos límites del día son inclusivos.
+27–30. Filtros de rol/servicio/alcance coinciden en una misma fila; filas distintas no se combinan; estado vacío devuelve cero y el texto usa marcadores sintéticos únicos.
+31–35. Lista enmascarada, detalle completo sólo autorizado, existencia indistinguible para no autorizados, historial sin metadata y Auth sólo booleano.
+36–39. Confirmación verdadera por `email_confirmed_at` o Google verificado con correo coincidente; correo Google distinto o ausencia de evidencia devuelven falso.
+40–46. `authenticated`, `anon` y `PUBLIC` carecen de acceso directo; `service_role` tiene exactamente `SELECT`/`INSERT`; triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE` aun con ejecución privilegiada.
+47–53. Metadata ordinaria se acepta; `access_token`, `accessToken`, `refresh-token`, `authorizationHeader`, `recoveryLink`, `clientSecretValue`, objetos sobredimensionados y valores no objeto se rechazan.
+54–58. Asignaciones se presentan como `current`, `future`, `expired`, `inactive` y `suspended_by_account_status` con semántica V1.
+59–64. Persisten RLS propio, grants de nombres estructurados, contrato de registro post-0006, privacidad de borradores y contratos estáticos de participantes, asistencia y check-in.
 
-El verificador también comprueba firmas exactas, `SECURITY DEFINER`, `search_path`, RLS, ausencia de políticas cliente y grants de ejecución sólo para `authenticated` en las cuatro RPC públicas.
+El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausencia de políticas cliente, ACL exacto de auditoría y ejecución sólo para `authenticated` en las cuatro RPC públicas. No se afirma ejecución PostgreSQL hasta aplicarlo manualmente después de 0007.
 
 ## Smoke tests posteriores al despliegue compatible
 

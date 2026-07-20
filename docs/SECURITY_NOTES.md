@@ -45,8 +45,9 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - La guarda de interfaz se repite dentro de cada RPC `SECURITY DEFINER`; una invocación directa no autorizada falla con `42501`.
 - No se crean políticas transversales de `profiles` ni `role_assignments`; las políticas propias existentes permanecen intactas.
 - La lista minimiza datos y enmascara el identificador salvo sus últimos cuatro caracteres como máximo. El valor completo sólo aparece en la ficha individual autorizada.
-- Auth se resume únicamente como correo confirmado o no confirmado. No se devuelven contraseñas, tokens, cookies, metadata, identidades OAuth ni enlaces de recuperación.
-- `admin_audit_events` se prepara append-only, con RLS sin políticas de cliente, sin grants directos y con trigger contra `UPDATE`/`DELETE`. Su metadata se acota y la RPC de historial no la expone.
+- Auth se resume únicamente como correo confirmado o no confirmado: el booleano acepta `email_confirmed_at` o una identidad Google verificada cuyo correo normalizado coincide. No se devuelven contraseñas, tokens, cookies, metadata, identidades OAuth ni enlaces de recuperación.
+- `admin_audit_events` se prepara append-only, con RLS sin políticas de cliente y triggers contra `UPDATE`, `DELETE` y `TRUNCATE`. `PUBLIC`, `anon` y `authenticated` no tienen acceso directo; `service_role` recibe explícitamente sólo `SELECT` e `INSERT`. La aplicación no crea un cliente `service_role`.
+- Las llaves superiores de metadata se normalizan a minúsculas y sin separadores antes de rechazar términos sensibles como `password`, `token`, `cookie`, `secret`, `authorization`, `credential`, `recovery`, `session`, `bearer` o `apikey`.
 - La aplicación no utiliza `service_role` ni escribe auditoría en B.1. Las mutaciones de cuenta quedan en B.2/B.3 y las de rol en Fase C.
 - No incorporar nombres, correos ni identificadores personales a semillas SQL.
 

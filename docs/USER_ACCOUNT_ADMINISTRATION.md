@@ -34,7 +34,7 @@ Asignar, revocar, transferir o delegar roles queda fuera de B.1–B.3 y pertenec
 
 ## Directorio B.1
 
-La consulta nunca descarga el padrón completo al navegador. Sin texto ni filtros devuelve cero filas. El texto tiene entre 2 y 200 caracteres; la página contiene 20 filas por defecto y hasta 50. El orden es apellido paterno, apellido materno, nombres y UUID.
+La consulta nunca descarga el padrón completo al navegador. Sin texto ni filtros devuelve cero filas. El texto tiene entre 2 y 200 caracteres; `%`, `_` y `\` se buscan literalmente y sólo `extensions.unaccent(text)` aporta coincidencia sin acentos. La página válida está entre 1 y 1 000 000, contiene 20 filas por defecto y hasta 50. Si una página queda fuera de rango, el servidor repite la misma consulta autorizada con página 1/tamaño 1 y redirige a la última página conservando filtros; no inventa total cero ni añade un RPC de conteo.
 
 Filtros admitidos: programa, tipo y estado de cuenta, tipo de persona, rol, área de servicio y alcance actuales. Rol, servicio y alcance deben coincidir en la misma fila vigente de `role_assignments`. Los valores desconocidos se rechazan.
 
@@ -42,7 +42,7 @@ La lista devuelve únicamente nombre estructurado/derivado, correo, clasificaci�
 
 ## Auditoría administrativa
 
-`admin_audit_events` se prepara en 0007 como bitácora append-only. Tiene referencias restrictivas a actor, objetivo y asignación opcional; acción y resultado controlados; motivo acotado; y metadata JSON de objeto, tamaño limitado y sin llaves sensibles evidentes. RLS está activa, no hay políticas de cliente y un trigger impide `UPDATE` o `DELETE`.
+`admin_audit_events` se prepara en 0007 como bitácora append-only. Tiene referencias restrictivas a actor, objetivo y asignación opcional; acción y resultado controlados; motivo acotado; y metadata JSON de objeto, tamaño limitado y llaves superiores normalizadas antes de detectar términos sensibles. RLS está activa, no hay políticas de cliente y los triggers impiden `UPDATE`, `DELETE` y `TRUNCATE`. El ACL explícito de `service_role` es sólo `SELECT`/`INSERT`.
 
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 

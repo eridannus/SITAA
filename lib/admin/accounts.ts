@@ -61,7 +61,7 @@ export async function searchAdminAccounts(
   filters: AdminAccountFilters,
 ): Promise<AdminAccountSearchResult> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("search_admin_accounts_b1", {
+  const argumentsFor = (pageNumber: number, pageSize: number) => ({
     search_text: filters.query || null,
     program_filter: filters.programId || null,
     account_kind_filter: filters.accountKind || null,
@@ -70,9 +70,13 @@ export async function searchAdminAccounts(
     role_code_filter: filters.roleCode || null,
     service_area_filter: filters.serviceArea || null,
     scope_type_filter: filters.scopeType || null,
-    page_number: filters.page,
-    page_size: filters.pageSize,
+    page_number: pageNumber,
+    page_size: pageSize,
   });
+  const { data, error } = await supabase.rpc(
+    "search_admin_accounts_b1",
+    argumentsFor(filters.page, filters.pageSize),
+  );
   if (error) throw mappedError(error);
 
   const rows = (Array.isArray(data) ? data : []) as SearchRow[];
@@ -92,11 +96,24 @@ export async function searchAdminAccounts(
     maskedInstitutionalId: row.masked_institutional_id,
     currentAssignmentCount: Number(row.current_assignment_count),
   }));
+  let total = rows.length ? Number(rows[0].total_count) : 0;
+  if (!rows.length && filters.page > 1) {
+    const probe = await supabase.rpc(
+      "search_admin_accounts_b1",
+      argumentsFor(1, 1),
+    );
+    if (probe.error) throw mappedError(probe.error);
+    const probeRow = firstRow<SearchRow>(probe.data);
+    total = probeRow ? Number(probeRow.total_count) : 0;
+  }
+  const lastPage = total ? Math.ceil(total / filters.pageSize) : 1;
   return {
     accounts,
-    total: rows.length ? Number(rows[0].total_count) : 0,
+    total,
     page: filters.page,
     pageSize: filters.pageSize,
+    outOfRange: total > 0 && filters.page > lastPage,
+    lastPage,
   };
 }
 
@@ -155,7 +172,7 @@ export async function getAdminAccountRecord(profileId: string) {
     supabase.rpc("get_admin_account_detail_b1", { target_profile_id: profileId }),
     supabase.rpc("get_admin_account_assignments_b1", { target_profile_id: profileId }),
     supabase.rpc("get_admin_account_audit_history_b1", {
-      target_profile_id: profileId,
+      requested_profile_id: profileId,
       result_limit: 50,
       result_offset: 0,
     }),
