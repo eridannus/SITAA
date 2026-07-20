@@ -46,6 +46,8 @@ La lista devuelve únicamente nombre estructurado/derivado, correo, clasificaci�
 
 El cierre de verificación B.1 fija también la forma física: nueve columnas en orden, PK y tres FK restrictivas, cuatro validaciones semánticas, cuatro índices concretos y dos triggers exactos. Las cuatro RPC se verifican por nombre, tipo y orden de entradas/salidas; los helpers privados se verifican por autoridad, fecha institucional, límite de 16 384 bytes, protección append-only y privilegio mínimo.
 
+El ACL de las ocho funciones 0007 se define sin depender de privilegios por defecto: las cuatro RPC sólo conceden `EXECUTE` a `authenticated`; los helpers de fecha, autoridad y trigger son owner-only; el validador de metadata conserva como única excepción el `EXECUTE` explícito de `service_role`. Ningún grant concedido a esos roles incluye grant option.
+
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 
 ## Criterios de aceptación

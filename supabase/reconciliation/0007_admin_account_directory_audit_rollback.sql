@@ -14,6 +14,7 @@ declare
     to_regprocedure('public.get_admin_account_audit_history_b1(uuid,integer,integer)')
   ];
   rpc regprocedure;
+  helper regprocedure;
 begin
   if to_regclass('public.admin_audit_events') is null
      or array_position(expected_functions, null) is not null
@@ -115,9 +116,34 @@ begin
   ] loop
     if not has_function_privilege('authenticated', rpc, 'EXECUTE')
        or has_function_privilege('anon', rpc, 'EXECUTE')
+       or has_function_privilege('service_role', rpc, 'EXECUTE')
        or exists (
          select 1 from aclexplode((select coalesce(proacl, acldefault('f', proowner)) from pg_proc where oid = rpc))
          where grantee = 0 and privilege_type = 'EXECUTE'
+       )
+       or (
+         select count(*)
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = rpc and acl.privilege_type = 'EXECUTE'
+       ) <> 2
+       or exists (
+         select 1
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = rpc and acl.privilege_type = 'EXECUTE'
+           and acl.grantee not in (
+             p.proowner,
+             (select oid from pg_roles where rolname = 'authenticated')
+           )
+       )
+       or not exists (
+         select 1
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = rpc and acl.privilege_type = 'EXECUTE'
+           and acl.grantee = (select oid from pg_roles where rolname = 'authenticated')
+           and not acl.is_grantable
        )
        or (select not prosecdef from pg_proc where oid = rpc)
        or lower(pg_get_functiondef(rpc)) not like '%set search_path%pg_catalog%public%' then
@@ -143,10 +169,35 @@ begin
     raise exception 'sitaa_0007_rollback_runtime_contract_incomplete' using errcode = 'P0001';
   end if;
 
-  if has_function_privilege('authenticated','public.is_b1_account_admin()','EXECUTE')
-     or has_function_privilege('anon','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
+  foreach helper in array array[
+    'public.sitaa_current_mexico_date()'::regprocedure,
+    'public.is_b1_account_admin()'::regprocedure,
+    'public.prevent_admin_audit_event_mutation()'::regprocedure
+  ] loop
+    if has_function_privilege('anon', helper, 'EXECUTE')
+       or has_function_privilege('authenticated', helper, 'EXECUTE')
+       or has_function_privilege('service_role', helper, 'EXECUTE')
+       or exists (
+         select 1
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = helper and acl.privilege_type = 'EXECUTE'
+           and acl.grantee <> p.proowner
+       ) then
+      raise exception 'sitaa_0007_rollback_owner_only_helper_grant_drift' using errcode = 'P0001';
+    end if;
+  end loop;
+
+  if has_function_privilege('anon','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
      or has_function_privilege('authenticated','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
      or not has_function_privilege('service_role','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
+     or (
+       select count(*)
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+       where p.oid='public.admin_audit_metadata_is_safe(jsonb)'::regprocedure
+         and acl.privilege_type='EXECUTE'
+     ) <> 2
      or exists (
        select 1
        from pg_proc p
@@ -156,9 +207,17 @@ begin
          and acl.grantee not in (
            p.proowner,
            (select oid from pg_roles where rolname='service_role')
-         )
-     )
-     or has_function_privilege('authenticated','public.prevent_admin_audit_event_mutation()','EXECUTE') then
+          )
+      )
+     or not exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid='public.admin_audit_metadata_is_safe(jsonb)'::regprocedure
+         and acl.privilege_type='EXECUTE'
+         and acl.grantee=(select oid from pg_roles where rolname='service_role')
+         and not acl.is_grantable
+     ) then
     raise exception 'sitaa_0007_rollback_private_helper_grant_drift' using errcode = 'P0001';
   end if;
 
@@ -168,12 +227,20 @@ begin
 end;
 $guard$;
 
-revoke all on function public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer) from public, anon, authenticated;
-revoke all on function public.get_admin_account_detail_b1(uuid) from public, anon, authenticated;
-revoke all on function public.get_admin_account_assignments_b1(uuid) from public, anon, authenticated;
-revoke all on function public.get_admin_account_audit_history_b1(uuid,integer,integer) from public, anon, authenticated;
+revoke all on function public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_admin_account_detail_b1(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_admin_account_assignments_b1(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_admin_account_audit_history_b1(uuid,integer,integer)
+  from public, anon, authenticated, service_role;
 revoke all on table public.admin_audit_events from public, anon, authenticated, service_role;
 revoke all on function public.admin_audit_metadata_is_safe(jsonb)
+  from public, anon, authenticated, service_role;
+revoke all on function public.prevent_admin_audit_event_mutation()
+  from public, anon, authenticated, service_role;
+revoke all on function public.is_b1_account_admin()
   from public, anon, authenticated, service_role;
 revoke all on function public.sitaa_current_mexico_date()
   from public, anon, authenticated, service_role;

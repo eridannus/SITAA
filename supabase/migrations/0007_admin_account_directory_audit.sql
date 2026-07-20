@@ -273,7 +273,8 @@ as $function$
       and (ra.ends_at is null or ra.ends_at >= public.sitaa_current_mexico_date())
   );
 $function$;
-revoke all on function public.is_b1_account_admin() from public, anon, authenticated;
+revoke all on function public.is_b1_account_admin()
+  from public, anon, authenticated, service_role;
 
 create function public.admin_audit_metadata_is_safe(candidate jsonb)
 returns boolean
@@ -338,7 +339,8 @@ begin
   raise exception 'sitaa_admin_audit_is_append_only' using errcode = '55000';
 end;
 $function$;
-revoke all on function public.prevent_admin_audit_event_mutation() from public, anon, authenticated;
+revoke all on function public.prevent_admin_audit_event_mutation()
+  from public, anon, authenticated, service_role;
 
 create trigger prevent_admin_audit_event_mutation
 before update or delete on public.admin_audit_events
@@ -589,14 +591,116 @@ begin
 end;
 $function$;
 
-revoke all on function public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer) from public, anon, authenticated;
-revoke all on function public.get_admin_account_detail_b1(uuid) from public, anon, authenticated;
-revoke all on function public.get_admin_account_assignments_b1(uuid) from public, anon, authenticated;
-revoke all on function public.get_admin_account_audit_history_b1(uuid,integer,integer) from public, anon, authenticated;
+revoke all on function public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_admin_account_detail_b1(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_admin_account_assignments_b1(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_admin_account_audit_history_b1(uuid,integer,integer)
+  from public, anon, authenticated, service_role;
 
 grant execute on function public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer) to authenticated;
 grant execute on function public.get_admin_account_detail_b1(uuid) to authenticated;
 grant execute on function public.get_admin_account_assignments_b1(uuid) to authenticated;
 grant execute on function public.get_admin_account_audit_history_b1(uuid,integer,integer) to authenticated;
+
+-- El ACL final de todas las funciones 0007 debe ser independiente de defaults ambientales.
+do $post_ddl_acl_contract$
+declare
+  function_oid regprocedure;
+  metadata_validator regprocedure := 'public.admin_audit_metadata_is_safe(jsonb)'::regprocedure;
+begin
+  foreach function_oid in array array[
+    'public.sitaa_current_mexico_date()'::regprocedure,
+    'public.is_b1_account_admin()'::regprocedure,
+    'public.prevent_admin_audit_event_mutation()'::regprocedure
+  ] loop
+    if has_function_privilege('anon', function_oid, 'EXECUTE')
+       or has_function_privilege('authenticated', function_oid, 'EXECUTE')
+       or has_function_privilege('service_role', function_oid, 'EXECUTE')
+       or exists (
+         select 1
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = function_oid
+           and acl.privilege_type = 'EXECUTE'
+           and acl.grantee <> p.proowner
+       ) then
+      raise exception 'sitaa_0007_post_ddl_owner_only_function_acl_invalid'
+        using errcode = 'P0001';
+    end if;
+  end loop;
+
+  if has_function_privilege('anon', metadata_validator, 'EXECUTE')
+     or has_function_privilege('authenticated', metadata_validator, 'EXECUTE')
+     or not has_function_privilege('service_role', metadata_validator, 'EXECUTE')
+     or (
+       select count(*)
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+       where p.oid = metadata_validator and acl.privilege_type = 'EXECUTE'
+     ) <> 2
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+       where p.oid = metadata_validator and acl.privilege_type = 'EXECUTE'
+         and acl.grantee not in (
+           p.proowner,
+           (select oid from pg_roles where rolname = 'service_role')
+         )
+     )
+     or not exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+       where p.oid = metadata_validator and acl.privilege_type = 'EXECUTE'
+         and acl.grantee = (select oid from pg_roles where rolname = 'service_role')
+         and not acl.is_grantable
+     ) then
+    raise exception 'sitaa_0007_post_ddl_metadata_function_acl_invalid'
+      using errcode = 'P0001';
+  end if;
+
+  foreach function_oid in array array[
+    'public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)'::regprocedure,
+    'public.get_admin_account_detail_b1(uuid)'::regprocedure,
+    'public.get_admin_account_assignments_b1(uuid)'::regprocedure,
+    'public.get_admin_account_audit_history_b1(uuid,integer,integer)'::regprocedure
+  ] loop
+    if not has_function_privilege('authenticated', function_oid, 'EXECUTE')
+       or has_function_privilege('anon', function_oid, 'EXECUTE')
+       or has_function_privilege('service_role', function_oid, 'EXECUTE')
+       or (
+         select count(*)
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = function_oid and acl.privilege_type = 'EXECUTE'
+       ) <> 2
+       or exists (
+         select 1
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = function_oid and acl.privilege_type = 'EXECUTE'
+           and acl.grantee not in (
+             p.proowner,
+             (select oid from pg_roles where rolname = 'authenticated')
+           )
+       )
+       or not exists (
+         select 1
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = function_oid and acl.privilege_type = 'EXECUTE'
+           and acl.grantee = (select oid from pg_roles where rolname = 'authenticated')
+           and not acl.is_grantable
+       ) then
+      raise exception 'sitaa_0007_post_ddl_rpc_function_acl_invalid'
+        using errcode = 'P0001';
+    end if;
+  end loop;
+end;
+$post_ddl_acl_contract$;
 
 commit;

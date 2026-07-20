@@ -356,6 +356,12 @@ begin
          select 1 from pg_proc p cross join lateral aclexplode(p.proacl) acl
          where p.oid = rpc and acl.privilege_type = 'EXECUTE'
            and acl.grantee not in (p.proowner, (select oid from pg_roles where rolname='authenticated'))
+       )
+       or not exists (
+         select 1 from pg_proc p cross join lateral aclexplode(p.proacl) acl
+         where p.oid = rpc and acl.privilege_type = 'EXECUTE'
+           and acl.grantee = (select oid from pg_roles where rolname='authenticated')
+           and not acl.is_grantable
        ) then
       raise exception '0007: privilegio, SECURITY DEFINER o search_path inválido para %.', rpc;
     end if;

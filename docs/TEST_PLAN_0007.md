@@ -45,6 +45,8 @@ Antes de crear fixtures, el bloque estático valida el contrato físico completo
 - nombres, tipos y orden exactos de las entradas y salidas de las cuatro RPC;
 - volatilidad, `SECURITY DEFINER`/invoker, `search_path`, cuerpo semántico y ACL exacto de los helpers de fecha, autoridad, metadata y bloqueo de mutaciones.
 
+La migración normaliza explícitamente el ACL de sus ocho funciones para `PUBLIC`, `anon`, `authenticated` y `service_role`, y ejecuta antes del `COMMIT` una guarda atómica sobre privilegios efectivos, grantees directos y ausencia de grant option. Las RPC quedan ejecutables sólo por `authenticated`; los helpers privados quedan sólo para el propietario, salvo el validador de metadata, que concede `EXECUTE` explícito y no delegable a `service_role`.
+
 Estas aserciones complementan, pero no sustituyen, las pruebas funcionales siguientes.
 
 Matriz mínima de 72 comprobaciones:
@@ -77,7 +79,7 @@ El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausenc
 
 ## Rollback manual
 
-El rollback sólo se considera tras revisión. Su guard exige el contrato 0007 completo, incluido el helper privado de fecha institucional y el límite de metadata de 16 384 bytes, y aborta si `admin_audit_events` contiene una fila. Revoca ejecución de las RPC y helpers antes de retirarlos, no usa `CASCADE`, elimina únicamente objetos 0007, verifica el contrato post-0006 y confirma con `COMMIT` sólo si la autoverificación termina correctamente.
+El rollback sólo se considera tras revisión. Su guard exige el contrato 0007 completo, incluido el ACL exacto de las ocho funciones, el helper privado de fecha institucional y el límite de metadata de 16 384 bytes, y aborta si `admin_audit_events` contiene una fila. Revoca a los cuatro roles la ejecución de todas las RPC y helpers antes de retirarlos, no usa `CASCADE`, elimina únicamente objetos 0007, verifica el contrato post-0006 y confirma con `COMMIT` sólo si la autoverificación termina correctamente.
 
 ## Secuencia de aplicación futura
 
