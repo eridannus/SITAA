@@ -133,20 +133,23 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Diferencias ambientales: timestamp/formato, omisión semánticamente equivalente de `SECURITY INVOKER` y representación ACL de `MAINTAIN`.
 - Diferencias operativas controladas: backfill revisado de nombres y separación administrativa previamente documentada; no se exportaron datos personales.
 - Contrato visual: `docs/DESIGN_SYSTEM.md` es obligatorio para toda la aplicación y `npm run check:ui` forma parte de la validación.
-- El cierre original dejó `0007` disponible; la Fase B.1 lo prepara localmente en el apartado siguiente.
+- El cierre original dejó `0007` disponible; la Fase B.1 se aplicó posteriormente y su cierre intermedio se documenta en el apartado siguiente.
 
-## 0007_admin_account_directory_audit.sql — creada localmente / no aplicada
+## 0007_admin_account_directory_audit.sql — aplicada; cierre de verificación pendiente
 
 - Prepara el directorio administrativo de sólo lectura y `admin_audit_events` append-only.
 - Añade autorización exacta B.1, cuatro RPC minimizadas, índices de consulta, RLS sin políticas cliente, ACL explícito `service_role` sólo `SELECT`/`INSERT` y triggers contra `UPDATE`, `DELETE` y `TRUNCATE` del historial.
-- La revisión local endurece paginación nula/acotada, búsqueda literal de comodines, metadata sensible normalizada, confirmación Google resumida y recuperación del total en páginas fuera de rango. 0007 continúa sin aplicar.
-- La revisión final hace determinista el `EXECUTE` de `service_role` sobre el validador de metadata, exige `rolbypassrls=true` y usa fixtures UUID sin colisiones; el verificador cubre funcionalmente ese rol y niega las cuatro RPC a cada actor no autorizado. 0007 sigue sin aplicar ni verificar contra PostgreSQL.
+- La revisión local endureció paginación nula/acotada, búsqueda literal de comodines, metadata sensible normalizada, confirmación Google resumida y recuperación del total en páginas fuera de rango.
+- La revisión final hizo determinista el `EXECUTE` de `service_role` sobre el validador de metadata, exige `rolbypassrls=true` y usa fixtures UUID sin colisiones; el verificador cubre funcionalmente ese rol y niega las cuatro RPC a cada actor no autorizado.
 - La corrección final incorpora el helper privado `sitaa_current_mexico_date()`: toda vigencia B.1 usa fechas inclusivas de `America/Mexico_City` y deja de depender de la zona horaria de sesión. El verificador cambia deliberadamente la sesión a `Pacific/Kiritimati` para probar el contrato.
 - El límite único de metadata queda fijado en 16 384 bytes en migración, verificador, rollback y documentación.
-- El cierre local del verificador añade aserciones exactas de columnas/defaults, PK/FK/CHECK, cuatro índices, dos triggers, ACL de tabla/columna/función, firmas completas de las cuatro RPC y semántica de helpers privados. También elimina una asignación duplicada de la fixture `admin_inactive`; no modifica la migración ni marca 0007 como aplicada.
-- La corrección ACL final revoca explícitamente `PUBLIC`, `anon`, `authenticated` y `service_role` antes de conceder los únicos `EXECUTE` permitidos, añade una guarda post-DDL atómica y alinea verificador y rollback. Ninguna función 0007 depende de privilegios por defecto; 0007 permanece sin aplicar.
-- El cierre de seguridad del rollback fija `READ COMMITTED` y adquiere `ACCESS EXCLUSIVE NOWAIT` antes del guard completo y del control de vacío. Así, la actividad concurrente aborta el intento y ningún `INSERT` de auditoría puede confirmar entre la comprobación y `DROP TABLE`; 0007 continúa local y sin aplicar.
+- El cierre local del verificador añadió aserciones exactas de columnas/defaults, PK/FK/CHECK, cuatro índices, dos triggers, ACL de tabla/columna/función, firmas completas de las cuatro RPC y semántica de helpers privados. También eliminó una asignación duplicada de la fixture `admin_inactive`.
+- La corrección ACL final revoca explícitamente `PUBLIC`, `anon`, `authenticated` y `service_role` antes de conceder los únicos `EXECUTE` permitidos, añade una guarda post-DDL atómica y alinea verificador y rollback. Ninguna función 0007 depende de privilegios por defecto.
+- El cierre de seguridad del rollback fija `READ COMMITTED` y adquiere `ACCESS EXCLUSIVE NOWAIT` antes del guard completo y del control de vacío. Así, la actividad concurrente aborta el intento y ningún `INSERT` de auditoría puede confirmar entre la comprobación y `DROP TABLE`.
 - Artefactos coordinados: migración, preflight de sólo lectura, verificador transaccional con `ROLLBACK`, rollback manual protegido y `docs/TEST_PLAN_0007.md`.
 - No modifica 0001–0006 ni el snapshot vivo posterior a 0006.
-
-Secuencia futura obligatoria: aprobar preflight; aplicar 0007 manualmente; desplegar la aplicación compatible; ejecutar verificador; realizar smoke tests; regenerar snapshot; reconciliar 0001–0007; y sólo entonces actualizar el estado canónico como aplicado.
+- Estado de aplicación: preflight aprobado, migración confirmada con `COMMIT` y aplicación compatible publicada.
+- Primera verificación: falló antes de crear fixtures porque el arnés recortaba `p.prosrc` antes de colapsar espacios. Un diagnóstico de sólo lectura confirmó la definición y los ACL correctos de los objetos persistentes.
+- Corrección del arnés: la comparación usa `btrim(regexp_replace(lower(p.prosrc), '\s+', ' ', 'g'))`, incluye una regresión sintética y separa los errores de definición y ACL por helper. La migración aplicada permanece inmutable.
+- Pendiente: reejecutar el verificador, completar smoke tests, regenerar el snapshot posterior a 0007 y reconciliar la cadena `0001`–`0007`.
+- No se creó, reservó ni requiere 0008 para esta corrección exclusiva del verificador.

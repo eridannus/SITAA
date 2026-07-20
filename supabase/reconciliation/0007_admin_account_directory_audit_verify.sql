@@ -367,7 +367,7 @@ begin
     end if;
   end loop;
 
-  -- Propiedades semánticas y ACL exactos de los helpers privados.
+  -- Propiedades semánticas exactas de los helpers privados.
   if authority_helper is null
      or not exists (
        select 1 from pg_proc p
@@ -385,8 +385,11 @@ begin
      or authority_definition not like '%ra.division_id is null%'
      or authority_definition not like '%ra.is_active = true%'
      or authority_definition not like '%ra.starts_at <= public.sitaa_current_mexico_date()%'
-     or authority_definition not like '%ra.ends_at >= public.sitaa_current_mexico_date()%'
-     or metadata_helper is null
+     or authority_definition not like '%ra.ends_at >= public.sitaa_current_mexico_date()%' then
+    raise exception '0007: definición del helper de autoridad B.1 inválida.';
+  end if;
+
+  if metadata_helper is null
      or not exists (
        select 1 from pg_proc p
        where p.oid = metadata_helper and p.prorettype = 'boolean'::regtype
@@ -397,31 +400,48 @@ begin
      or metadata_definition !~ 'octet_length\(candidate::text\)\s*>\s*16384'
      or metadata_definition not like '%jsonb_object_keys(candidate)%'
      or metadata_definition not like '%regexp_replace(lower(key_name), ''[^a-z0-9]+'', '''', ''g'')%'
-     or metadata_definition not like '%password|passwd|token|cookie|secret|authorization|credential|recovery|session|bearer|apikey%'
-     or mutation_helper is null
+     or metadata_definition not like '%password|passwd|token|cookie|secret|authorization|credential|recovery|session|bearer|apikey%' then
+    raise exception '0007: definición del validador de metadata inválida.';
+  end if;
+
+  if mutation_helper is null
      or not exists (
        select 1 from pg_proc p
        where p.oid = mutation_helper and p.prorettype = 'trigger'::regtype and p.prosecdef
-         and p.prolang = (select oid from pg_language where lanname = 'plpgsql')
-         and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog, public']::text[]
-         and regexp_replace(lower(btrim(p.prosrc)), '\s+', ' ', 'g')
-           = 'begin raise exception ''sitaa_admin_audit_is_append_only'' using errcode = ''55000''; end;'
-     )
-     or mutation_definition not like '%raise exception ''sitaa_admin_audit_is_append_only'' using errcode = ''55000''%'
-     or exists (
-       select 1
-       from unnest(array[mexico_date_helper, authority_helper, mutation_helper]) helper(function_oid)
-       cross join (values ('anon'),('authenticated'),('service_role')) client(role_name)
+          and p.prolang = (select oid from pg_language where lanname = 'plpgsql')
+          and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog, public']::text[]
+          and btrim(regexp_replace(lower(p.prosrc), '\s+', ' ', 'g'))
+            = 'begin raise exception ''sitaa_admin_audit_is_append_only'' using errcode = ''55000''; end;'
+      )
+     or mutation_definition not like '%raise exception ''sitaa_admin_audit_is_append_only'' using errcode = ''55000''%' then
+    raise exception '0007: definición del helper append-only inválida.';
+  end if;
+
+  -- Regresión del arnés: pg_proc.prosrc puede conservar saltos de línea externos.
+  if btrim(regexp_replace(lower(E'\nbegin\n  raise exception ''sitaa_admin_audit_is_append_only''\n    using errcode = ''55000'';\nend;\n'), '\s+', ' ', 'g'))
+       <> 'begin raise exception ''sitaa_admin_audit_is_append_only'' using errcode = ''55000''; end;' then
+    raise exception '0007: normalización estática de fuente PL/pgSQL inválida.';
+  end if;
+
+  -- ACL owner-only de helpers que nunca deben ser ejecutables por clientes.
+  if exists (
+        select 1
+        from unnest(array[mexico_date_helper, authority_helper, mutation_helper]) helper(function_oid)
+        cross join (values ('anon'),('authenticated'),('service_role')) client(role_name)
        where has_function_privilege(client.role_name, helper.function_oid, 'EXECUTE')
      )
      or exists (
        select 1
        from pg_proc p
        cross join lateral aclexplode(p.proacl) acl
-       where p.oid in (mexico_date_helper, authority_helper, mutation_helper)
-         and acl.privilege_type = 'EXECUTE' and acl.grantee <> p.proowner
-     )
-     or has_function_privilege('anon', metadata_helper, 'EXECUTE')
+        where p.oid in (mexico_date_helper, authority_helper, mutation_helper)
+          and acl.privilege_type = 'EXECUTE' and acl.grantee <> p.proowner
+      ) then
+    raise exception '0007: ACL de helper privado inválido.';
+  end if;
+
+  -- El validador de metadata admite únicamente propietario y service_role.
+  if has_function_privilege('anon', metadata_helper, 'EXECUTE')
      or has_function_privilege('authenticated', metadata_helper, 'EXECUTE')
      or not has_function_privilege('service_role', metadata_helper, 'EXECUTE')
      or exists (
@@ -438,10 +458,10 @@ begin
      or (select count(*) from pg_proc p cross join lateral aclexplode(p.proacl) acl
            where p.oid = metadata_helper and acl.privilege_type = 'EXECUTE') <> 2
      or exists (
-       select 1 from pg_proc p cross join lateral aclexplode(p.proacl) acl
-       where p.oid = metadata_helper and acl.privilege_type = 'EXECUTE' and acl.is_grantable
-     ) then
-    raise exception '0007: semántica o ACL de helper privado inválido.';
+        select 1 from pg_proc p cross join lateral aclexplode(p.proacl) acl
+        where p.oid = metadata_helper and acl.privilege_type = 'EXECUTE' and acl.is_grantable
+      ) then
+    raise exception '0007: ACL del validador de metadata inválido.';
   end if;
 
   if lower(pg_get_function_result('public.get_admin_account_detail_b1(uuid)'::regprocedure))

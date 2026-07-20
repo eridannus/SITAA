@@ -39,7 +39,7 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - Desactivar una cuenta en Auth y en la autorización SITAA sin eliminar perfil, autoría, actividades o asistencia.
 - Mantener un log administrativo append-only y sanitizado para cambios críticos.
 
-#### Fase B.1 preparada en 0007
+#### Fase B.1 aplicada mediante 0007; verificación final pendiente
 
 - El directorio administrativo es de sólo lectura y exige perfil `active` más una asignación actual `technical_admin/system/technical`, sin programa ni división. Una asignación mal formada no concede acceso.
 - La vigencia B.1 usa la fecha calendario de `America/Mexico_City`, con `starts_at` y `ends_at` inclusivos. La aplicación y las RPC 0007 comparten ese contrato; la autorización en base no depende de la zona horaria de la sesión PostgreSQL.
@@ -47,11 +47,12 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - No se crean políticas transversales de `profiles` ni `role_assignments`; las políticas propias existentes permanecen intactas.
 - La lista minimiza datos y enmascara el identificador salvo sus últimos cuatro caracteres como máximo. El valor completo sólo aparece en la ficha individual autorizada.
 - Auth se resume únicamente como correo confirmado o no confirmado: el booleano acepta `email_confirmed_at` o una identidad Google verificada cuyo correo normalizado coincide. No se devuelven contraseñas, tokens, cookies, metadata, identidades OAuth ni enlaces de recuperación.
-- `admin_audit_events` se prepara append-only, con RLS sin políticas de cliente y triggers contra `UPDATE`, `DELETE` y `TRUNCATE`. `PUBLIC`, `anon` y `authenticated` no tienen acceso directo; `service_role`, cuya propiedad `rolbypassrls=true` es precondición bloqueante, recibe explícitamente sólo `SELECT` e `INSERT` sobre la tabla y `EXECUTE` sobre `admin_audit_metadata_is_safe(jsonb)`. Ningún privilegio depende de defaults ambientales y la aplicación no crea un cliente `service_role`.
+- `admin_audit_events` está aplicada como bitácora append-only, con RLS sin políticas de cliente y triggers contra `UPDATE`, `DELETE` y `TRUNCATE`. `PUBLIC`, `anon` y `authenticated` no tienen acceso directo; `service_role`, cuya propiedad `rolbypassrls=true` fue precondición bloqueante, recibe explícitamente sólo `SELECT` e `INSERT` sobre la tabla y `EXECUTE` sobre `admin_audit_metadata_is_safe(jsonb)`. Ningún privilegio depende de defaults ambientales y la aplicación no crea un cliente `service_role`.
 - 0007 normaliza explícitamente el ACL de cada función para los cuatro roles del proyecto y lo verifica antes del `COMMIT`: las RPC públicas sólo conceden `EXECUTE` no delegable a `authenticated`; fecha institucional, autoridad y bloqueo append-only son owner-only; únicamente el validador de metadata concede `EXECUTE` no delegable a `service_role`.
 - El rollback de 0007 usa `READ COMMITTED` y retiene `ACCESS EXCLUSIVE NOWAIT` sobre `admin_audit_events` antes de consultar si está vacía. Esto cierra la carrera entre el control de vacío y el retiro de la tabla: cualquier actividad concurrente aborta el intento y exige aquietar la auditoría y reintentar, sin quitar `NOWAIT`, debilitar el lock, omitir el control o forzar la pérdida de historia.
 - La metadata debe ser un objeto JSON de hasta 16 384 bytes. Sus llaves superiores se normalizan a minúsculas y sin separadores antes de rechazar términos sensibles como `password`, `token`, `cookie`, `secret`, `authorization`, `credential`, `recovery`, `session`, `bearer` o `apikey`.
 - El verificador 0007 no se limita a comprobar nombres de objetos: valida columnas y defaults, PK/FK/CHECK, índices, triggers, firmas RPC, propiedades de helpers y ACL de tabla, columna y función contra los catálogos PostgreSQL. Esto impide aceptar una forma física o un privilegio más amplio que el contrato B.1.
+- Su primera ejecución se detuvo antes de crear fixtures porque el arnés normalizaba `pg_proc.prosrc` en un orden incorrecto. El diagnóstico de sólo lectura confirmó las definiciones y ACL persistentes; la corrección sólo cambia el verificador y no debilita ni altera la migración aplicada.
 - La aplicación no utiliza `service_role` ni escribe auditoría en B.1. Las mutaciones de cuenta quedan en B.2/B.3 y las de rol en Fase C.
 - No incorporar nombres, correos ni identificadores personales a semillas SQL.
 

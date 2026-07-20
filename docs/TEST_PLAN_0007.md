@@ -1,6 +1,6 @@
 # Plan de prueba — migración 0007
 
-**Estado:** artefactos creados localmente; migración no aplicada.
+**Estado:** preflight aprobado y migración aplicada con `COMMIT`; la primera ejecución del verificador falló antes de crear fixtures por un defecto de normalización del propio arnés. La corrección local está lista y su reejecución permanece pendiente.
 
 **Objetivo:** verificar el directorio administrativo B.1 de sólo lectura, la autoridad técnica exacta y la base append-only de auditoría sin exponer PII real ni modificar permanentemente datos.
 
@@ -11,7 +11,7 @@
 - `supabase/reconciliation/0007_admin_account_directory_audit_verify.sql`
 - `supabase/reconciliation/0007_admin_account_directory_audit_rollback.sql`
 
-No se ejecuta ningún artefacto en esta preparación local.
+El preflight y la migración ya se ejecutaron correctamente. La aplicación compatible ya está publicada. El verificador se detuvo en su bloque estático inicial: el diagnóstico posterior confirmó que los objetos y ACL persistentes de 0007 son correctos y que el fallo fue exclusivamente del comparador de `pg_proc.prosrc`.
 
 ## Preflight
 
@@ -64,7 +64,9 @@ Matriz mínima de 72 comprobaciones:
 59–64. Persisten RLS propio, grants de nombres estructurados, contrato de registro post-0006, privacidad de borradores y contratos estáticos de participantes, asistencia y check-in.
 65–72. Existe el helper privado y estable de fecha institucional, sin `SECURITY DEFINER`, con `search_path=pg_catalog`, sin `EXECUTE` para `PUBLIC`, `anon`, `authenticated` ni `service_role`; devuelve la fecha de `America/Mexico_City` incluso con la sesión en `Pacific/Kiritimati`. Inicio y término del día institucional son inclusivos, el día siguiente es futuro, el anterior es vencido y las tres funciones B.1 no contienen `current_date`. El límite de metadata es 16 384 bytes y la fixture sobredimensionada supera ese máximo.
 
-El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausencia de políticas cliente, ACL exacto de auditoría y ejecución sólo para `authenticated` en las cuatro RPC públicas. Todas las fechas de fixtures parten de `institutional_today`, calculada con `(current_timestamp AT TIME ZONE 'America/Mexico_City')::date`; no se convierten desde la zona horaria de sesión. La fixture de `admin_inactive` conserva una sola asignación deliberada. No se afirma ejecución PostgreSQL hasta aplicarlo manualmente después de 0007.
+El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausencia de políticas cliente, ACL exacto de auditoría y ejecución sólo para `authenticated` en las cuatro RPC públicas. Todas las fechas de fixtures parten de `institutional_today`, calculada con `(current_timestamp AT TIME ZONE 'America/Mexico_City')::date`; no se convierten desde la zona horaria de sesión. La fixture de `admin_inactive` conserva una sola asignación deliberada.
+
+La primera ejecución no alcanzó estas fixtures. `pg_proc.prosrc` conservó saltos de línea externos; `btrim()` se aplicaba antes de sustituir espacios y dejaba un espacio ordinario al inicio y al final. El contrato corregido usa `btrim(regexp_replace(lower(p.prosrc), '\s+', ' ', 'g'))`, añade una regresión sintética con saltos externos y mantiene todas las aserciones funcionales. La reejecución debe terminar en el `ROLLBACK` final.
 
 ## Smoke tests posteriores al despliegue compatible
 
@@ -75,7 +77,7 @@ El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausenc
 - Lista, correo e identificadores largos envuelven sin colisión a 320, 375, 768, 1024 y 1440 px.
 - El identificador está enmascarado en lista y completo sólo en detalle.
 - No existen controles de activación, corrección, Auth o roles.
-- Antes de aplicar 0007, la aplicación compatible muestra “Módulo todavía no disponible” sin detalles PostgreSQL/Supabase.
+- La aplicación compatible publicada abre B.1 contra la migración aplicada sin exponer detalles PostgreSQL/Supabase.
 
 ## Rollback manual
 
@@ -83,13 +85,12 @@ El rollback sólo se considera tras revisión. Inicia explícitamente en `READ C
 
 Con el lock retenido hasta el final de la transacción, el guard exige el contrato 0007 completo, incluido el ACL exacto de las ocho funciones, el helper privado de fecha institucional y el límite de metadata de 16 384 bytes, y aborta si `admin_audit_events` contiene una fila. Revoca a los cuatro roles la ejecución de todas las RPC y helpers antes de retirarlos, no usa `CASCADE`, elimina únicamente objetos 0007, verifica el contrato post-0006 y confirma con `COMMIT` sólo si la autoverificación termina correctamente. El rollback permanece disponible únicamente mientras no exista historia administrativa.
 
-## Secuencia de aplicación futura
+## Secuencia de cierre pendiente
 
-1. Aprobar el preflight.
-2. Aplicar 0007 manualmente.
-3. Desplegar la aplicación compatible.
-4. Ejecutar el verificador y confirmar su `ROLLBACK`.
-5. Ejecutar smoke tests.
-6. Regenerar el snapshot vivo.
-7. Reconciliar 0001–0007.
-8. Actualizar changelog y estado canónico como aplicados.
+1. Reejecutar el verificador corregido y confirmar su `ROLLBACK`.
+2. Ejecutar los smoke tests de B.1.
+3. Regenerar el snapshot vivo posterior a 0007.
+4. Reconciliar `0001`–`0007`.
+5. Cerrar el estado canónico con la evidencia obtenida.
+
+`0007_admin_account_directory_audit.sql` ya forma parte de la historia aplicada y es inmutable. No se ha creado, reservado ni requerido una migración 0008 para corregir este defecto del arnés.

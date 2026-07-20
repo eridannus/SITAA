@@ -90,6 +90,8 @@ El detalle probatorio está en `supabase/reconciliation/0006_post_apply_reconcil
 
 ## Inmutabilidad y siguiente migración
 
-`0001`–`0006` forman historia aplicada, verificada y reconciliada y no se reescriben. La migración `0007_admin_account_directory_audit.sql` y sus artefactos están preparados localmente para B.1, pero **no están aplicados**. Por ello, los conteos de este documento y el snapshot vigente siguen representando exclusivamente el estado posterior a 0006.
+`0001`–`0006` forman historia aplicada, verificada y reconciliada y no se reescriben. `0007_admin_account_directory_audit.sql` también está aplicada con `COMMIT` y es inmutable; su preflight fue aprobado y la aplicación compatible está publicada. Su primera verificación falló antes de crear fixtures por una normalización defectuosa del arnés, aunque el diagnóstico de sólo lectura confirmó que las definiciones y ACL persistentes son correctos.
+
+La reejecución del verificador corregido, los smoke tests, el snapshot posterior a 0007 y la reconciliación `0001`–`0007` permanecen pendientes. Por ello, los conteos y el snapshot vigente de este documento todavía representan el estado reconciliado posterior a 0006, no un inventario actualizado posterior a 0007. No se ha creado, reservado ni requerido una migración 0008.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.
