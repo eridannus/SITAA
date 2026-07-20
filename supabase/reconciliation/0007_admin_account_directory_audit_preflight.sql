@@ -9,6 +9,12 @@ from (
   from pg_roles where rolname in ('anon','authenticated','service_role')
 
   union all
+  select 'service_role_bypassrls', 'blocking',
+    case when exists (
+      select 1 from pg_roles where rolname='service_role' and rolbypassrls=true
+    ) then 0 else 1 end
+
+  union all
   select 'post_0006_tables', 'blocking', count(*)::bigint
   from (values ('public.profiles'),('public.roles'),('public.role_assignments'),
     ('public.academic_programs'),('public.divisions'),('auth.users'),('auth.identities')) expected(object_name)

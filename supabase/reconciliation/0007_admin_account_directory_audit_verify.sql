@@ -6,7 +6,8 @@ do $static_contract$
 declare
   rpc regprocedure;
 begin
-  if to_regclass('public.admin_audit_events') is null
+  if not exists(select 1 from pg_roles where rolname='service_role' and rolbypassrls=true)
+     or to_regclass('public.admin_audit_events') is null
      or not exists (
        select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
        where n.nspname = 'public' and c.relname = 'admin_audit_events' and c.relrowsecurity
@@ -56,7 +57,20 @@ begin
   end loop;
 
   if has_function_privilege('authenticated','public.is_b1_account_admin()','EXECUTE')
+     or has_function_privilege('anon','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
      or has_function_privilege('authenticated','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
+     or not has_function_privilege('service_role','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid='public.admin_audit_metadata_is_safe(jsonb)'::regprocedure
+         and acl.privilege_type='EXECUTE'
+         and acl.grantee not in (
+           p.proowner,
+           (select oid from pg_roles where rolname='service_role')
+         )
+     )
      or has_function_privilege('authenticated','public.prevent_admin_audit_event_mutation()','EXECUTE')
      or not exists (
        select 1 from pg_trigger t where t.tgrelid = 'public.admin_audit_events'::regclass
@@ -96,10 +110,21 @@ end;
 $static_contract$;
 
 create temporary table sitaa_0007_context (
+  run_id uuid not null,
+  run_marker text not null,
+  wildcard_marker text not null,
+  identifier_seed text not null,
   division_id uuid not null,
   program_id uuid not null
 ) on commit drop;
-insert into sitaa_0007_context values (gen_random_uuid(), gen_random_uuid());
+with generated as (select gen_random_uuid() run_id)
+insert into sitaa_0007_context
+select run_id,
+  'v7' || replace(run_id::text,'-',''),
+  'v7' || replace(run_id::text,'-','') || E'%_\\ruta',
+  translate(replace(run_id::text,'-',''),'abcdef','012345'),
+  gen_random_uuid(), gen_random_uuid()
+from generated;
 
 insert into public.divisions (id, code, name)
 select division_id, 'v7d_' || left(replace(division_id::text,'-',''), 16), 'División sintética 0007'
@@ -111,7 +136,8 @@ from sitaa_0007_context;
 create temporary table sitaa_0007_cases (
   label text primary key,
   id uuid not null unique,
-  email text not null unique
+  email text not null unique,
+  institutional_identifier text null unique
 ) on commit drop;
 
 create function pg_temp.case_id(target_label text)
@@ -121,6 +147,18 @@ $$;
 create function pg_temp.case_email(target_label text)
 returns text language sql stable set search_path = pg_temp as $$
   select email from sitaa_0007_cases where label = target_label
+$$;
+create function pg_temp.case_identifier(target_label text)
+returns text language sql stable set search_path = pg_temp as $$
+  select institutional_identifier from sitaa_0007_cases where label = target_label
+$$;
+create function pg_temp.run_marker()
+returns text language sql stable set search_path = pg_temp as $$
+  select run_marker from sitaa_0007_context limit 1
+$$;
+create function pg_temp.wildcard_marker()
+returns text language sql stable set search_path = pg_temp as $$
+  select wildcard_marker from sitaa_0007_context limit 1
 $$;
 create function pg_temp.set_request_user(target_label text)
 returns void language plpgsql set search_path = pg_temp, pg_catalog as $$
@@ -133,9 +171,14 @@ $$;
 
 revoke all on function pg_temp.case_id(text) from public, anon;
 revoke all on function pg_temp.case_email(text) from public, anon;
+revoke all on function pg_temp.case_identifier(text) from public, anon;
+revoke all on function pg_temp.run_marker() from public, anon;
+revoke all on function pg_temp.wildcard_marker() from public, anon;
 revoke all on function pg_temp.set_request_user(text) from public, anon;
 grant select on table pg_temp.sitaa_0007_cases, pg_temp.sitaa_0007_context to authenticated;
-grant execute on function pg_temp.case_id(text), pg_temp.case_email(text), pg_temp.set_request_user(text) to authenticated;
+grant execute on function pg_temp.case_id(text), pg_temp.case_email(text),
+  pg_temp.case_identifier(text), pg_temp.run_marker(), pg_temp.wildcard_marker(),
+  pg_temp.set_request_user(text) to authenticated;
 
 create function pg_temp.create_case(
   target_label text,
@@ -150,17 +193,27 @@ set search_path = public, auth, pg_temp, pg_catalog
 as $$
 declare
   target_id uuid := gen_random_uuid();
-  target_email text := replace(target_label, '_', '-') || '-0007@example.invalid';
+  target_run_marker text := (select run_marker from sitaa_0007_context limit 1);
+  target_email text := replace(target_label, '_', '-') || '-' || target_run_marker || '@example.invalid';
   target_program uuid := (select program_id from sitaa_0007_context limit 1);
   case_number integer := (select count(*) + 1 from sitaa_0007_cases);
+  target_identifier text;
   app_metadata jsonb;
 begin
+  if target_kind <> 'technical' then
+    target_identifier := (select identifier_seed from sitaa_0007_context limit 1)
+      || lpad(case_number::text,3,'0');
+  end if;
   if target_kind = 'technical' then
-    app_metadata := jsonb_build_object('sitaa_account_kind','technical','sitaa_first_names','Soporte sintético');
+    app_metadata := jsonb_build_object(
+      'sitaa_account_kind','technical',
+      'sitaa_first_names','Soporte ' || target_run_marker
+    );
   else
     app_metadata := jsonb_build_object('provider','google','providers',jsonb_build_array('google'));
   end if;
-  insert into sitaa_0007_cases values (target_label, target_id, target_email);
+  insert into sitaa_0007_cases
+  values (target_label, target_id, target_email, target_identifier);
   insert into auth.users (
     id, aud, role, email, encrypted_password, email_confirmed_at,
     raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -172,8 +225,8 @@ begin
 
   if target_kind = 'technical' then
     update public.profiles set
-      first_names = 'Soporte sintético', paternal_surname = null, maternal_surname = null,
-      full_name = 'Soporte sintético', account_kind = 'technical',
+      first_names = 'Soporte ' || target_run_marker, paternal_surname = null, maternal_surname = null,
+      full_name = 'Soporte ' || target_run_marker, account_kind = 'technical',
       account_status = target_status, person_type = null, primary_program_id = null,
       institutional_id_type = null, institutional_id_value = null,
       is_active = (target_status = 'active'), activated_at = now(),
@@ -181,14 +234,18 @@ begin
     where id = target_id;
   else
     update public.profiles set
-      first_names = case when target_label = 'target_account' then 'Marca%_\\ruta' else 'Persona' end,
+      first_names = case when target_label = 'target_account'
+        then (select wildcard_marker from sitaa_0007_context limit 1)
+        else 'Persona ' || target_run_marker end,
       paternal_surname = case when target_label = 'target_account' then 'Única' else 'Sintética' end,
       maternal_surname = 'Prueba',
-      full_name = case when target_label = 'target_account' then 'Marca%_\\ruta Única Prueba' else 'Persona Sintética Prueba' end,
+      full_name = case when target_label = 'target_account'
+        then (select wildcard_marker from sitaa_0007_context limit 1) || ' Única Prueba'
+        else 'Persona ' || target_run_marker || ' Sintética Prueba' end,
       account_kind = 'institutional', account_status = target_status,
       person_type = target_person, primary_program_id = target_program,
       institutional_id_type = case when target_person = 'student' then 'student_account' else 'worker_number' end,
-      institutional_id_value = case when target_label = 'target_account' then '123456789' else (700000000 + case_number)::text end,
+      institutional_id_value = target_identifier,
       is_active = (target_status = 'active'), activated_at = now(),
       deactivated_at = case when target_status = 'inactive' then now() else null end
     where id = target_id;
@@ -246,7 +303,7 @@ create function pg_temp.insert_google_identity(target_label text, identity_email
 returns void language plpgsql set search_path = auth, pg_temp, pg_catalog, information_schema as $$
 declare
   target_id uuid := pg_temp.case_id(target_label);
-  provider_key text := 'google-' || target_label || '-0007';
+  provider_key text := 'google-' || target_label || '-' || pg_temp.run_marker();
   payload jsonb := jsonb_build_object('sub',provider_key,'email',identity_email,'email_verified',true);
 begin
   if exists (select 1 from information_schema.columns
@@ -260,7 +317,10 @@ begin
 end;
 $$;
 select pg_temp.insert_google_identity('google_confirmed',pg_temp.case_email('google_confirmed'));
-select pg_temp.insert_google_identity('google_mismatch','different-0007@example.invalid');
+select pg_temp.insert_google_identity(
+  'google_mismatch',
+  'different-' || pg_temp.run_marker() || '@example.invalid'
+);
 
 insert into public.admin_audit_events (
   actor_profile_id, target_profile_id, action_code, outcome, reason, metadata
@@ -270,25 +330,105 @@ insert into public.admin_audit_events (
   jsonb_build_object('context','0007 verifier')
 );
 
+-- Contrato funcional de service_role: sólo inserta/consulta y alcanza el CHECK seguro.
+grant select on table pg_temp.sitaa_0007_cases to service_role;
+grant execute on function pg_temp.case_id(text) to service_role;
+set local role service_role;
+do $service_role_contract$
+declare rejected boolean;
+begin
+  insert into public.admin_audit_events(
+    actor_profile_id,target_profile_id,action_code,outcome,metadata
+  ) values (
+    pg_temp.case_id('admin_exact'),pg_temp.case_id('target_account'),
+    'service_role_safe_insert','success',jsonb_build_object('source','service_role_verifier')
+  );
+  if not exists (
+    select 1 from public.admin_audit_events
+    where action_code='service_role_safe_insert'
+      and actor_profile_id=pg_temp.case_id('admin_exact')
+      and target_profile_id=pg_temp.case_id('target_account')
+  ) then
+    raise exception '0007: service_role no pudo consultar su inserción válida.';
+  end if;
+
+  rejected := false;
+  begin insert into public.admin_audit_events(actor_profile_id,target_profile_id,action_code,outcome,metadata)
+    values(pg_temp.case_id('admin_exact'),pg_temp.case_id('target_account'),'service_unsafe_key','failure',jsonb_build_object('accessToken','x'));
+  exception when check_violation then rejected := true; end;
+  if not rejected then raise exception '0007: service_role aceptó metadata sensible.'; end if;
+
+  rejected := false;
+  begin insert into public.admin_audit_events(actor_profile_id,target_profile_id,action_code,outcome,metadata)
+    values(pg_temp.case_id('admin_exact'),pg_temp.case_id('target_account'),'service_non_object','failure','[]'::jsonb);
+  exception when check_violation then rejected := true; end;
+  if not rejected then raise exception '0007: service_role aceptó metadata no objeto.'; end if;
+
+  rejected := false;
+  begin insert into public.admin_audit_events(actor_profile_id,target_profile_id,action_code,outcome,metadata)
+    values(pg_temp.case_id('admin_exact'),pg_temp.case_id('target_account'),'service_oversized','failure',jsonb_build_object('context',repeat('x',17000)));
+  exception when check_violation then rejected := true; end;
+  if not rejected then raise exception '0007: service_role aceptó metadata sobredimensionada.'; end if;
+
+  rejected := false;
+  begin update public.admin_audit_events set reason='Prohibido';
+  exception when insufficient_privilege then rejected := true; end;
+  if not rejected then raise exception '0007: service_role obtuvo UPDATE.'; end if;
+  rejected := false;
+  begin delete from public.admin_audit_events;
+  exception when insufficient_privilege then rejected := true; end;
+  if not rejected then raise exception '0007: service_role obtuvo DELETE.'; end if;
+  rejected := false;
+  begin truncate public.admin_audit_events;
+  exception when insufficient_privilege then rejected := true; end;
+  if not rejected then raise exception '0007: service_role obtuvo TRUNCATE.'; end if;
+end;
+$service_role_contract$;
+reset role;
+
 -- Casos 2 a 5: toda identidad sin el contrato exacto recibe el mismo 42501.
 create function pg_temp.expect_denied(target_label text)
 returns void language plpgsql set search_path = public, pg_temp, pg_catalog as $$
-declare denied boolean := false;
+declare
+  denied boolean;
+  requested_id uuid;
 begin
   perform pg_temp.set_request_user(target_label);
+  denied := false;
   begin
-    perform * from public.search_admin_accounts_b1('synthetic',null,null,null,null,null,null,null,1,20);
+    perform * from public.search_admin_accounts_b1(
+      pg_temp.run_marker(),null,null,null,null,null,null,null,1,20
+    );
   exception when insufficient_privilege then denied := true;
   end;
-  if not denied then raise exception '0007: % obtuvo acceso administrativo.', target_label; end if;
-  denied := false;
-  begin perform * from public.get_admin_account_detail_b1(pg_temp.case_id('target_account'));
-  exception when insufficient_privilege then denied := true; end;
-  if not denied then raise exception '0007: % distinguió la existencia de una cuenta.', target_label; end if;
-  denied := false;
-  begin perform * from public.get_admin_account_detail_b1(gen_random_uuid());
-  exception when insufficient_privilege then denied := true; end;
-  if not denied then raise exception '0007: % distinguió una cuenta inexistente.', target_label; end if;
+  if not denied then
+    raise exception '0007: % obtuvo acceso a search_admin_accounts_b1.',target_label;
+  end if;
+
+  foreach requested_id in array array[pg_temp.case_id('target_account'),gen_random_uuid()] loop
+    denied := false;
+    begin perform * from public.get_admin_account_detail_b1(requested_id);
+    exception when insufficient_privilege then denied := true; end;
+    if not denied then
+      raise exception '0007: % distinguió existencia mediante detalle.',target_label;
+    end if;
+
+    denied := false;
+    begin perform * from public.get_admin_account_assignments_b1(requested_id);
+    exception when insufficient_privilege then denied := true; end;
+    if not denied then
+      raise exception '0007: % distinguió existencia mediante asignaciones.',target_label;
+    end if;
+
+    denied := false;
+    begin perform * from public.get_admin_account_audit_history_b1(
+      requested_profile_id=>requested_id,result_limit=>50,result_offset=>0
+    );
+    exception when insufficient_privilege then denied := true; end;
+    if not denied then
+      raise exception '0007: % distinguió existencia mediante auditoría.',target_label;
+    end if;
+  end loop;
 end;
 $$;
 select pg_temp.expect_denied('ordinary_student');
@@ -306,7 +446,9 @@ select pg_temp.expect_denied('admin_inactive');
 select pg_temp.set_request_user('admin_start_today');
 set local role authenticated;
 do $$ begin
-  if not exists(select 1 from public.search_admin_accounts_b1('Marca%',null,null,null,null,null,null,null,1,1)) then
+  if not exists(select 1 from public.search_admin_accounts_b1(
+    pg_temp.run_marker() || '%',null,null,null,null,null,null,null,1,1
+  )) then
     raise exception '0007: starts_at del día actual no fue inclusivo.';
   end if;
 end $$;
@@ -314,7 +456,9 @@ reset role;
 select pg_temp.set_request_user('admin_end_today');
 set local role authenticated;
 do $$ begin
-  if not exists(select 1 from public.search_admin_accounts_b1('Marca%',null,null,null,null,null,null,null,1,1)) then
+  if not exists(select 1 from public.search_admin_accounts_b1(
+    pg_temp.run_marker() || '%',null,null,null,null,null,null,null,1,1
+  )) then
     raise exception '0007: ends_at del día actual no fue inclusivo.';
   end if;
 end $$;
@@ -330,19 +474,32 @@ declare
   program_value uuid := (select program_id from pg_temp.sitaa_0007_context limit 1);
   result_count bigint;
   masked_value text;
+  expected_identifier text := pg_temp.case_identifier('target_account');
   rejected boolean;
 begin
-  select count(*) into result_count from public.search_admin_accounts_b1('Marca%',null,null,null,null,null,null,null,1,20);
+  select count(*) into result_count from public.search_admin_accounts_b1(
+    pg_temp.run_marker() || '%',null,null,null,null,null,null,null,1,20
+  );
   if result_count <> 1 then raise exception '0007: el porcentaje no fue tratado literalmente.'; end if;
-  select count(*) into result_count from public.search_admin_accounts_b1('%_',null,null,null,null,null,null,null,1,20);
+  select count(*) into result_count from public.search_admin_accounts_b1(
+    pg_temp.run_marker() || '%_',null,null,null,null,null,null,null,1,20
+  );
   if result_count <> 1 then raise exception '0007: porcentaje y guion bajo no fueron literales.'; end if;
-  select count(*) into result_count from public.search_admin_accounts_b1('\\ruta',null,null,null,null,null,null,null,1,20);
+  select count(*) into result_count from public.search_admin_accounts_b1(
+    pg_temp.wildcard_marker(),null,null,null,null,null,null,null,1,20
+  );
   if result_count <> 1 then raise exception '0007: la barra inversa no fue tratada de forma segura.'; end if;
-  select count(*) into result_count from public.search_admin_accounts_b1('%%',null,null,null,null,null,null,null,1,20);
+  select count(*) into result_count from public.search_admin_accounts_b1(
+    pg_temp.run_marker() || '%%',null,null,null,null,null,null,null,1,20
+  );
   if result_count <> 0 then raise exception '0007: un patrón de comodines amplió el directorio.'; end if;
-  select count(*) into result_count from public.search_admin_accounts_b1('target-account-0007@example.invalid',null,null,null,null,null,null,null,1,20);
+  select count(*) into result_count from public.search_admin_accounts_b1(
+    pg_temp.case_email('target_account'),null,null,null,null,null,null,null,1,20
+  );
   if result_count <> 1 then raise exception '0007: la búsqueda por correo falló.'; end if;
-  select count(*) into result_count from public.search_admin_accounts_b1('456789',null,null,null,null,null,null,null,1,20);
+  select count(*) into result_count from public.search_admin_accounts_b1(
+    expected_identifier,null,null,null,null,null,null,null,1,20
+  );
   if result_count <> 1 then raise exception '0007: la búsqueda por identificador falló.'; end if;
   select count(*) into result_count from public.search_admin_accounts_b1(null,null,null,null,null,null,null,null,1,20);
   if result_count <> 0 then raise exception '0007: el estado sin criterios expuso el directorio.'; end if;
@@ -363,50 +520,51 @@ begin
   if result_count <> 0 then raise exception '0007: rol y servicio combinaron filas distintas.'; end if;
 
   rejected := false;
-  begin perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,0,20);
+  begin perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,0,20);
   exception when invalid_parameter_value then rejected := true; end;
   if not rejected then raise exception '0007: page_number inválido fue aceptado.'; end if;
   rejected := false;
-  begin perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,1,51);
+  begin perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,1,51);
   exception when invalid_parameter_value then rejected := true; end;
   if not rejected then raise exception '0007: page_size mayor a 50 fue aceptado.'; end if;
   rejected := false;
-  begin perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,1,0);
+  begin perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,1,0);
   exception when invalid_parameter_value then rejected := true; end;
   if not rejected then raise exception '0007: page_size cero fue aceptado.'; end if;
   rejected := false;
-  begin perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,1,-1);
+  begin perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,1,-1);
   exception when invalid_parameter_value then rejected := true; end;
   if not rejected then raise exception '0007: page_size negativo fue aceptado.'; end if;
 
   rejected := false;
-  begin perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,null,20);
+  begin perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,null,20);
   exception when invalid_parameter_value then rejected := true; end;
   if not rejected then raise exception '0007: page_number NULL fue aceptado.'; end if;
   rejected := false;
-  begin perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,1,null);
+  begin perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,1,null);
   exception when invalid_parameter_value then rejected := true; end;
   if not rejected then raise exception '0007: page_size NULL fue aceptado.'; end if;
   rejected := false;
-  begin perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,-1,20);
+  begin perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,-1,20);
   exception when invalid_parameter_value then rejected := true; end;
   if not rejected then raise exception '0007: page_number negativo fue aceptado.'; end if;
   rejected := false;
-  begin perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,1000001,20);
+  begin perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,1000001,20);
   exception when invalid_parameter_value then rejected := true; end;
   if not rejected then raise exception '0007: page_number superior al máximo fue aceptado.'; end if;
-  perform * from public.search_admin_accounts_b1('ab',null,null,null,null,null,null,null,1000000,50);
+  perform * from public.search_admin_accounts_b1(pg_temp.run_marker(),null,null,null,null,null,null,null,1000000,50);
 
   select masked_institutional_id into masked_value
-  from public.search_admin_accounts_b1('456789',null,null,null,null,null,null,null,1,20)
+  from public.search_admin_accounts_b1(expected_identifier,null,null,null,null,null,null,null,1,20)
   where profile_id = target_id;
-  if masked_value = '123456789' or right(masked_value,4) <> '6789' then
+  if masked_value = expected_identifier
+     or right(masked_value,4) <> right(expected_identifier,4) then
     raise exception '0007: el identificador de lista no está enmascarado.';
   end if;
 
   if not exists (
     select 1 from public.get_admin_account_detail_b1(target_id)
-    where institutional_id_value = '123456789'
+    where institutional_id_value = expected_identifier
       and auth_email_confirmed is true
   ) then raise exception '0007: detalle completo o resumen Auth mínimo incorrecto.'; end if;
 

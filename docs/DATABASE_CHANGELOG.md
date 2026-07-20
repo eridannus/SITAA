@@ -140,6 +140,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Prepara el directorio administrativo de sólo lectura y `admin_audit_events` append-only.
 - Añade autorización exacta B.1, cuatro RPC minimizadas, índices de consulta, RLS sin políticas cliente, ACL explícito `service_role` sólo `SELECT`/`INSERT` y triggers contra `UPDATE`, `DELETE` y `TRUNCATE` del historial.
 - La revisión local endurece paginación nula/acotada, búsqueda literal de comodines, metadata sensible normalizada, confirmación Google resumida y recuperación del total en páginas fuera de rango. 0007 continúa sin aplicar.
+- La revisión final hace determinista el `EXECUTE` de `service_role` sobre el validador de metadata, exige `rolbypassrls=true` y usa fixtures UUID sin colisiones; el verificador cubre funcionalmente ese rol y niega las cuatro RPC a cada actor no autorizado. 0007 sigue sin aplicar ni verificar contra PostgreSQL.
 - Artefactos coordinados: migración, preflight de sólo lectura, verificador transaccional con `ROLLBACK`, rollback manual protegido y `docs/TEST_PLAN_0007.md`.
 - No modifica 0001–0006 ni el snapshot vivo posterior a 0006.
 

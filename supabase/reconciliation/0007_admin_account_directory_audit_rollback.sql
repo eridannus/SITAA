@@ -98,7 +98,20 @@ begin
   end loop;
 
   if has_function_privilege('authenticated','public.is_b1_account_admin()','EXECUTE')
+     or has_function_privilege('anon','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
      or has_function_privilege('authenticated','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
+     or not has_function_privilege('service_role','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid='public.admin_audit_metadata_is_safe(jsonb)'::regprocedure
+         and acl.privilege_type='EXECUTE'
+         and acl.grantee not in (
+           p.proowner,
+           (select oid from pg_roles where rolname='service_role')
+         )
+     )
      or has_function_privilege('authenticated','public.prevent_admin_audit_event_mutation()','EXECUTE') then
     raise exception 'sitaa_0007_rollback_private_helper_grant_drift' using errcode = 'P0001';
   end if;
@@ -114,6 +127,8 @@ revoke all on function public.get_admin_account_detail_b1(uuid) from public, ano
 revoke all on function public.get_admin_account_assignments_b1(uuid) from public, anon, authenticated;
 revoke all on function public.get_admin_account_audit_history_b1(uuid,integer,integer) from public, anon, authenticated;
 revoke all on table public.admin_audit_events from public, anon, authenticated, service_role;
+revoke all on function public.admin_audit_metadata_is_safe(jsonb)
+  from public, anon, authenticated, service_role;
 
 drop function public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer);
 drop function public.get_admin_account_detail_b1(uuid);

@@ -25,7 +25,7 @@ Todos los conteos bloqueantes deben ser cero:
 - integridad referencial de `role_assignments`;
 - ausencia de tabla, funciones, trigger o políticas 0007;
 - RLS, políticas propias con roles/comandos exactos y grants cliente post-0006, incluidos sólo los tres nombres estructurados actualizables;
-- roles `anon`, `authenticated` y `service_role`, forma V1 real y ausencia de conflictos 0007.
+- roles `anon`, `authenticated` y `service_role`, incluido `service_role.rolbypassrls=true`, forma V1 real y ausencia de conflictos 0007.
 
 El único dato informativo es el conteo agregado de asignaciones `technical_admin` actuales mal formadas; no bloquea ni expone filas.
 
@@ -33,18 +33,18 @@ La migración repite esas condiciones dentro de su misma transacción antes de e
 
 ## Verificador transaccional
 
-Usa UUID sintéticos, correos `example.invalid`, objetos `pg_temp` y finaliza en `ROLLBACK`. Los grants del arnés se limitan a tablas y helpers temporales necesarios para probar con `SET LOCAL ROLE authenticated`.
+Genera un `run_id` UUID por ejecución y deriva de él correos `example.invalid`, marcadores de nombre/comodines e identificadores institucionales numéricos. Así, las aserciones exactas no pueden colisionar con datos previos. Usa objetos `pg_temp` y finaliza en `ROLLBACK`; los grants del arnés se limitan a tablas y helpers temporales necesarios para probar con `SET LOCAL ROLE authenticated` o `service_role`.
 
 Matriz mínima de 64 comprobaciones:
 
-1–4. Existen las cuatro RPC con firmas estables; historial usa entrada `requested_profile_id`, salida `target_profile_id`, nombres PostgREST coordinados y helpers privados sin `EXECUTE` cliente.
+1–4. Existen las cuatro RPC con firmas estables; historial usa entrada `requested_profile_id`, salida `target_profile_id`, nombres PostgREST coordinados y helpers privados sin `EXECUTE` cliente. Cada una devuelve `42501` para las diez clases no autorizadas; detalle, asignaciones e historial niegan igual un UUID existente y uno inexistente.
 5–10. Se rechazan paginaciones `NULL`, cero, negativas o superiores al máximo; página 1 000 000/tamaño 50 y offset 1 000 000 son válidos sin desbordamiento.
 11–14. `%`, `_` y `\` son literales; patrones compuestos sólo encuentran marcadores UUID sintéticos y no amplían el conjunto.
 15–26. Accede únicamente `technical_admin/system/technical/null/null` con perfil activo y asignación actual; se niegan alumno, profesor, alcance/servicio incorrectos, programa/división no nulos, perfil o asignación inactivos, futuro y vencido; ambos límites del día son inclusivos.
 27–30. Filtros de rol/servicio/alcance coinciden en una misma fila; filas distintas no se combinan; estado vacío devuelve cero y el texto usa marcadores sintéticos únicos.
 31–35. Lista enmascarada, detalle completo sólo autorizado, existencia indistinguible para no autorizados, historial sin metadata y Auth sólo booleano.
 36–39. Confirmación verdadera por `email_confirmed_at` o Google verificado con correo coincidente; correo Google distinto o ausencia de evidencia devuelven falso.
-40–46. `authenticated`, `anon` y `PUBLIC` carecen de acceso directo; `service_role` tiene exactamente `SELECT`/`INSERT`; triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE` aun con ejecución privilegiada.
+40–46. `authenticated`, `anon` y `PUBLIC` carecen de acceso directo; `service_role` tiene exactamente `SELECT`/`INSERT` sobre la tabla y `EXECUTE` exclusivo —además del propietario— sobre el validador. Bajo `SET LOCAL ROLE service_role` se prueban inserción/lectura válidas, tres rechazos de metadata y ausencia de `UPDATE`/`DELETE`/`TRUNCATE`; por separado el propietario alcanza los triggers y éstos rechazan las tres mutaciones.
 47–53. Metadata ordinaria se acepta; `access_token`, `accessToken`, `refresh-token`, `authorizationHeader`, `recoveryLink`, `clientSecretValue`, objetos sobredimensionados y valores no objeto se rechazan.
 54–58. Asignaciones se presentan como `current`, `future`, `expired`, `inactive` y `suspended_by_account_status` con semántica V1.
 59–64. Persisten RLS propio, grants de nombres estructurados, contrato de registro post-0006, privacidad de borradores y contratos estáticos de participantes, asistencia y check-in.

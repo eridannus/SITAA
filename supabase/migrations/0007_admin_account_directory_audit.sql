@@ -53,6 +53,11 @@ begin
   if (select count(*) from pg_roles where rolname in ('anon','authenticated','service_role')) <> 3 then
     raise exception 'sitaa_0007_missing_database_roles' using errcode = 'P0001';
   end if;
+  if not exists (
+    select 1 from pg_roles where rolname = 'service_role' and rolbypassrls = true
+  ) then
+    raise exception 'sitaa_0007_unexpected_service_role_contract' using errcode = 'P0001';
+  end if;
   if not exists (select 1 from public.roles r where r.code = 'technical_admin') then
     raise exception 'sitaa_0007_missing_technical_admin_role' using errcode = 'P0001';
   end if;
@@ -274,7 +279,10 @@ as $function$
     )
   end;
 $function$;
-revoke all on function public.admin_audit_metadata_is_safe(jsonb) from public, anon, authenticated;
+revoke all on function public.admin_audit_metadata_is_safe(jsonb)
+  from public, anon, authenticated, service_role;
+grant execute on function public.admin_audit_metadata_is_safe(jsonb)
+  to service_role;
 
 -- Bitácora append-only. Fase B.1 no inserta eventos desde la aplicación.
 create table public.admin_audit_events (
