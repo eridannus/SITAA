@@ -1,5 +1,16 @@
 -- Rollback manual 0007. Sólo procede si la bitácora está vacía y el contrato está completo.
-begin;
+begin isolation level read committed;
+
+do $require_audit_table$
+begin
+  if to_regclass('public.admin_audit_events') is null then
+    raise exception 'sitaa_0007_rollback_contract_incomplete' using errcode = 'P0001';
+  end if;
+end;
+$require_audit_table$;
+
+-- Impide que un INSERT de auditoría confirme entre la comprobación de vacío y el DROP TABLE.
+lock table public.admin_audit_events in access exclusive mode nowait;
 
 do $guard$
 declare

@@ -48,6 +48,8 @@ El cierre de verificación B.1 fija también la forma física: nueve columnas en
 
 El ACL de las ocho funciones 0007 se define sin depender de privilegios por defecto: las cuatro RPC sólo conceden `EXECUTE` a `authenticated`; los helpers de fecha, autoridad y trigger son owner-only; el validador de metadata conserva como única excepción el `EXECUTE` explícito de `service_role`. Ningún grant concedido a esos roles incluye grant option.
 
+El rollback sólo puede retirar `admin_audit_events` mientras no exista historia. Antes de comprobar el vacío adquiere `ACCESS EXCLUSIVE NOWAIT` en una transacción `READ COMMITTED`; por ello un lector o escritor concurrente hace que el intento aborte de forma segura y evita que un `INSERT` de `service_role` confirme entre el control y el `DROP TABLE`. El operador debe aquietar la actividad y reintentar, nunca relajar el lock ni omitir la comprobación.
+
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 
 ## Criterios de aceptación

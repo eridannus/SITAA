@@ -79,7 +79,9 @@ El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausenc
 
 ## Rollback manual
 
-El rollback sólo se considera tras revisión. Su guard exige el contrato 0007 completo, incluido el ACL exacto de las ocho funciones, el helper privado de fecha institucional y el límite de metadata de 16 384 bytes, y aborta si `admin_audit_events` contiene una fila. Revoca a los cuatro roles la ejecución de todas las RPC y helpers antes de retirarlos, no usa `CASCADE`, elimina únicamente objetos 0007, verifica el contrato post-0006 y confirma con `COMMIT` sólo si la autoverificación termina correctamente.
+El rollback sólo se considera tras revisión. Inicia explícitamente en `READ COMMITTED`, confirma de forma mínima que la tabla existe y obtiene `ACCESS EXCLUSIVE NOWAIT` sobre `admin_audit_events` antes del guard completo y de comprobar que esté vacía. Un lector, escritor, mantenimiento o DDL concurrente hace que el intento aborte sin esperar; la operación debe aquietarse y reintentarse, nunca retirando `NOWAIT`, debilitando el lock, saltando el control de vacío o forzando el rollback. El lock impide que un `INSERT` de `service_role` confirme entre la comprobación y el `DROP TABLE`.
+
+Con el lock retenido hasta el final de la transacción, el guard exige el contrato 0007 completo, incluido el ACL exacto de las ocho funciones, el helper privado de fecha institucional y el límite de metadata de 16 384 bytes, y aborta si `admin_audit_events` contiene una fila. Revoca a los cuatro roles la ejecución de todas las RPC y helpers antes de retirarlos, no usa `CASCADE`, elimina únicamente objetos 0007, verifica el contrato post-0006 y confirma con `COMMIT` sólo si la autoverificación termina correctamente. El rollback permanece disponible únicamente mientras no exista historia administrativa.
 
 ## Secuencia de aplicación futura
 

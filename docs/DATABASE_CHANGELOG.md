@@ -145,6 +145,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - El límite único de metadata queda fijado en 16 384 bytes en migración, verificador, rollback y documentación.
 - El cierre local del verificador añade aserciones exactas de columnas/defaults, PK/FK/CHECK, cuatro índices, dos triggers, ACL de tabla/columna/función, firmas completas de las cuatro RPC y semántica de helpers privados. También elimina una asignación duplicada de la fixture `admin_inactive`; no modifica la migración ni marca 0007 como aplicada.
 - La corrección ACL final revoca explícitamente `PUBLIC`, `anon`, `authenticated` y `service_role` antes de conceder los únicos `EXECUTE` permitidos, añade una guarda post-DDL atómica y alinea verificador y rollback. Ninguna función 0007 depende de privilegios por defecto; 0007 permanece sin aplicar.
+- El cierre de seguridad del rollback fija `READ COMMITTED` y adquiere `ACCESS EXCLUSIVE NOWAIT` antes del guard completo y del control de vacío. Así, la actividad concurrente aborta el intento y ningún `INSERT` de auditoría puede confirmar entre la comprobación y `DROP TABLE`; 0007 continúa local y sin aplicar.
 - Artefactos coordinados: migración, preflight de sólo lectura, verificador transaccional con `ROLLBACK`, rollback manual protegido y `docs/TEST_PLAN_0007.md`.
 - No modifica 0001–0006 ni el snapshot vivo posterior a 0006.
 
