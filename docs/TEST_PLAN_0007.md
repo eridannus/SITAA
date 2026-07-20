@@ -35,6 +35,18 @@ La migración repite esas condiciones dentro de su misma transacción antes de e
 
 Genera un `run_id` UUID por ejecución y deriva de él correos `example.invalid`, marcadores de nombre/comodines e identificadores institucionales numéricos. Así, las aserciones exactas no pueden colisionar con datos previos. Usa objetos `pg_temp` y finaliza en `ROLLBACK`; los grants del arnés se limitan a tablas y helpers temporales necesarios para probar con `SET LOCAL ROLE authenticated` o `service_role`.
 
+Antes de crear fixtures, el bloque estático valida el contrato físico completo de 0007 mediante catálogos PostgreSQL:
+
+- las nueve columnas de `admin_audit_events`, en orden, con tipos, nulabilidad y defaults exactos;
+- una PK, tres FK `ON DELETE RESTRICT` y cuatro `CHECK` con su semántica real;
+- los cuatro índices B.1 con tabla, método btree, claves y dirección, sin unicidad, predicado, expresión ni columnas incluidas;
+- exactamente dos triggers append-only, con timing, eventos, nivel fila/sentencia, función y estado habilitado;
+- RLS sin políticas y ACL de tabla/columna: ningún acceso de `PUBLIC`, `anon` o `authenticated`; `service_role` sólo `SELECT`/`INSERT`, sin grants de columna;
+- nombres, tipos y orden exactos de las entradas y salidas de las cuatro RPC;
+- volatilidad, `SECURITY DEFINER`/invoker, `search_path`, cuerpo semántico y ACL exacto de los helpers de fecha, autoridad, metadata y bloqueo de mutaciones.
+
+Estas aserciones complementan, pero no sustituyen, las pruebas funcionales siguientes.
+
 Matriz mínima de 72 comprobaciones:
 
 1–4. Existen las cuatro RPC con firmas estables; historial usa entrada `requested_profile_id`, salida `target_profile_id`, nombres PostgREST coordinados y helpers privados sin `EXECUTE` cliente. Cada una devuelve `42501` para las diez clases no autorizadas; detalle, asignaciones e historial niegan igual un UUID existente y uno inexistente.
@@ -50,7 +62,7 @@ Matriz mínima de 72 comprobaciones:
 59–64. Persisten RLS propio, grants de nombres estructurados, contrato de registro post-0006, privacidad de borradores y contratos estáticos de participantes, asistencia y check-in.
 65–72. Existe el helper privado y estable de fecha institucional, sin `SECURITY DEFINER`, con `search_path=pg_catalog`, sin `EXECUTE` para `PUBLIC`, `anon`, `authenticated` ni `service_role`; devuelve la fecha de `America/Mexico_City` incluso con la sesión en `Pacific/Kiritimati`. Inicio y término del día institucional son inclusivos, el día siguiente es futuro, el anterior es vencido y las tres funciones B.1 no contienen `current_date`. El límite de metadata es 16 384 bytes y la fixture sobredimensionada supera ese máximo.
 
-El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausencia de políticas cliente, ACL exacto de auditoría y ejecución sólo para `authenticated` en las cuatro RPC públicas. Todas las fechas de fixtures parten de `institutional_today`, calculada con `(current_timestamp AT TIME ZONE 'America/Mexico_City')::date`; no se convierten desde la zona horaria de sesión. No se afirma ejecución PostgreSQL hasta aplicarlo manualmente después de 0007.
+El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausencia de políticas cliente, ACL exacto de auditoría y ejecución sólo para `authenticated` en las cuatro RPC públicas. Todas las fechas de fixtures parten de `institutional_today`, calculada con `(current_timestamp AT TIME ZONE 'America/Mexico_City')::date`; no se convierten desde la zona horaria de sesión. La fixture de `admin_inactive` conserva una sola asignación deliberada. No se afirma ejecución PostgreSQL hasta aplicarlo manualmente después de 0007.
 
 ## Smoke tests posteriores al despliegue compatible
 

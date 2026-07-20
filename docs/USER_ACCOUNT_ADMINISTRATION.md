@@ -44,6 +44,8 @@ La lista devuelve únicamente nombre estructurado/derivado, correo, clasificaci�
 
 `admin_audit_events` se prepara en 0007 como bitácora append-only. Tiene referencias restrictivas a actor, objetivo y asignación opcional; acción y resultado controlados; motivo acotado; y metadata que debe ser un objeto JSON de hasta 16 384 bytes, con llaves superiores normalizadas antes de detectar términos sensibles. RLS está activa, no hay políticas de cliente y los triggers impiden `UPDATE`, `DELETE` y `TRUNCATE`. El ACL explícito de `service_role` es sólo `SELECT`/`INSERT` sobre la tabla y `EXECUTE` sobre el validador de metadata; 0007 bloquea si ese rol no conserva `rolbypassrls=true`.
 
+El cierre de verificación B.1 fija también la forma física: nueve columnas en orden, PK y tres FK restrictivas, cuatro validaciones semánticas, cuatro índices concretos y dos triggers exactos. Las cuatro RPC se verifican por nombre, tipo y orden de entradas/salidas; los helpers privados se verifican por autoridad, fecha institucional, límite de 16 384 bytes, protección append-only y privilegio mínimo.
+
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 
 ## Criterios de aceptación

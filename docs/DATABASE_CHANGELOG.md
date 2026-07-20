@@ -143,6 +143,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - La revisión final hace determinista el `EXECUTE` de `service_role` sobre el validador de metadata, exige `rolbypassrls=true` y usa fixtures UUID sin colisiones; el verificador cubre funcionalmente ese rol y niega las cuatro RPC a cada actor no autorizado. 0007 sigue sin aplicar ni verificar contra PostgreSQL.
 - La corrección final incorpora el helper privado `sitaa_current_mexico_date()`: toda vigencia B.1 usa fechas inclusivas de `America/Mexico_City` y deja de depender de la zona horaria de sesión. El verificador cambia deliberadamente la sesión a `Pacific/Kiritimati` para probar el contrato.
 - El límite único de metadata queda fijado en 16 384 bytes en migración, verificador, rollback y documentación.
+- El cierre local del verificador añade aserciones exactas de columnas/defaults, PK/FK/CHECK, cuatro índices, dos triggers, ACL de tabla/columna/función, firmas completas de las cuatro RPC y semántica de helpers privados. También elimina una asignación duplicada de la fixture `admin_inactive`; no modifica la migración ni marca 0007 como aplicada.
 - Artefactos coordinados: migración, preflight de sólo lectura, verificador transaccional con `ROLLBACK`, rollback manual protegido y `docs/TEST_PLAN_0007.md`.
 - No modifica 0001–0006 ni el snapshot vivo posterior a 0006.
 

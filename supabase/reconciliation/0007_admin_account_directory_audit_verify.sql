@@ -6,10 +6,15 @@ do $static_contract$
 declare
   rpc regprocedure;
   mexico_date_helper regprocedure := to_regprocedure('public.sitaa_current_mexico_date()');
+  authority_helper regprocedure := to_regprocedure('public.is_b1_account_admin()');
+  metadata_helper regprocedure := to_regprocedure('public.admin_audit_metadata_is_safe(jsonb)');
+  mutation_helper regprocedure := to_regprocedure('public.prevent_admin_audit_event_mutation()');
+  audit_table regclass := to_regclass('public.admin_audit_events');
   authority_definition text;
   search_definition text;
   assignments_definition text;
   metadata_definition text;
+  mutation_definition text;
 begin
   if mexico_date_helper is null
      or not exists (
@@ -39,16 +44,15 @@ begin
     raise exception '0007: helper privado de fecha institucional inválido.';
   end if;
 
-  authority_definition := lower(pg_get_functiondef('public.is_b1_account_admin()'::regprocedure));
+  authority_definition := lower(pg_get_functiondef(authority_helper));
   search_definition := lower(pg_get_functiondef(
     'public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)'::regprocedure
   ));
   assignments_definition := lower(pg_get_functiondef(
     'public.get_admin_account_assignments_b1(uuid)'::regprocedure
   ));
-  metadata_definition := lower(pg_get_functiondef(
-    'public.admin_audit_metadata_is_safe(jsonb)'::regprocedure
-  ));
+  metadata_definition := lower(pg_get_functiondef(metadata_helper));
+  mutation_definition := lower(pg_get_functiondef(mutation_helper));
   if authority_definition not like '%public.sitaa_current_mexico_date()%'
      or authority_definition ~ '\mcurrent_date\M'
      or search_definition not like '%public.sitaa_current_mexico_date()%'
@@ -59,15 +63,200 @@ begin
     raise exception '0007: contrato temporal o límite de metadata no coincide con la migración.';
   end if;
 
+  if audit_table is null then
+    raise exception '0007: falta public.admin_audit_events.';
+  end if;
+
+  -- Esquema físico exacto: nueve columnas, en el orden y con los defaults de 0007.
+  if (select count(*) from pg_attribute where attrelid = audit_table and attnum > 0 and not attisdropped) <> 9
+     or exists (
+       with expected(attnum, column_name, type_oid, not_null, default_kind) as (
+         values
+           (1::smallint, 'id', 'uuid'::regtype::oid, true, 'uuid'),
+           (2::smallint, 'actor_profile_id', 'uuid'::regtype::oid, true, null),
+           (3::smallint, 'target_profile_id', 'uuid'::regtype::oid, true, null),
+           (4::smallint, 'action_code', 'text'::regtype::oid, true, null),
+           (5::smallint, 'outcome', 'text'::regtype::oid, true, null),
+           (6::smallint, 'reason', 'text'::regtype::oid, false, null),
+           (7::smallint, 'role_assignment_id', 'uuid'::regtype::oid, false, null),
+           (8::smallint, 'metadata', 'jsonb'::regtype::oid, true, 'empty_json'),
+           (9::smallint, 'occurred_at', 'timestamptz'::regtype::oid, true, 'now')
+       ), observed as (
+         select a.attnum, a.attname, a.atttypid, a.attnotnull, d.oid as default_oid,
+           regexp_replace(lower(pg_get_expr(d.adbin, d.adrelid, true)), '\s+', '', 'g') as default_expression
+         from pg_attribute a
+         left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+         where a.attrelid = audit_table and a.attnum > 0 and not a.attisdropped
+       )
+       select 1
+       from expected e
+       left join observed o on o.attnum = e.attnum
+       where o.attnum is null
+          or o.attname <> e.column_name
+          or o.atttypid <> e.type_oid
+          or o.attnotnull <> e.not_null
+          or (e.default_kind is null and o.default_oid is not null)
+          or (e.default_kind = 'uuid' and coalesce(o.default_expression, '') !~ '^(pg_catalog\.)?gen_random_uuid\(\)$')
+          or (e.default_kind = 'empty_json' and coalesce(o.default_expression, '') <> '''{}''::jsonb')
+          or (e.default_kind = 'now' and coalesce(o.default_expression, '') !~ '^(pg_catalog\.)?now\(\)$')
+     ) then
+    raise exception '0007: columnas, orden, tipos, nulabilidad o defaults de admin_audit_events inválidos.';
+  end if;
+
+  -- Una PK exacta y tres FK exactas, todas restrictivas.
+  if (select count(*) from pg_constraint where conrelid = audit_table and contype = 'p') <> 1
+     or not exists (
+       select 1 from pg_constraint c
+       where c.conrelid = audit_table and c.contype = 'p'
+         and c.conkey = array[(select attnum from pg_attribute where attrelid = audit_table and attname = 'id')]::smallint[]
+     )
+     or (select count(*) from pg_constraint where conrelid = audit_table and contype = 'f') <> 3
+     or exists (
+       with expected(local_column, referenced_table, referenced_column) as (
+         values
+           ('actor_profile_id', 'public.profiles'::regclass, 'id'),
+           ('target_profile_id', 'public.profiles'::regclass, 'id'),
+           ('role_assignment_id', 'public.role_assignments'::regclass, 'id')
+       )
+       select 1 from expected e
+       where not exists (
+         select 1
+         from pg_constraint c
+         where c.conrelid = audit_table
+           and c.contype = 'f'
+           and c.confrelid = e.referenced_table
+           and c.confdeltype = 'r'
+           and c.conkey = array[(select attnum from pg_attribute where attrelid = audit_table and attname = e.local_column)]::smallint[]
+           and c.confkey = array[(select attnum from pg_attribute where attrelid = e.referenced_table and attname = e.referenced_column)]::smallint[]
+       )
+     ) then
+    raise exception '0007: PK o referencias restrictivas de admin_audit_events inválidas.';
+  end if;
+
+  -- Cuatro CHECK exactos y con semántica real, no sólo por nombre.
+  if (select count(*) from pg_constraint where conrelid = audit_table and contype = 'c') <> 4
+     or (select count(*) from pg_constraint where conrelid = audit_table and contype = 'c'
+           and conname in ('admin_audit_events_action_code_check','admin_audit_events_outcome_check',
+             'admin_audit_events_reason_check','admin_audit_events_metadata_check')) <> 4
+     or not exists (
+       select 1 from pg_constraint c
+       cross join lateral (
+         select replace(regexp_replace(lower(pg_get_constraintdef(c.oid, true)), '\s+', '', 'g'), '::text', '') value
+       ) normalized
+       where c.conrelid = audit_table and c.conname = 'admin_audit_events_action_code_check'
+         and position('char_length(action_code)>=1' in normalized.value) > 0
+         and position('char_length(action_code)<=100' in normalized.value) > 0
+         and position('action_code~''^[a-z][a-z0-9]*(_[a-z0-9]+)*$''' in normalized.value) > 0
+         and replace(replace(normalized.value, '(', ''), ')', '')
+           = 'checkchar_lengthaction_code>=1andchar_lengthaction_code<=100andaction_code~''^[a-z][a-z0-9]*_[a-z0-9]+*$'''
+     )
+     or not exists (
+       select 1 from pg_constraint c
+       cross join lateral (
+         select replace(replace(replace(regexp_replace(lower(pg_get_constraintdef(c.oid, true)), '\s+', '', 'g'), '::text', ''), '(', ''), ')', '') value
+       ) normalized
+       where c.conrelid = audit_table and c.conname = 'admin_audit_events_outcome_check'
+         and normalized.value = 'checkoutcome=anyarray[''success'',''failure'']'
+     )
+     or not exists (
+       select 1 from pg_constraint c
+       cross join lateral (
+         select regexp_replace(lower(pg_get_constraintdef(c.oid, true)), '\s+', '', 'g') value
+       ) normalized
+       where c.conrelid = audit_table and c.conname = 'admin_audit_events_reason_check'
+         and position('reasonisnull' in normalized.value) > 0
+         and position('reason=btrim(reason)' in normalized.value) > 0
+         and position('char_length(reason)>=1' in normalized.value) > 0
+         and position('char_length(reason)<=1000' in normalized.value) > 0
+         and replace(replace(normalized.value, '(', ''), ')', '')
+           = 'checkreasonisnullorreason=btrimreasonandchar_lengthreason>=1andchar_lengthreason<=1000'
+     )
+     or not exists (
+         select 1 from pg_constraint c
+       where c.conrelid = audit_table and c.conname = 'admin_audit_events_metadata_check'
+         and regexp_replace(lower(pg_get_constraintdef(c.oid, true)), '\s+', '', 'g')
+           like '%admin_audit_metadata_is_safe(metadata)%'
+         and replace(replace(regexp_replace(lower(pg_get_constraintdef(c.oid, true)), '\s+', '', 'g'), '(', ''), ')', '')
+           in ('checkadmin_audit_metadata_is_safemetadata','checkpublic.admin_audit_metadata_is_safemetadata')
+         and exists (
+           select 1 from pg_depend d
+           where d.classid = 'pg_constraint'::regclass and d.objid = c.oid
+             and d.refclassid = 'pg_proc'::regclass and d.refobjid = metadata_helper
+         )
+     ) then
+    raise exception '0007: restricciones CHECK exactas de admin_audit_events inválidas.';
+  end if;
+
+  -- Los cuatro índices introducidos deben conservar claves, orden y propiedades físicas.
+  if exists (
+    with expected(index_name, table_oid, columns_in_order, directions) as (
+      values
+        ('admin_audit_events_target_occurred_idx', audit_table, array['target_profile_id','occurred_at','id']::text[], array['asc','desc','desc']::text[]),
+        ('admin_audit_events_actor_occurred_idx', audit_table, array['actor_profile_id','occurred_at','id']::text[], array['asc','desc','desc']::text[]),
+        ('profiles_admin_directory_sort_idx', 'public.profiles'::regclass, array['paternal_surname','maternal_surname','first_names','id']::text[], array['asc','asc','asc','asc']::text[]),
+        ('profiles_admin_directory_filters_idx', 'public.profiles'::regclass, array['account_status','account_kind','person_type','primary_program_id']::text[], array['asc','asc','asc','asc']::text[])
+    )
+    select 1
+    from expected e
+    left join pg_class ic on ic.relname = e.index_name
+      and ic.relnamespace = (select oid from pg_namespace where nspname = 'public')
+    left join pg_index i on i.indexrelid = ic.oid
+    left join pg_am am on am.oid = ic.relam
+    where i.indexrelid is null
+       or i.indrelid <> e.table_oid
+       or am.amname <> 'btree'
+       or i.indisunique
+       or not i.indisvalid
+       or not i.indisready
+       or i.indpred is not null
+       or i.indexprs is not null
+       or i.indnkeyatts <> cardinality(e.columns_in_order)
+       or i.indnatts <> cardinality(e.columns_in_order)
+       or array(
+         select a.attname::text
+         from unnest(i.indkey::smallint[]) with ordinality key_column(attnum, ordinality_position)
+         join pg_attribute a on a.attrelid = i.indrelid and a.attnum = key_column.attnum
+         order by key_column.ordinality_position
+       ) <> e.columns_in_order
+       or array(
+         select case when (index_option::integer & 1) = 1 then 'desc' else 'asc' end
+         from unnest(i.indoption::smallint[]) with ordinality option_column(index_option, ordinality_position)
+         order by option_column.ordinality_position
+       ) <> e.directions
+  ) then
+    raise exception '0007: definición semántica de índices B.1 inválida.';
+  end if;
+
+  -- Dos triggers exactos: mutación por fila y TRUNCATE por sentencia.
+  if (select count(*) from pg_trigger where tgrelid = audit_table and not tgisinternal) <> 2
+     or not exists (
+       select 1 from pg_trigger
+       where tgrelid = audit_table and not tgisinternal
+         and tgname = 'prevent_admin_audit_event_mutation'
+         and tgfoid = mutation_helper and tgtype = 27 and tgenabled = 'O'
+     )
+     or not exists (
+       select 1 from pg_trigger
+       where tgrelid = audit_table and not tgisinternal
+         and tgname = 'prevent_admin_audit_event_truncate'
+         and tgfoid = mutation_helper and tgtype = 34 and tgenabled = 'O'
+     ) then
+    raise exception '0007: triggers append-only, eventos o granularidad inválidos.';
+  end if;
+
+  -- RLS y ACL completos de tabla/columnas: sólo owner y service_role en el ACL directo.
   if not exists(select 1 from pg_roles where rolname='service_role' and rolbypassrls=true)
-     or to_regclass('public.admin_audit_events') is null
      or not exists (
        select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
        where n.nspname = 'public' and c.relname = 'admin_audit_events' and c.relrowsecurity
      )
      or exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'admin_audit_events')
-     or has_table_privilege('authenticated','public.admin_audit_events','SELECT')
-     or has_table_privilege('authenticated','public.admin_audit_events','INSERT')
+     or exists (
+       select 1
+       from (values ('anon'),('authenticated')) client(role_name)
+       cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER'),('MAINTAIN')) privilege(privilege_name)
+       where has_table_privilege(client.role_name, audit_table, privilege.privilege_name)
+     )
      or not has_table_privilege('service_role','public.admin_audit_events','SELECT')
      or not has_table_privilege('service_role','public.admin_audit_events','INSERT')
      or has_table_privilege('service_role','public.admin_audit_events','UPDATE')
@@ -75,20 +264,75 @@ begin
      or has_table_privilege('service_role','public.admin_audit_events','TRUNCATE')
      or has_table_privilege('service_role','public.admin_audit_events','REFERENCES')
      or has_table_privilege('service_role','public.admin_audit_events','TRIGGER')
+     or has_table_privilege('service_role','public.admin_audit_events','MAINTAIN')
+     or exists (
+       select 1
+       from pg_class c
+       cross join lateral aclexplode(c.relacl) acl
+       where c.oid = audit_table
+         and acl.grantee = (select oid from pg_roles where rolname = 'service_role')
+         and (upper(acl.privilege_type) not in ('SELECT','INSERT') or acl.is_grantable)
+     )
+     or (select count(*) from pg_class c cross join lateral aclexplode(c.relacl) acl
+           where c.oid = audit_table
+             and acl.grantee = (select oid from pg_roles where rolname = 'service_role')) <> 2
      or exists (
        select 1 from pg_class c
-       cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
-       where c.oid='public.admin_audit_events'::regclass
-         and acl.grantee=(select oid from pg_roles where rolname='service_role')
-         and upper(acl.privilege_type) not in ('SELECT','INSERT')
+       cross join lateral aclexplode(c.relacl) acl
+       where c.oid = audit_table
+         and acl.grantee not in (c.relowner, (select oid from pg_roles where rolname='service_role'))
      )
      or exists (
-       select 1 from pg_class c
-       cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
-       where c.oid='public.admin_audit_events'::regclass
-         and (acl.grantee=0 or acl.grantee=(select oid from pg_roles where rolname='anon'))
+       select 1
+       from pg_attribute a
+       where a.attrelid = audit_table and a.attnum > 0 and not a.attisdropped
+         and a.attacl is not null
+         and exists (select 1 from aclexplode(a.attacl))
+     )
+     or exists (
+       select 1
+       from pg_attribute a
+       cross join (values ('anon'),('authenticated')) client(role_name)
+       cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) privilege(privilege_name)
+       where a.attrelid = audit_table and a.attnum > 0 and not a.attisdropped
+         and has_column_privilege(client.role_name, audit_table, a.attname, privilege.privilege_name)
+     )
+     or exists (
+       select 1
+       from pg_attribute a
+       cross join (values ('UPDATE'),('REFERENCES')) privilege(privilege_name)
+       where a.attrelid = audit_table and a.attnum > 0 and not a.attisdropped
+         and has_column_privilege('service_role', audit_table, a.attname, privilege.privilege_name)
      ) then
     raise exception '0007: contrato RLS o privilegios de admin_audit_events inválido.';
+  end if;
+
+  -- Firmas nominales exactas para PostgREST: entradas y TABLE outputs en orden.
+  if regexp_replace(lower(pg_get_function_identity_arguments(
+       'public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)'::regprocedure)), '\s+', '', 'g')
+       <> 'search_texttext,program_filteruuid,account_kind_filtertext,account_status_filtertext,person_type_filtertext,role_code_filtertext,service_area_filtertext,scope_type_filtertext,page_numberinteger,page_sizeinteger'
+     or regexp_replace(lower(pg_get_function_result(
+       'public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)'::regprocedure)), '\s+', '', 'g')
+       <> 'table(profile_iduuid,first_namestext,paternal_surnametext,maternal_surnametext,full_nametext,emailtext,account_kindtext,account_statustext,person_typetext,primary_program_iduuid,primary_program_nametext,institutional_id_typetext,masked_institutional_idtext,current_assignment_countbigint,total_countbigint)'
+     or regexp_replace(lower(pg_get_function_identity_arguments(
+       'public.get_admin_account_detail_b1(uuid)'::regprocedure)), '\s+', '', 'g')
+       <> 'target_profile_iduuid'
+     or regexp_replace(lower(pg_get_function_result(
+       'public.get_admin_account_detail_b1(uuid)'::regprocedure)), '\s+', '', 'g')
+       <> 'table(profile_iduuid,first_namestext,paternal_surnametext,maternal_surnametext,full_nametext,emailtext,account_kindtext,account_statustext,person_typetext,institutional_id_typetext,institutional_id_valuetext,primary_program_iduuid,primary_program_nametext,activated_attimestampwithtimezone,deactivated_attimestampwithtimezone,auth_email_confirmedboolean)'
+     or regexp_replace(lower(pg_get_function_identity_arguments(
+       'public.get_admin_account_assignments_b1(uuid)'::regprocedure)), '\s+', '', 'g')
+       <> 'target_profile_iduuid'
+     or regexp_replace(lower(pg_get_function_result(
+       'public.get_admin_account_assignments_b1(uuid)'::regprocedure)), '\s+', '', 'g')
+       <> 'table(iduuid,role_codetext,role_labeltext,scope_typetext,service_areatext,division_iduuid,division_nametext,program_iduuid,program_nametext,starts_atdate,ends_atdate,is_activeboolean,assigned_byuuid,created_attimestampwithtimezone,presentation_statustext)'
+     or regexp_replace(lower(pg_get_function_identity_arguments(
+       'public.get_admin_account_audit_history_b1(uuid,integer,integer)'::regprocedure)), '\s+', '', 'g')
+       <> 'requested_profile_iduuid,result_limitinteger,result_offsetinteger'
+     or regexp_replace(lower(pg_get_function_result(
+       'public.get_admin_account_audit_history_b1(uuid,integer,integer)'::regprocedure)), '\s+', '', 'g')
+       <> 'table(iduuid,actor_profile_iduuid,actor_display_nametext,target_profile_iduuid,action_codetext,outcometext,reasontext,role_assignment_iduuid,occurred_attimestampwithtimezone)' then
+    raise exception '0007: firma nominal, tipos u orden de columnas RPC inválidos.';
   end if;
 
   foreach rpc in array array[
@@ -99,41 +343,99 @@ begin
   ] loop
     if not has_function_privilege('authenticated', rpc, 'EXECUTE')
        or has_function_privilege('anon', rpc, 'EXECUTE')
+       or has_function_privilege('service_role', rpc, 'EXECUTE')
        or exists (
          select 1 from aclexplode((select coalesce(proacl, acldefault('f', proowner)) from pg_proc where oid = rpc))
          where grantee = 0 and privilege_type = 'EXECUTE'
        )
        or (select not prosecdef from pg_proc where oid = rpc)
-       or lower(pg_get_functiondef(rpc)) not like '%set search_path%pg_catalog%public%' then
+       or lower(pg_get_functiondef(rpc)) not like '%set search_path%pg_catalog%public%'
+       or (select count(*) from pg_proc p cross join lateral aclexplode(p.proacl) acl
+             where p.oid = rpc and acl.privilege_type = 'EXECUTE') <> 2
+       or exists (
+         select 1 from pg_proc p cross join lateral aclexplode(p.proacl) acl
+         where p.oid = rpc and acl.privilege_type = 'EXECUTE'
+           and acl.grantee not in (p.proowner, (select oid from pg_roles where rolname='authenticated'))
+       ) then
       raise exception '0007: privilegio, SECURITY DEFINER o search_path inválido para %.', rpc;
     end if;
   end loop;
 
-  if has_function_privilege('authenticated','public.is_b1_account_admin()','EXECUTE')
-     or has_function_privilege('anon','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
-     or has_function_privilege('authenticated','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
-     or not has_function_privilege('service_role','public.admin_audit_metadata_is_safe(jsonb)','EXECUTE')
+  -- Propiedades semánticas y ACL exactos de los helpers privados.
+  if authority_helper is null
+     or not exists (
+       select 1 from pg_proc p
+       where p.oid = authority_helper and p.prorettype = 'boolean'::regtype
+         and p.provolatile = 's' and p.prosecdef
+         and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog, public']::text[]
+     )
+     or authority_definition not like '%auth.uid()%'
+     or authority_definition not like '%p.account_status = ''active''%'
+     or authority_definition not like '%p.is_active = true%'
+     or authority_definition not like '%ra.role_code = ''technical_admin''%'
+     or authority_definition not like '%ra.scope_type = ''system''%'
+     or authority_definition not like '%ra.service_area = ''technical''%'
+     or authority_definition not like '%ra.program_id is null%'
+     or authority_definition not like '%ra.division_id is null%'
+     or authority_definition not like '%ra.is_active = true%'
+     or authority_definition not like '%ra.starts_at <= public.sitaa_current_mexico_date()%'
+     or authority_definition not like '%ra.ends_at >= public.sitaa_current_mexico_date()%'
+     or metadata_helper is null
+     or not exists (
+       select 1 from pg_proc p
+       where p.oid = metadata_helper and p.prorettype = 'boolean'::regtype
+         and p.provolatile = 'i' and not p.prosecdef
+         and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog, public']::text[]
+     )
+     or metadata_definition not like '%jsonb_typeof(candidate) <> ''object''%'
+     or metadata_definition !~ 'octet_length\(candidate::text\)\s*>\s*16384'
+     or metadata_definition not like '%jsonb_object_keys(candidate)%'
+     or metadata_definition not like '%regexp_replace(lower(key_name), ''[^a-z0-9]+'', '''', ''g'')%'
+     or metadata_definition not like '%password|passwd|token|cookie|secret|authorization|credential|recovery|session|bearer|apikey%'
+     or mutation_helper is null
+     or not exists (
+       select 1 from pg_proc p
+       where p.oid = mutation_helper and p.prorettype = 'trigger'::regtype and p.prosecdef
+         and p.prolang = (select oid from pg_language where lanname = 'plpgsql')
+         and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog, public']::text[]
+         and regexp_replace(lower(btrim(p.prosrc)), '\s+', ' ', 'g')
+           = 'begin raise exception ''sitaa_admin_audit_is_append_only'' using errcode = ''55000''; end;'
+     )
+     or mutation_definition not like '%raise exception ''sitaa_admin_audit_is_append_only'' using errcode = ''55000''%'
+     or exists (
+       select 1
+       from unnest(array[mexico_date_helper, authority_helper, mutation_helper]) helper(function_oid)
+       cross join (values ('anon'),('authenticated'),('service_role')) client(role_name)
+       where has_function_privilege(client.role_name, helper.function_oid, 'EXECUTE')
+     )
      or exists (
        select 1
        from pg_proc p
-       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
-       where p.oid='public.admin_audit_metadata_is_safe(jsonb)'::regprocedure
-         and acl.privilege_type='EXECUTE'
-         and acl.grantee not in (
-           p.proowner,
-           (select oid from pg_roles where rolname='service_role')
-         )
+       cross join lateral aclexplode(p.proacl) acl
+       where p.oid in (mexico_date_helper, authority_helper, mutation_helper)
+         and acl.privilege_type = 'EXECUTE' and acl.grantee <> p.proowner
      )
-     or has_function_privilege('authenticated','public.prevent_admin_audit_event_mutation()','EXECUTE')
-     or not exists (
-       select 1 from pg_trigger t where t.tgrelid = 'public.admin_audit_events'::regclass
-         and t.tgname = 'prevent_admin_audit_event_mutation' and not t.tgisinternal
-     )
-     or not exists (
-       select 1 from pg_trigger t where t.tgrelid = 'public.admin_audit_events'::regclass
-         and t.tgname = 'prevent_admin_audit_event_truncate' and not t.tgisinternal
+     or has_function_privilege('anon', metadata_helper, 'EXECUTE')
+     or has_function_privilege('authenticated', metadata_helper, 'EXECUTE')
+     or not has_function_privilege('service_role', metadata_helper, 'EXECUTE')
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(p.proacl) acl
+       where p.oid = metadata_helper
+          and acl.privilege_type='EXECUTE'
+          and acl.grantee not in (
+            p.proowner,
+            (select oid from pg_roles where rolname='service_role')
+          )
+      )
+     or (select count(*) from pg_proc p cross join lateral aclexplode(p.proacl) acl
+           where p.oid = metadata_helper and acl.privilege_type = 'EXECUTE') <> 2
+     or exists (
+       select 1 from pg_proc p cross join lateral aclexplode(p.proacl) acl
+       where p.oid = metadata_helper and acl.privilege_type = 'EXECUTE' and acl.is_grantable
      ) then
-    raise exception '0007: helper privado o trigger append-only inválido.';
+    raise exception '0007: semántica o ACL de helper privado inválido.';
   end if;
 
   if lower(pg_get_function_result('public.get_admin_account_detail_b1(uuid)'::regprocedure))
@@ -143,13 +445,6 @@ begin
      or lower(pg_get_function_result('public.get_admin_account_audit_history_b1(uuid,integer,integer)'::regprocedure))
        ~ '(^|[ ,])metadata([ ,]|$)' then
     raise exception '0007: una proyección RPC expone campos fuera de B.1.';
-  end if;
-
-  if pg_get_function_arguments('public.get_admin_account_audit_history_b1(uuid,integer,integer)'::regprocedure)
-       not like 'requested_profile_id uuid%'
-     or pg_get_function_result('public.get_admin_account_audit_history_b1(uuid,integer,integer)'::regprocedure)
-       not like '%target_profile_id uuid%' then
-    raise exception '0007: firma nominal del historial incompatible con PostgREST.';
   end if;
 
   if exists (
@@ -370,8 +665,7 @@ values
   (pg_temp.case_id('same_row_target'),'peer_tutor','own','tutoring',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
   (pg_temp.case_id('target_account'),'peer_tutor','own','tutoring',null,null,(select institutional_today + 1 from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact')),
   (pg_temp.case_id('target_account'),'professor','program','advising',null,(select program_id from sitaa_0007_context),(select institutional_today - 3 from sitaa_0007_context),(select institutional_today - 1 from sitaa_0007_context),true,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('target_account'),'student','own','both',null,null,(select institutional_today from sitaa_0007_context),null,false,pg_temp.case_id('admin_exact')),
-  (pg_temp.case_id('admin_inactive'),'technical_admin','system','technical',null,null,(select institutional_today from sitaa_0007_context),null,true,pg_temp.case_id('admin_exact'));
+  (pg_temp.case_id('target_account'),'student','own','both',null,null,(select institutional_today from sitaa_0007_context),null,false,pg_temp.case_id('admin_exact'));
 
 create function pg_temp.insert_google_identity(target_label text, identity_email text)
 returns void language plpgsql set search_path = auth, pg_temp, pg_catalog, information_schema as $$
