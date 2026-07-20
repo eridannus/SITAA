@@ -6,12 +6,13 @@ import { logout } from "@/app/dashboard/actions";
 import { Avatar } from "@/components/avatar";
 import { HomeIcon } from "@/components/home-icon";
 
-export function AccountMenu({ displayName, email, imageUrl, initials, canViewCatalogs }: {
+export function AccountMenu({ displayName, email, imageUrl, initials, canViewCatalogs, canAdministerAccounts }: {
   displayName: string;
   email: string;
   imageUrl: string | null;
   initials: string;
   canViewCatalogs: boolean;
+  canAdministerAccounts: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -52,6 +53,9 @@ export function AccountMenu({ displayName, email, imageUrl, initials, canViewCat
             <Link href="/activities" role="menuitem" onClick={() => setOpen(false)} className="flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Actividades</Link>
             {canViewCatalogs && (
               <Link href="/catalogs" role="menuitem" onClick={() => setOpen(false)} className="flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Catálogos</Link>
+            )}
+            {canAdministerAccounts && (
+              <Link href="/admin/accounts" role="menuitem" onClick={() => setOpen(false)} className="flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Cuentas</Link>
             )}
           </div>
           <Link href="/profile" role="menuitem" onClick={() => setOpen(false)} className="mt-1 flex min-h-11 cursor-pointer items-center rounded-lg px-3 py-2 text-sm font-bold text-[var(--sitaa-blue)] hover:bg-[var(--sitaa-blue-light)]">Mi perfil</Link>

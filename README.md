@@ -41,6 +41,8 @@ npm run start  # Inicia la compilación de producción
 - `/profile`: edición protegida de nombre(s) y apellidos estructurados.
 - `/activities`: listado protegido de actividades visibles.
 - `/activities/new`: alta protegida de una actividad básica.
+- `/admin/accounts`: directorio administrativo protegido y de sólo lectura, preparado para B.1.
+- `/admin/accounts/[id]`: detalle administrativo de cuenta, asignaciones V1 e historial sanitizado.
 
 ## Configuración de Supabase
 
@@ -61,7 +63,7 @@ El registro autentica primero con Google y sólo después solicita identidad ins
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 
-La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-18T04:05:40Z` quedó reconciliado contra 0001–0006 sin deriva inexplicada. 0006 está aplicada y verificada: los nombres personales estructurados son autoritativos y `full_name` se conserva como compatibilidad derivada. `0007` es el siguiente número disponible.
+La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-18T04:05:40Z` quedó reconciliado contra 0001–0006 sin deriva inexplicada. 0006 está aplicada y verificada: los nombres personales estructurados son autoritativos y `full_name` se conserva como compatibilidad derivada. La ruta `/admin/accounts` y 0007 están preparadas localmente, pero el módulo no será operativo hasta aplicar 0007 de forma coordinada; mientras tanto muestra un estado controlado de migración pendiente.
 
 La navegación autenticada usa avatar Google validado o iniciales, menú de cuenta accesible y estados seleccionados de alto contraste. El acceso público emplea una tarjeta única que cabe en el viewport; el fondo canvas es decorativo, pausa en pestañas ocultas y respeta movimiento reducido.
 

@@ -90,6 +90,6 @@ El detalle probatorio está en `supabase/reconciliation/0006_post_apply_reconcil
 
 ## Inmutabilidad y siguiente migración
 
-`0001`–`0006` forman historia aplicada, verificada y reconciliada y no se reescriben. `0007` es el siguiente número disponible; no se crea en este cierre.
+`0001`–`0006` forman historia aplicada, verificada y reconciliada y no se reescriben. La migración `0007_admin_account_directory_audit.sql` y sus artefactos están preparados localmente para B.1, pero **no están aplicados**. Por ello, los conteos de este documento y el snapshot vigente siguen representando exclusivamente el estado posterior a 0006.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.

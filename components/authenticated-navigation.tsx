@@ -9,11 +9,19 @@ const links = [
   { href: "/activities", label: "Actividades" },
 ];
 
-export function AuthenticatedNavigation({ canViewCatalogs }: { canViewCatalogs: boolean }) {
+export function AuthenticatedNavigation({
+  canViewCatalogs,
+  canAdministerAccounts,
+}: {
+  canViewCatalogs: boolean;
+  canAdministerAccounts: boolean;
+}) {
   const pathname = usePathname();
-  const visibleLinks = canViewCatalogs
-    ? [...links, { href: "/catalogs", label: "Catálogos" }]
-    : links;
+  const visibleLinks = [
+    ...links,
+    ...(canViewCatalogs ? [{ href: "/catalogs", label: "Catálogos" }] : []),
+    ...(canAdministerAccounts ? [{ href: "/admin/accounts", label: "Cuentas" }] : []),
+  ];
 
   return (
     <nav aria-label="Navegación principal" className="hidden items-center gap-1 lg:flex">

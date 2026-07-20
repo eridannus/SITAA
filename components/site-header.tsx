@@ -8,6 +8,7 @@ import {
   type AuthenticatedUserContext,
 } from "@/lib/auth/get-authenticated-user-context";
 import { getDisplayName, getInitials, getSafeGoogleAvatarUrl } from "@/lib/auth/user-display";
+import { canAccessAccountAdministration } from "@/lib/admin/authorization";
 
 export async function SiteHeader() {
   let context: AuthenticatedUserContext | null = null;
@@ -20,6 +21,7 @@ export async function SiteHeader() {
   const user = context?.user ?? null;
   const profile = context?.profile ?? null;
   const canViewCatalogs = hasActiveRole(context, "technical_admin");
+  const canAdministerAccounts = canAccessAccountAdministration(context);
   const displayName = getDisplayName(profile, user);
   return (
     <header className="relative z-40 border-b border-blue-950/10 bg-white/95 backdrop-blur">
@@ -42,13 +44,17 @@ export async function SiteHeader() {
         </Link>
         {user ? (
           <div className="flex items-center gap-2 sm:gap-4">
-            <AuthenticatedNavigation canViewCatalogs={canViewCatalogs} />
+            <AuthenticatedNavigation
+              canViewCatalogs={canViewCatalogs}
+              canAdministerAccounts={canAdministerAccounts}
+            />
             <AccountMenu
               displayName={displayName}
               email={user.email ?? ""}
               imageUrl={getSafeGoogleAvatarUrl(user)}
               initials={getInitials(displayName)}
               canViewCatalogs={canViewCatalogs}
+              canAdministerAccounts={canAdministerAccounts}
             />
           </div>
         ) : <Link href="/login" className="sitaa-secondary-action hidden sm:inline-flex">Iniciar sesión</Link>}

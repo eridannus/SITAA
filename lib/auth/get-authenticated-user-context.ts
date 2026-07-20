@@ -30,27 +30,35 @@ export function hasActiveRole(
   ) ?? false;
 }
 
+export function getMexicoCityDateValue(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
 function effectiveAccountStatus(profile: Profile): AccountStatus {
   if (profile.account_status) return profile.account_status;
   return profile.is_active === false ? "inactive" : "active";
 }
 
-function isAssignmentActive(assignment: RoleAssignment, now: Date) {
-  const activeStatuses = new Set(["active", "activa"]);
-
-  if (assignment.is_active === false) {
+export function isCurrentRoleAssignment(
+  assignment: RoleAssignment,
+  currentDate = getMexicoCityDateValue(),
+) {
+  if (!assignment.is_active) {
     return false;
   }
 
-  if (assignment.status && !activeStatuses.has(assignment.status)) {
+  if (assignment.starts_at > currentDate) {
     return false;
   }
 
-  if (assignment.starts_at && new Date(assignment.starts_at) > now) {
-    return false;
-  }
-
-  if (assignment.ends_at && new Date(assignment.ends_at) < now) {
+  if (assignment.ends_at && assignment.ends_at < currentDate) {
     return false;
   }
 
@@ -130,7 +138,7 @@ export async function getAuthenticatedUserContext(): Promise<AuthenticatedUserCo
   }
 
   const assignments = (assignmentData as RoleAssignment[]).filter((assignment) =>
-    isAssignmentActive(assignment, new Date()),
+    isCurrentRoleAssignment(assignment),
   );
   const roleCodes = uniqueIds(assignments.map((assignment) => assignment.role_code));
   const programIds = uniqueIds([

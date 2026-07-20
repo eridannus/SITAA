@@ -48,7 +48,7 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 
 ## Estado actual
 
-La aplicación y las migraciones `0001`–`0006` ya existen, están aplicadas, verificadas y reconciliadas. `0006_structured_person_names.sql` mantiene `full_name` como compatibilidad derivada y formaliza los componentes estructurados. `0007` es el siguiente número disponible; no modificar migraciones aplicadas ni conectarse a Supabase sin autorización expresa. Las siguientes etapas de identidad y autorización deben partir de los documentos canónicos y de los planes de prueba vigentes.
+La aplicación y las migraciones `0001`–`0006` ya existen, están aplicadas, verificadas y reconciliadas. `0006_structured_person_names.sql` mantiene `full_name` como compatibilidad derivada y formaliza los componentes estructurados. `0007_admin_account_directory_audit.sql` está preparada localmente para B.1, pero no está aplicada: no describir sus objetos como vivos hasta completar la secuencia coordinada. No modificar migraciones aplicadas ni conectarse a Supabase sin autorización expresa. Las siguientes etapas de identidad y autorización deben partir de los documentos canónicos y de los planes de prueba vigentes.
 
 La Fase A está implementada y operativa: usa Google OAuth para registro público, sin restricción de dominio ni scopes elevados. El acceso por correo/contraseña es sólo heredado. La identidad institucional se captura únicamente después de autenticar; no introducir signup público por contraseña, PII preautenticación, endpoints anónimos de disponibilidad, secretos OAuth, datos institucionales en URLs o `localStorage`, ni lógica que confíe en email como llave primaria.
 

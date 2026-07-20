@@ -492,6 +492,14 @@ La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM
 
 **Decisión:** fijar `0001`–`0006` como cadena aplicada, verificada y reconciliada, sin deriva inexplicada. `first_names`, `paternal_surname` y `maternal_surname` son autoritativos; `full_name` es compatibilidad derivada. `0007` es el siguiente número disponible. `docs/DESIGN_SYSTEM.md` es el contrato obligatorio para toda interfaz: marca azul y oro, acciones primarias azules, oro/ámbar para advertencia, rojo para destrucción y verde sólo para éxito semántico; `npm run check:ui` es una validación obligatoria.
 
+## DEC-047 — Directorio de cuentas de sólo lectura y base de auditoría administrativa
+
+**Contexto:** Fase B requiere consultar cuentas antes de introducir correcciones, operaciones Auth o mutaciones de roles. El esquema vivo V1 no tiene campos de revocación y las políticas propias no deben ampliarse para habilitar consultas transversales.
+
+**Decisión:** preparar 0007 con cuatro RPC `SECURITY DEFINER` de sólo lectura y una bitácora `admin_audit_events` append-only. La autoridad exacta exige cuenta activa y asignación actual `technical_admin/system/technical`, sin programa/división, tanto en servidor Next.js como dentro de cada RPC. El directorio no navega el padrón sin criterios, busca y pagina en base, exige coincidencia de rol/servicio/alcance en una misma asignación y ordena por apellidos. La lista enmascara identificadores; el detalle autorizado expone sólo identidad necesaria y un booleano de confirmación Auth. La auditoría no tiene acceso directo de clientes y su proyección B.1 omite metadata.
+
+**Consecuencias:** B.1 no activa, desactiva, corrige, invita, recupera ni administra roles. Las operaciones de ciclo de vida/Auth quedan en B.2/B.3 y las mutaciones de rol en Fase C. El código compatible muestra “migración pendiente” hasta aplicar 0007 coordinadamente. 0007 está creado localmente, no aplicado ni incorporado al inventario vivo posterior a 0006.
+
 **Consecuencias:** las migraciones aplicadas permanecen inmutables. Los grants temporales del verificador desaparecen con su sesión/transacción y no amplían producción. Reportes y exportaciones CSV/PDF siguen pendientes. Cualquier cambio posterior requiere una nueva migración, snapshot y reconciliación cuando corresponda.
 
 **Estado:** Aceptada y cerrada sin deriva inexplicada.

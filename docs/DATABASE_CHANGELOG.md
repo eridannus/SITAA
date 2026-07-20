@@ -133,4 +133,13 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Diferencias ambientales: timestamp/formato, omisión semánticamente equivalente de `SECURITY INVOKER` y representación ACL de `MAINTAIN`.
 - Diferencias operativas controladas: backfill revisado de nombres y separación administrativa previamente documentada; no se exportaron datos personales.
 - Contrato visual: `docs/DESIGN_SYSTEM.md` es obligatorio para toda la aplicación y `npm run check:ui` forma parte de la validación.
-- Siguiente número disponible: `0007`; no se crea en este cierre.
+- El cierre original dejó `0007` disponible; la Fase B.1 lo prepara localmente en el apartado siguiente.
+
+## 0007_admin_account_directory_audit.sql — creada localmente / no aplicada
+
+- Prepara el directorio administrativo de sólo lectura y `admin_audit_events` append-only.
+- Añade autorización exacta B.1, cuatro RPC minimizadas, índices de consulta, RLS sin políticas cliente y trigger contra mutación del historial.
+- Artefactos coordinados: migración, preflight de sólo lectura, verificador transaccional con `ROLLBACK`, rollback manual protegido y `docs/TEST_PLAN_0007.md`.
+- No modifica 0001–0006 ni el snapshot vivo posterior a 0006.
+
+Secuencia futura obligatoria: aprobar preflight; aplicar 0007 manualmente; desplegar la aplicación compatible; ejecutar verificador; realizar smoke tests; regenerar snapshot; reconciliar 0001–0007; y sólo entonces actualizar el estado canónico como aplicado.

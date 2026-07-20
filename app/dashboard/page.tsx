@@ -42,10 +42,10 @@ const institutionalIdTypeLabels: Record<InstitutionalIdType, string> = {
 };
 
 function getRoleLabel(
-  role: { label?: string | null; name?: string | null; code: string } | null,
+  role: { label: string; code: string } | null,
   roleCode: string,
 ) {
-  return role?.label?.trim() || role?.name?.trim() || roleCode;
+  return role?.label.trim() || roleCode;
 }
 
 export default async function DashboardPage() {

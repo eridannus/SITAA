@@ -1,142 +1,57 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** diseño aprobado para Fase B; no implementado.
+**Estado funcional:** Fase B.1 implementada localmente y pendiente de aplicar mediante 0007. Las fases B.2, B.3 y C no están implementadas.
 
-**Alcance:** panel interno para `technical_admin` y delegación limitada de roles académicos. No implementa código ni introduce una llave administrativa en el cliente.
+La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
-La separación administrativa realizada durante el cierre de Fase A fue una limpieza única y revisada del entorno. No constituye una capacidad de fusión, conversión o transferencia disponible para usuarios; las operaciones futuras deben pasar por este módulo controlado y su auditoría.
+## Límites por fase
 
-## Objetivos
+### B.1 — Directorio de sólo lectura y base de auditoría
 
-- localizar cuentas sin exponer directorios completos a usuarios no autorizados;
-- corregir identidad principal bajo validación estricta;
-- activar o desactivar acceso sin borrar historia;
-- administrar asignaciones vigentes e históricas;
-- administrar de forma segura acceso heredado y vinculación de proveedores sin ver credenciales;
-- mantener auditoría de toda acción crítica.
+Preparado localmente:
 
-## Búsqueda y filtros del panel
+- rutas protegidas `/admin/accounts` y `/admin/accounts/[id]`;
+- búsqueda, filtros, orden y paginación en servidor mediante RPC;
+- detalle de identidad, resumen mínimo de confirmación Auth y asignaciones V1;
+- identificador enmascarado en lista y completo sólo en detalle autorizado;
+- tabla append-only `admin_audit_events` sin acceso directo de clientes;
+- historial administrativo sanitizado, sin devolver `metadata`;
+- ninguna mutación de cuentas, Auth o roles.
 
-El panel debe buscar por:
+El acceso exige simultáneamente perfil activo y una asignación actual `technical_admin` con alcance `system`, área `technical` y programa/división nulos. La aplicación y cada RPC verifican el contrato completo.
 
-- nombre;
-- correo;
-- número de cuenta o de trabajador;
-- programa;
-- tipo de cuenta (`institutional`, `technical`);
-- tipo de persona (`student`, `professor`);
-- estado (`pending_registration`, `active`, `inactive`);
-- rol asignado;
-- servicio;
-- alcance.
+### B.2 — Ciclo de vida e identidad administrativa
 
-Los resultados deben paginarse, minimizar identificadores visibles y exigir autorización del servidor antes de consultar. No se descarga el padrón completo al navegador para filtrarlo localmente.
+Pendiente: activación, desactivación, corrección de identidad o programa y los flujos confiables de recuperación. Estas operaciones requerirán motivo, autorización, auditoría y coordinación con Auth. Los administradores nunca verán ni establecerán contraseñas.
 
-## Vista de cuenta
+### B.3 — Cuentas técnicas y operaciones Auth
 
-La ficha administrativa muestra:
+Pendiente: alta e invitación de cuentas técnicas, reenvío de confirmaciones, revocación coordinada de sesiones y otras operaciones `auth.admin`. Sólo podrán ejecutarse en backend confiable; nunca habrá `service_role` en el navegador.
 
-- resumen de Auth: correo y estado de confirmación, sin tokens;
-- identidad SITAA y programa principal;
-- estado operativo;
-- asignaciones activas, futuras, vencidas y revocadas;
-- actividades futuras que podrían requerir cambio de responsable;
-- historial administrativo sanitizado.
+### Fase C — Roles y delegación
 
-## Acciones
+Asignar, revocar, transferir o delegar roles queda fuera de B.1–B.3 y pertenece a Fase C. Antes requiere el catálogo y contrato V2, campos de revocación, matriz de autoridad y auditoría transaccional. B.1 sólo clasifica filas V1 como actuales, futuras, vencidas, inactivas o suspendidas por estado de cuenta.
 
-Sólo `technical_admin` puede, durante la fase actual:
+## Directorio B.1
 
-- activar o desactivar una cuenta;
-- corregir alumno/profesor;
-- corregir programa principal;
-- corregir tipo o valor del identificador con unicidad del par `(tipo, valor)`;
-- crear y administrar cuentas técnicas internas;
-- iniciar recuperación de contraseña;
-- asignar o revocar roles críticos conforme a la matriz V2;
-- consultar el historial administrativo.
+La consulta nunca descarga el padrón completo al navegador. Sin texto ni filtros devuelve cero filas. El texto tiene entre 2 y 200 caracteres; la página contiene 20 filas por defecto y hasta 50. El orden es apellido paterno, apellido materno, nombres y UUID.
 
-Los leads de tutoría y asesoría sólo ven la operación necesaria para delegar los roles académicos permitidos en su programa. No obtienen corrección de identidad, activación, Auth admin ni acceso a cuentas de otros programas.
+Filtros admitidos: programa, tipo y estado de cuenta, tipo de persona, rol, área de servicio y alcance actuales. Rol, servicio y alcance deben coincidir en la misma fila vigente de `role_assignments`. Los valores desconocidos se rechazan.
 
-## Contraseñas y correo
-
-- Los administradores nunca ven contraseñas.
-- Los administradores nunca establecen directamente una contraseña.
-- «Restablecer contraseña» significa enviar un enlace seguro de recuperación de Supabase Auth.
-- «Reenviar confirmación» inicia el flujo de confirmación; no marca el correo como verificado manualmente.
-- Las respuestas no revelan si un correo existe y deben aplicar límites de frecuencia.
-- Los enlaces usan únicamente redirects internos permitidos bajo el dominio canónico.
-
-## Desactivación y reactivación
-
-Desactivar una cuenta:
-
-1. impide nuevas sesiones y operación;
-2. hace que RLS/RPC consideren al perfil no habilitado;
-3. conserva perfil, autoría, actividades, participación y asistencia;
-4. conserva filas de asignación, pero su autorización efectiva queda suspendida por el estado de cuenta;
-5. identifica actividades futuras cuyo responsable deba reasignarse;
-6. registra actor, fecha y motivo.
-
-La desactivación no elimina ni revoca automáticamente cada asignación. Al reactivar, vuelven a ser efectivas sólo las asignaciones no revocadas y todavía vigentes. Una revocación explícita nunca se deshace por reactivación.
-
-## Ejecución técnica confiable
-
-La versión instalada de `@supabase/supabase-js` ofrece operaciones públicas y administrativas distintas:
-
-| Operación | Cliente público/SSR con clave anon | Backend confiable o Edge Function |
-| --- | --- | --- |
-| Registro institucional propio | Google OAuth + RPC autenticado posterior | Configuración del proveedor; no usa `service_role` en la aplicación |
-| Vinculación Google propia | Flujo Supabase Auth | Se conserva `auth.users.id`; no se sobrescribe identidad SITAA |
-| Edición de nombre propio | UPDATE de columnas estructuradas protegido por RLS, grants y trigger | No permite cambiar cuenta, persona, identificador, programa, correo, estado ni roles; `full_name` se deriva |
-| Recuperación propia | `auth.resetPasswordForEmail` | Panel administrativo debe envolverla para autorización y auditoría |
-| Leer/editar perfil propio no crítico | Cliente SSR bajo RLS | No requerido |
-| Listar usuarios Auth | No | `auth.admin.listUsers` |
-| Crear cuenta técnica | No | `auth.admin.createUser` o invitación administrativa |
-| Activar/desactivar Auth | No | `auth.admin.updateUserById` y política SITAA coordinada |
-| Generar invitación/recuperación administrativa | No | `auth.admin.generateLink` o `inviteUserByEmail`, según el flujo aprobado |
-| Corregir identidad principal | No | RPC o servicio confiable con auditoría |
-| Asignar/revocar roles | No | RPC privilegiada con matriz y auditoría |
-
-La llave `service_role` nunca se envía al navegador, no se guarda en tablas y no se añade a variables `NEXT_PUBLIC_*`. Las operaciones Auth admin deben ejecutarse en un entorno servidor confiable o Edge Function con sesión del operador, autorización explícita, validación y logs sanitizados.
+La lista devuelve únicamente nombre estructurado/derivado, correo, clasificación básica, programa, identificador enmascarado y conteo de asignaciones actuales. La ficha autorizada añade el identificador completo, fechas de ciclo de vida y un booleano de correo Auth confirmado. Nunca expone credenciales, tokens, cookies, metadata Auth, identidades OAuth ni enlaces de recuperación.
 
 ## Auditoría administrativa
 
-Se requiere un registro inmutable o append-only con, como mínimo:
+`admin_audit_events` se prepara en 0007 como bitácora append-only. Tiene referencias restrictivas a actor, objetivo y asignación opcional; acción y resultado controlados; motivo acotado; y metadata JSON de objeto, tamaño limitado y sin llaves sensibles evidentes. RLS está activa, no hay políticas de cliente y un trigger impide `UPDATE` o `DELETE`.
 
-- `event_id`;
-- actor;
-- cuenta afectada;
-- tipo de acción;
-- fecha/hora;
-- motivo o nota administrativa;
-- resultado;
-- referencia a asignación cuando aplique;
-- metadatos mínimos no sensibles.
-
-Eventos mínimos: creación técnica, activación, desactivación, corrección de identidad/programa, vinculación de proveedor cuando se administre, inicio de recuperación, asignación, revocación y transferencia de `technical_admin`.
-
-No deben registrarse contraseñas, tokens, enlaces completos, cookies ni identificadores completos si basta una referencia interna o versión enmascarada.
-
-## Flujo de asignación
-
-1. El operador busca y abre la cuenta.
-2. El servidor carga su identidad y autoridad efectiva.
-3. La interfaz ofrece sólo roles permitidos por la matriz.
-4. El servidor valida nuevamente actor distinto del beneficiario, elegibilidad, servicio, alcance, programa y vigencia.
-5. Se crea una nueva asignación o se revoca la existente; nunca se sobrescribe la historia.
-6. Se registra el evento y se actualiza la vista.
-
-## Transferencia técnica
-
-El modelo permite crear una nueva cuenta técnica interna, verificarla, asignarle `technical_admin` mediante un operador distinto y después revocar/desactivar la cuenta anterior. La transferencia debe probar que no depende de la cuenta institucional de la persona desarrolladora.
+B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 
 ## Criterios de aceptación
 
-- Ningún control administrativo funciona sólo por ocultamiento visual.
-- Una cuenta inactiva no puede iniciar sesión ni usar RPC académicas.
-- Los identificadores duplicados se rechazan antes de guardar.
-- No existe autoasignación.
-- Toda revocación conserva historia.
-- El panel no expone claves, tokens ni contraseñas.
-- Las acciones de Auth admin sólo ocurren en ejecución confiable.
+- La autorización no depende de ocultar controles.
+- Una asignación `technical_admin` mal formada no concede acceso.
+- Una cuenta inactiva no administra el directorio aunque conserve asignaciones actuales.
+- Un usuario no autorizado obtiene `42501` directamente desde todas las RPC de datos cruzados.
+- No se amplían las políticas propias de `profiles` ni `role_assignments`.
+- La aplicación funciona antes de aplicar 0007 mostrando un estado controlado de migración pendiente.
+- No se introduce PII real en SQL, verificadores o documentación.

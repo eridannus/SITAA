@@ -14,5 +14,6 @@ export const config = {
     "/check-in/:path*",
     "/account-status/:path*",
     "/complete-registration/:path*",
+    "/admin/:path*",
   ],
 };

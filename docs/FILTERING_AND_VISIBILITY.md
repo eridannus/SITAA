@@ -115,3 +115,21 @@ Reglas:
 - La búsqueda de participantes falla sin permiso de roster.
 - Conteos, exportaciones y reportes coinciden con el mismo universo autorizado.
 - El servidor no envía filas prohibidas aunque el cliente oculte controles.
+
+## Directorio administrativo B.1
+
+El conjunto se construye sólo después de verificar perfil activo y asignación actual exacta `technical_admin/system/technical` sin programa/división. La interfaz y todas las RPC repiten el control; los filtros nunca son autoridad.
+
+Secuencia específica:
+
+1. verificar autoridad B.1;
+2. normalizar y validar texto/filtros;
+3. devolver cero filas si no existe ningún criterio;
+4. aplicar consulta acento-insensible de 2 a 200 caracteres sobre nombre, correo o identificador;
+5. aplicar programa, cuenta, estado y persona;
+6. aplicar rol, servicio y alcance sobre la misma fila actual de `role_assignments`;
+7. ordenar por apellido paterno, apellido materno, nombres y UUID;
+8. paginar en base de datos con 20 filas por defecto y máximo 50;
+9. devolver sólo la proyección minimizada y el identificador enmascarado.
+
+Los valores desconocidos se rechazan explícitamente. La paginación conserva los filtros en la URL. Una cuenta inactiva puede tener una fila de asignación actual para clasificación histórica, pero esa fila no se describe como autorización efectiva.

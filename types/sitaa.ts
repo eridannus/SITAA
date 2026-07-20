@@ -27,14 +27,10 @@ export interface AcademicProgram {
 }
 
 export interface Role {
-  id: string;
   code: string;
-  label?: string | null;
-  name?: string | null;
+  label: string;
   description?: string | null;
-  is_active: boolean;
-  created_at?: string;
-  updated_at?: string;
+  sort_order: number;
 }
 
 export type AccountKind = "institutional" | "technical";
@@ -73,10 +69,10 @@ export interface RoleAssignment {
   service_area: ServiceArea;
   division_id: string | null;
   program_id: string | null;
-  starts_at: string | null;
+  starts_at: string;
   ends_at: string | null;
-  status: string | null;
-  is_active?: boolean | null;
+  is_active: boolean;
+  assigned_by: string | null;
   created_at?: string;
   updated_at?: string;
 }
