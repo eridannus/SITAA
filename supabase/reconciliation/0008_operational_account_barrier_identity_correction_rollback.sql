@@ -2426,6 +2426,14 @@ begin
     raise exception '0008_rollback_objects_remain';
   end if;
 
+  if (
+    select md5(btrim(regexp_replace(lower(p.prosrc),'\s+',' ','g')))
+    from pg_proc p
+    where p.oid=to_regprocedure('public.activity_attendance_deadline(uuid)')
+  ) is distinct from '1f4b283800a8ef76c73ea8c88d19f0ca' then
+    raise exception '0008_rollback_hash_normalization_regression';
+  end if;
+
   select count(*) into mismatch_count
   from (values
     ('activity_attendance_deadline(uuid)','1f4b283800a8ef76c73ea8c88d19f0ca'),
@@ -2457,10 +2465,10 @@ begin
     ('search_profiles_for_participation(uuid,text)','07b799b2af7ebc1ee6140b37bc1c64cf'),
     ('update_activity_participant_attendance(uuid,text,text)','a8d51f9ad77800062e3216602d51569a'),
     ('update_activity_participants_attendance_bulk(uuid,uuid[],text,text)','8b86022211acee5d3094a954afec787b')
-  ) expected(signature,definition_hash)
+  ) expected(signature,body_hash)
   left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
   where p.oid is null
-     or md5(regexp_replace(pg_get_functiondef(p.oid),'\s+','','g'))<>expected.definition_hash;
+     or md5(btrim(regexp_replace(lower(p.prosrc),'\s+',' ','g')))<>expected.body_hash;
   if mismatch_count<>0 then
     raise exception '0008_rollback_definition_mismatch';
   end if;

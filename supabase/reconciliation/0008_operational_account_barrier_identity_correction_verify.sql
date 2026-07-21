@@ -10,6 +10,8 @@ declare
   context_oid oid:=to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)');
   correction_oid oid:=to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)');
   mismatch_count integer;
+  correction_source text;
+  participant_writer_source text;
 begin
   if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='public' and c.relkind='r')<>18
@@ -36,6 +38,9 @@ begin
          and p.prolang=(select oid from pg_language where lanname='sql')
          and p.provolatile='s' and p.prosecdef
          and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.pronargs=0 and coalesce(cardinality(p.proargnames),0)=0
+         and p.proallargtypes is null
+         and pg_get_function_identity_arguments(p.oid)=''
          and lower(p.prosrc) like '%account_status=''active''%'
          and lower(p.prosrc) like '%is_active=true%'
          and lower(p.prosrc) like '%count(*)=1%'
@@ -46,6 +51,22 @@ begin
          and p.prolang=(select oid from pg_language where lanname='plpgsql')
          and p.provolatile='s' and p.prosecdef
          and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.pronargs=1 and p.prorettype='record'::regtype
+         and p.proargnames=array[
+           'requested_profile_id','target_profile_id','can_correct','denial_code',
+           'account_kind','account_status','is_self',
+           'current_or_future_assignment_count','open_responsibility_count',
+           'open_participation_count'
+         ]::text[]
+         and p.proargmodes=array['i','t','t','t','t','t','t','t','t','t']::"char"[]
+         and p.proallargtypes=array[
+           'uuid'::regtype::oid,'uuid'::regtype::oid,'boolean'::regtype::oid,
+           'text'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'boolean'::regtype::oid,'bigint'::regtype::oid,'bigint'::regtype::oid,
+           'bigint'::regtype::oid
+         ]::oid[]
+         and regexp_replace(lower(pg_get_function_identity_arguments(p.oid)),'\s+','','g')
+           ='requested_profile_iduuid'
          and lower(p.prosrc) like '%is_b1_account_admin()%'
          and lower(p.prosrc) like '%sitaa_current_mexico_date()%'
      )
@@ -55,6 +76,25 @@ begin
          and p.prolang=(select oid from pg_language where lanname='plpgsql')
          and p.provolatile='v' and p.prosecdef
          and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.pronargs=8 and p.prorettype='record'::regtype
+         and p.proargnames=array[
+           'requested_profile_id','requested_first_names','requested_paternal_surname',
+           'requested_maternal_surname','requested_person_type',
+           'requested_institutional_id_value','requested_primary_program_id',
+           'correction_reason','target_profile_id','audit_event_id',
+           'changed_fields','updated_at'
+         ]::text[]
+         and p.proargmodes=array[
+           'i','i','i','i','i','i','i','i','t','t','t','t'
+         ]::"char"[]
+         and p.proallargtypes=array[
+           'uuid'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'text'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'uuid'::regtype::oid,'text'::regtype::oid,'uuid'::regtype::oid,
+           'uuid'::regtype::oid,'text[]'::regtype::oid,'timestamptz'::regtype::oid
+         ]::oid[]
+         and regexp_replace(lower(pg_get_function_identity_arguments(p.oid)),'\s+','','g')
+           ='requested_profile_iduuid,requested_first_namestext,requested_paternal_surnametext,requested_maternal_surnametext,requested_person_typetext,requested_institutional_id_valuetext,requested_primary_program_iduuid,correction_reasontext'
          and lower(p.prosrc) like '%for update%'
          and lower(p.prosrc) like '%account_identity_corrected%'
          and lower(p.prosrc) like '%changed_fields%'
@@ -72,9 +112,13 @@ begin
       acldefault('f',(select proowner from pg_proc where oid=expected.function_oid)))) acl
     left join pg_roles grantee on grantee.oid=acl.grantee
     where acl.privilege_type='EXECUTE'
-      and coalesce(grantee.rolname,'PUBLIC') in ('postgres','authenticated')
+      and (acl.grantee=(select proowner from pg_proc where oid=expected.function_oid)
+        or grantee.rolname='authenticated')
       and not acl.is_grantable
   )<>2
+  or not has_function_privilege('authenticated',expected.function_oid,'EXECUTE')
+  or has_function_privilege('anon',expected.function_oid,'EXECUTE')
+  or has_function_privilege('service_role',expected.function_oid,'EXECUTE')
   or exists (
     select 1
     from pg_proc p
@@ -82,11 +126,69 @@ begin
     left join pg_roles grantee on grantee.oid=acl.grantee
     where p.oid=expected.function_oid
       and (acl.privilege_type<>'EXECUTE'
-        or coalesce(grantee.rolname,'PUBLIC') not in ('postgres','authenticated')
+        or (acl.grantee<>p.proowner and coalesce(grantee.rolname,'PUBLIC')<>'authenticated')
         or acl.is_grantable)
   );
   if mismatch_count<>0 then
     raise exception '0008_verify_new_function_acl_mismatch';
+  end if;
+
+  select lower(prosrc) into correction_source from pg_proc where oid=correction_oid;
+  select lower(prosrc) into participant_writer_source
+  from pg_proc where oid=to_regprocedure('public.add_activity_participant(uuid,uuid,text)');
+  if position('lock table public.role_assignments in share mode' in correction_source)=0
+     or position('lock table public.activities in share mode' in correction_source)=0
+     or position('lock table public.activity_participants in share mode' in correction_source)=0
+     or position('lock table public.role_assignments in share mode' in correction_source)
+       >=position('lock table public.activities in share mode' in correction_source)
+     or position('lock table public.activities in share mode' in correction_source)
+       >=position('lock table public.activity_participants in share mode' in correction_source)
+     or position('lock table public.activity_participants in share mode' in correction_source)
+       >=position('for update' in correction_source)
+     or participant_writer_source not like '%lock table public.activity_participants in row exclusive mode%'
+     or participant_writer_source not like '%for share%'
+     or position('lock table public.activity_participants in row exclusive mode' in participant_writer_source)
+       >=position('for share' in participant_writer_source) then
+    raise exception '0008_verify_dependency_lock_protocol_mismatch';
+  end if;
+
+  if exists (
+    select 1
+    from (values
+      ('profiles'),('role_assignments'),('activities'),
+      ('activity_participants'),('admin_audit_events')
+    ) required(table_name)
+    left join pg_class c on c.oid=to_regclass('public.'||required.table_name)
+    where c.oid is null or not c.relrowsecurity
+  ) then
+    raise exception '0008_verify_required_rls_disabled';
+  end if;
+
+  if exists (
+       select 1 from public.profiles p left join auth.users u on u.id=p.id
+       where u.id is null
+     )
+     or exists (
+       select 1 from auth.users u left join public.profiles p on p.id=u.id
+       where p.id is null
+     )
+     or not exists (
+       select 1 from pg_constraint c
+       where c.conrelid='public.profiles'::regclass
+         and c.conname='profiles_id_fkey' and c.contype='f'
+         and pg_get_constraintdef(c.oid)='FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE'
+     )
+     or not exists (
+       select 1 from pg_constraint c
+       where c.conrelid='public.role_assignments'::regclass
+         and c.conname='role_assignments_user_id_fkey' and c.contype='f'
+         and pg_get_constraintdef(c.oid)='FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'
+     )
+     or exists (
+       select 1 from public.role_assignments ra
+       left join public.profiles p on p.id=ra.user_id where p.id is null
+     ) then
+    raise exception '0008_verify_auth_profile_or_fk_contract_mismatch';
   end if;
 
   if not exists (
@@ -115,7 +217,7 @@ begin
       ('activity_attendance_deadline(uuid)','fa3b7c8ef43aab1a8ede008671b5dc08'),
       ('activity_attendance_open_at(uuid)','ae06ee4eb6cb93d433aed430b6b07e8c'),
       ('activity_has_ended(uuid)','c318afdb983e1a21461fe071b7a4fa95'),
-      ('add_activity_participant(uuid,uuid,text)','01799d77d86dfe8d239f341426a5dbf9'),
+      ('add_activity_participant(uuid,uuid,text)','49ace655e29301b5a2d34438d3689296'),
       ('can_create_activity(text,uuid,uuid,text)','a681afcc9eb243295418bcb048658c3f'),
       ('can_create_activity(uuid,text)','d2b5f611bc457b0533a270302deb0362'),
       ('can_delete_activity(uuid)','0ac0d3ee8eb298048e4e13bff43fd2ef'),
@@ -284,6 +386,43 @@ begin
     raise exception '0008_verify_direct_privilege_drift';
   end if;
 
+  if not exists (
+    select 1 from pg_class c
+    where c.oid='public.admin_audit_events'::regclass and c.relrowsecurity
+      and (
+        select count(*) from aclexplode(c.relacl) acl
+        where acl.grantee=c.relowner
+          and upper(acl.privilege_type) in (
+            'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+          ) and not acl.is_grantable
+      )=8
+      and (
+        select count(*) from aclexplode(c.relacl) acl
+        where acl.grantee=(select oid from pg_roles where rolname='service_role')
+          and upper(acl.privilege_type) in ('SELECT','INSERT')
+          and not acl.is_grantable
+      )=2
+      and not exists(
+        select 1 from aclexplode(c.relacl) acl
+        where acl.grantee not in (
+          c.relowner,(select oid from pg_roles where rolname='service_role')
+        )
+           or acl.is_grantable
+           or (acl.grantee=c.relowner and upper(acl.privilege_type) not in (
+             'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+           ))
+           or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+             and upper(acl.privilege_type) not in ('SELECT','INSERT'))
+      )
+      and not exists(
+        select 1 from pg_attribute a
+        where a.attrelid=c.oid and a.attnum>0 and not a.attisdropped
+          and a.attacl is not null and exists(select 1 from aclexplode(a.attacl))
+      )
+  ) then
+    raise exception '0008_verify_audit_exact_acl_mismatch';
+  end if;
+
   if to_regprocedure('public.complete_own_google_registration(text,text,text,text,text,uuid)') is null
      or to_regprocedure('public.get_admin_account_detail_b1(uuid)') is null
      or to_regprocedure('public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)') is null
@@ -314,17 +453,44 @@ create temporary table sitaa_0008_context(
   program_a uuid not null,
   program_b uuid not null,
   inactive_program uuid not null,
+  academic_period_id uuid not null,
+  academic_period_code text not null,
+  academic_period_start date not null,
+  academic_period_end date not null,
+  fixture_activity_date date not null,
+  academic_period_sort_order integer not null,
   activity_draft uuid not null,
   activity_scheduled uuid not null
 ) on commit drop;
 
-insert into sitaa_0008_context
+insert into sitaa_0008_context(
+  run_marker,institutional_today,division_a,division_b,program_a,program_b,
+  inactive_program,academic_period_id,academic_period_code,
+  academic_period_start,academic_period_end,fixture_activity_date,
+  academic_period_sort_order,activity_draft,activity_scheduled
+)
 select
   'v8'||replace(seed::text,'-',''),
   public.sitaa_current_mexico_date(),
   gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
-  gen_random_uuid(),gen_random_uuid(),gen_random_uuid()
-from (select gen_random_uuid() seed) generated;
+  gen_random_uuid(),period_id,
+  'v8s_'||left(replace(seed::text,'-',''),24),
+  period_start,period_start+120,period_start+10,
+  1000000000+mod(abs(hashtext(seed::text)::bigint),1000000000)::integer,
+  gen_random_uuid(),gen_random_uuid()
+from (
+  select
+    seed,
+    gen_random_uuid() period_id,
+    greatest(
+      public.sitaa_current_mexico_date()+365,
+      coalesce(
+        (select max(ends_on) from public.academic_periods where ends_on is not null),
+        public.sitaa_current_mexico_date()
+      )+31
+    ) period_start
+  from (select gen_random_uuid() seed) generated_seed
+) generated;
 
 insert into public.divisions(id,code,name)
 select division_a,'v8da_'||left(replace(division_a::text,'-',''),16),'División sintética A 0008'
@@ -339,6 +505,28 @@ union all
 select program_b,division_b,'v8pb_'||left(replace(program_b::text,'-',''),16),'Programa sintético B 0008',true from sitaa_0008_context
 union all
 select inactive_program,division_a,'v8pi_'||left(replace(inactive_program::text,'-',''),16),'Programa inactivo sintético 0008',false from sitaa_0008_context;
+
+insert into public.academic_periods(
+  id,code,name,starts_on,ends_on,is_active,sort_order
+)
+select
+  academic_period_id,academic_period_code,
+  'Semestre sintético '||academic_period_code,
+  academic_period_start,academic_period_end,true,academic_period_sort_order
+from sitaa_0008_context;
+
+do $academic_period_fixture_contract$
+begin
+  if not exists (
+    select 1
+    from pg_temp.sitaa_0008_context fixture
+    join lateral public.get_academic_period_for_date(fixture.fixture_activity_date) resolved
+      on resolved.id=fixture.academic_period_id
+  ) then
+    raise exception '0008_verify_synthetic_academic_period_resolution_failed';
+  end if;
+end;
+$academic_period_fixture_contract$;
 
 create temporary table sitaa_0008_cases(
   label text primary key,
@@ -499,20 +687,35 @@ insert into public.activities(
   scope_type,division_id,responsible_profile_id,created_by
 )
 select activity_draft,'Actividad sintética borrador',null,
-  (select id from public.get_academic_period_for_date(institutional_today+1) limit 1),
+  academic_period_id,
   program_a,'group_activity','tutoring',
   'disciplinary','in_person','draft','classroom','Aula sintética',
-  institutional_today+1,time '10:00',institutional_today+1,time '11:00','one_hour',
+  fixture_activity_date,time '10:00',fixture_activity_date,time '11:00','one_hour',
   'program',division_a,pg_temp.case_id('active_professor'),pg_temp.case_id('active_professor')
 from sitaa_0008_context
 union all
 select activity_scheduled,'Actividad sintética programada',null,
-  (select id from public.get_academic_period_for_date(institutional_today+1) limit 1),
+  academic_period_id,
   program_a,'group_activity','tutoring',
   'disciplinary','in_person','scheduled','classroom','Aula sintética',
-  institutional_today+1,time '12:00',institutional_today+1,time '13:00','one_hour',
+  fixture_activity_date,time '12:00',fixture_activity_date,time '13:00','one_hour',
   'program',division_a,pg_temp.case_id('active_professor'),pg_temp.case_id('active_professor')
 from sitaa_0008_context;
+
+do $scheduled_academic_period_contract$
+begin
+  if not exists (
+    select 1
+    from public.activities activity
+    join pg_temp.sitaa_0008_context fixture
+      on activity.id=fixture.activity_scheduled
+    where activity.academic_period_id=fixture.academic_period_id
+      and activity.start_date=fixture.fixture_activity_date
+  ) then
+    raise exception '0008_verify_scheduled_academic_period_fixture_mismatch';
+  end if;
+end;
+$scheduled_academic_period_contract$;
 
 insert into public.activity_participants(activity_id,profile_id,participant_role_code,added_by)
 select activity_scheduled,pg_temp.case_id('active_student'),'student',pg_temp.case_id('active_professor')
@@ -908,6 +1111,9 @@ begin
   if not rejected or position(expected_fragment in coalesce(actual_message,''))=0 then
     raise exception '0008_verify_unexpected_rejection_contract';
   end if;
+  if actual_message ~* '(check constraint|profiles_[a-z0-9_]*_check)' then
+    raise exception '0008_verify_raw_constraint_error_leaked';
+  end if;
 
   select to_jsonb(detail) into after_detail
   from public.get_admin_account_detail_b1(pg_temp.case_id(target_label)) detail;
@@ -1019,6 +1225,20 @@ select pg_temp.expect_correction_rejection(
   'Razón administrativa válida','sitaa_identity_invalid_name'
 );
 select pg_temp.expect_correction_rejection(
+  'target_institutional','Persona','Prueba',null,null,'0008000003',
+  (select program_a from pg_temp.sitaa_0008_context),
+  'Razón administrativa válida','sitaa_identity_invalid_person_type'
+);
+select pg_temp.expect_correction_rejection(
+  'target_technical','X',null,null,null,null,null,
+  'Razón administrativa válida','sitaa_identity_invalid_name'
+);
+select pg_temp.expect_correction_rejection(
+  'target_institutional',E'\n\t  ',E'\n Prueba\t',null,'student','0008000003',
+  (select program_a from pg_temp.sitaa_0008_context),
+  'Razón administrativa válida','sitaa_identity_invalid_name'
+);
+select pg_temp.expect_correction_rejection(
   'target_institutional','Persona','Prueba',null,'student','ABC',
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_invalid_identifier'
@@ -1045,7 +1265,7 @@ select pg_temp.expect_correction_rejection(
   'Razón administrativa válida','sitaa_identity_invalid_name'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional','Persona sintética','Prueba',null,'student',
+  'target_institutional',E'\n  Persona\t sintética  \n',E'\t Prueba \n',null,'student',
   pg_temp.case_identifier('target_institutional'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_no_changes'
@@ -1124,9 +1344,9 @@ $missing_target_mutation$;
 
 -- Éxitos: institucional, técnico, inactivo, histórico y cambios no bloqueados.
 select * from public.correct_admin_account_identity_b2a(
-  pg_temp.case_id('target_institutional'),'  María   José  ','D''Ángelo','López',
+  pg_temp.case_id('target_institutional'),E'\n  María\t  José  \n',E'\tD''Ángelo\n',E' López\t',
   'student','0008000011',(select program_b from pg_temp.sitaa_0008_context),
-  '  Corrección   verificada   con fuente institucional  '
+  E'\n  Corrección\t  verificada   con fuente institucional  \n'
 );
 select * from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_technical'),'Soporte','Técnico',null,

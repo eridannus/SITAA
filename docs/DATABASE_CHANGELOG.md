@@ -173,4 +173,5 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - No añade tablas, columnas, índices, restricciones, triggers, semillas ni grants directos de tabla.
 - Inventario esperado tras aplicación: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 10 triggers, 50 funciones, 25 políticas y 51 semillas.
 - Artefactos locales: migración, preflight de sólo lectura, verificador transaccional, rollback conservador y `docs/TEST_PLAN_0008.md`.
+- Revisión previa a aplicación: fixture de semestre independiente del calendario, normalización whitespace y límites controlados, locks de dependencias en orden fijo, preflight RLS/Auth/FK/ACL completo, firmas PostgREST y ACL de funciones exactos, y rollback alineado al hash normalizado de `prosrc`.
 - 0001–0007 y el snapshot vivo permanecen inmutables. No se ejecutó ni aplicó SQL durante esta preparación.

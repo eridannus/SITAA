@@ -26,6 +26,8 @@ Preparada localmente mediante 0008, todavía no aplicada. Una cuenta distinta de
 
 Un administrador B.1 exacto podrá corregir nombres estructurados, tipo/identificador/programa institucional según el tipo de cuenta, con motivo obligatorio, bloqueos de dependencias y un único evento append-only `account_identity_corrected`. No puede corregirse a sí mismo ni corregir objetivos pendientes. UUID, email, clase/estado de cuenta, ciclo de vida, Auth, roles y toda la historia operativa permanecen inmutables.
 
+La corrección usa un protocolo fijo de concurrencia: autoriza; bloquea `role_assignments`, `activities` y `activity_participants` en `SHARE`; bloquea el perfil; relee el programa; evalúa; actualiza; audita. La verificación transaccional usa un semestre sintético futuro y no depende de la posición de hoy en el calendario académico. Las pruebas concurrentes de dos sesiones quedan documentadas para la verificación coordinada posterior.
+
 ### B.2b — Activación y reactivación coordinadas con Auth
 
 Pendiente: activación, desactivación, reactivación, revocación de sesión y los flujos confiables de recuperación. Requieren una decisión separada y coordinación con Auth. Los administradores nunca verán ni establecerán contraseñas.
@@ -60,7 +62,7 @@ El rollback sólo puede retirar `admin_audit_events` mientras no exista historia
 
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 
-La aplicación compatible con B.2a añade `/admin/accounts/[id]/identity`. Antes de aplicar 0008, el detalle B.1 omite la acción y el acceso directo muestra un estado controlado; nunca se expone el error crudo de PostgREST. Tras 0008, la Server Action reautoriza, reconsulta el contexto y llama exclusivamente a la RPC transaccional.
+La aplicación compatible con B.2a añade `/admin/accounts/[id]/identity`. Antes de aplicar 0008, el detalle B.1 omite la acción y el acceso directo muestra un estado controlado; nunca se expone el error crudo de PostgREST. Tras 0008, la Server Action autentica de forma independiente, verifica la autoridad B.1 exacta, reconsulta el contexto y llama exclusivamente a la RPC transaccional.
 
 ## Criterios de aceptación
 

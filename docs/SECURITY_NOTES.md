@@ -62,6 +62,8 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - La frontera se aplica en RLS restrictiva y dentro de las RPC operativas `SECURITY DEFINER`; ocultar botones no constituye autorización.
 - Se mantiene el acceso mínimo al perfil propio y a su historial de asignaciones para `/account-status`. La finalización Google pendiente continúa disponible bajo su contrato específico.
 - Sólo un administrador B.1 exacto, activo y vigente puede corregir la identidad de otra cuenta activa o inactiva. El objetivo se bloquea, las dependencias se revalidan y el cambio más su evento se confirman o revierten juntos.
+- La decisión de dependencias se serializa con locks `SHARE` en orden fijo: `role_assignments`, `activities`, `activity_participants`; después se bloquea el perfil y se relee el programa. Los escritores usan `ROW EXCLUSIVE`; `add_activity_participant` lo adelanta y relee el perfil con `FOR SHARE` para validar la identidad confirmada.
+- La normalización colapsa todo whitespace a un espacio, recorta extremos y convierte vacío en `NULL`. `person_type = NULL` institucional y nombres derivados menores de dos caracteres se rechazan con errores controlados antes de tocar el perfil.
 - El evento guarda actor, objetivo, acción, resultado, motivo normalizado y sólo los nombres de campos modificados; nunca almacena valores anteriores/nuevos, correo, identificadores, Auth, roles ni actividad.
 - No se añade `auth.admin`, clave `service_role` ni cliente privilegiado a la aplicación.
 

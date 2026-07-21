@@ -27,6 +27,17 @@ function fieldClass(error?: string) {
   return `sitaa-field mt-2 ${error ? "sitaa-field-invalid" : ""}`;
 }
 
+const fieldLabels: Record<IdentityCorrectionField, string> = {
+  first_names: "Nombre(s)",
+  paternal_surname: "Apellido paterno",
+  maternal_surname: "Apellido materno",
+  person_type: "Tipo de persona",
+  institutional_id_value: "Identificador institucional",
+  primary_program_id: "Programa académico principal",
+  correction_reason: "Motivo administrativo",
+  confirmation: "Confirmación de verificación",
+};
+
 function FieldError({
   id,
   message,
@@ -72,6 +83,9 @@ export function IdentityCorrectionForm({
   const firstError = Object.keys(state.fieldErrors)[0] as
     | IdentityCorrectionField
     | undefined;
+  const errorEntries = Object.entries(state.fieldErrors) as Array<
+    [IdentityCorrectionField, string]
+  >;
   const institutional = detail.accountKind === "institutional";
 
   useEffect(() => {
@@ -86,7 +100,18 @@ export function IdentityCorrectionForm({
 
       {state.message ? (
         <div role="alert" className="sitaa-alert sitaa-alert--error sm:col-span-2">
-          {state.message}
+          <p className="font-semibold">{state.message}</p>
+          {errorEntries.length ? (
+            <ul className="mt-3 list-disc space-y-1 pl-5">
+              {errorEntries.map(([field, message]) => (
+                <li key={field}>
+                  <a href={`#${field}`} className="underline underline-offset-2">
+                    {fieldLabels[field]}: {message}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
 

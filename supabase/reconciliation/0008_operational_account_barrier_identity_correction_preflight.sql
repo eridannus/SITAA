@@ -192,6 +192,34 @@ checks(category,classification,aggregate_count) as (
      +case when to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)') is not null then 1 else 0 end
      +(select count(*) from pg_policies where schemaname='public' and policyname in (
        'Active accounts may operate activities','Active accounts may operate activity participants')))
+  union all select 'required_rls_disabled','blocking',
+    (select count(*)
+     from (values
+       ('profiles'),('role_assignments'),('activities'),
+       ('activity_participants'),('admin_audit_events')
+     ) required(table_name)
+     left join pg_class c on c.oid=to_regclass('public.'||required.table_name)
+     where c.oid is null or not c.relrowsecurity)
+  union all select 'auth_profile_one_to_one_inconsistency','blocking',
+    ((select count(*) from public.profiles p left join auth.users u on u.id=p.id where u.id is null)
+     +(select count(*) from auth.users u left join public.profiles p on p.id=u.id where p.id is null))
+  union all select 'profile_auth_fk_drift','blocking',
+    case when exists(
+      select 1 from pg_constraint c
+      where c.conrelid='public.profiles'::regclass
+        and c.conname='profiles_id_fkey' and c.contype='f'
+        and pg_get_constraintdef(c.oid)='FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE'
+    ) then 0 else 1 end
+  union all select 'role_assignment_profile_fk_drift','blocking',
+    case when exists(
+      select 1 from pg_constraint c
+      where c.conrelid='public.role_assignments'::regclass
+        and c.conname='role_assignments_user_id_fkey' and c.contype='f'
+        and pg_get_constraintdef(c.oid)='FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'
+    ) then 0 else 1 end
+  union all select 'orphan_role_assignment_user_ids','blocking',
+    (select count(*) from public.role_assignments ra
+     left join public.profiles p on p.id=ra.user_id where p.id is null)
   union all select 'activity_policy_drift','blocking',
     case when (select count(*) from pg_policies where schemaname='public' and tablename='activities'
       and permissive='PERMISSIVE' and roles='{authenticated}')=4
@@ -222,11 +250,19 @@ checks(category,classification,aggregate_count) as (
         and qual='can_edit_activity(activity_id)' and with_check='can_edit_activity(activity_id)')
       then 0 else 1 end
   union all select 'own_profile_policy_drift','blocking',
-    case when exists(select 1 from pg_policies where schemaname='public' and tablename='profiles'
+    case when (select count(*) from pg_policies
+        where schemaname='public' and tablename='profiles')=2
+      and exists(select 1 from pg_policies where schemaname='public' and tablename='profiles'
       and policyname='Users can read own profile' and permissive='PERMISSIVE'
-      and roles='{authenticated}' and cmd='SELECT' and qual='(auth.uid() = id)') then 0 else 1 end
+      and roles='{authenticated}' and cmd='SELECT' and qual='(auth.uid() = id)')
+      and exists(select 1 from pg_policies where schemaname='public' and tablename='profiles'
+      and policyname='Users can update own basic profile' and permissive='PERMISSIVE'
+      and roles='{authenticated}' and cmd='UPDATE' and qual='(auth.uid() = id)'
+      and with_check='(auth.uid() = id)') then 0 else 1 end
   union all select 'own_assignment_policy_drift','blocking',
-    case when exists(select 1 from pg_policies where schemaname='public' and tablename='role_assignments'
+    case when (select count(*) from pg_policies
+        where schemaname='public' and tablename='role_assignments')=1
+      and exists(select 1 from pg_policies where schemaname='public' and tablename='role_assignments'
       and policyname='Users can read own role assignments' and permissive='PERMISSIVE'
       and roles='{authenticated}' and cmd='SELECT' and qual='(auth.uid() = user_id)') then 0 else 1 end
   union all select 'profile_lifecycle_inconsistency','blocking',
@@ -239,11 +275,21 @@ checks(category,classification,aggregate_count) as (
      left join public.academic_programs program on program.id=p.primary_program_id
      where p.account_kind='institutional' and p.account_status in ('active','inactive')
        and (p.first_names is null or p.paternal_surname is null
+         or p.full_name is null or char_length(p.full_name) not between 2 and 200
+         or p.full_name<>concat_ws(' ',p.first_names,p.paternal_surname,p.maternal_surname)
          or p.person_type not in ('student','professor')
          or p.institutional_id_value is null or p.institutional_id_value !~ '^[0-9]{1,50}$'
          or program.id is null or not program.is_active
          or (p.person_type='student' and p.institutional_id_type<>'student_account')
          or (p.person_type='professor' and p.institutional_id_type<>'worker_number')))
+  union all select 'technical_identity_inconsistency','blocking',
+    (select count(*) from public.profiles p
+     where p.account_kind='technical' and p.account_status in ('active','inactive')
+       and (p.first_names is null
+         or p.full_name is null or char_length(p.full_name) not between 2 and 200
+         or p.full_name<>concat_ws(' ',p.first_names,p.paternal_surname,p.maternal_surname)
+         or p.person_type is not null or p.primary_program_id is not null
+         or p.institutional_id_type is not null or p.institutional_id_value is not null))
   union all select 'profile_identity_constraint_drift','blocking',
     case when (select count(*) from pg_constraint
       where conrelid='public.profiles'::regclass and conname in (
@@ -277,6 +323,41 @@ checks(category,classification,aggregate_count) as (
       and not has_table_privilege('service_role','public.admin_audit_events','UPDATE')
       and not has_table_privilege('service_role','public.admin_audit_events','DELETE')
       then 0 else 1 end
+  union all select 'b1_audit_exact_acl_drift','blocking',
+    case when exists(
+      select 1 from pg_class c
+      where c.oid='public.admin_audit_events'::regclass and c.relrowsecurity
+        and (
+          select count(*) from aclexplode(c.relacl) acl
+          where acl.grantee=c.relowner
+            and upper(acl.privilege_type) in (
+              'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+            ) and not acl.is_grantable
+        )=8
+        and (
+          select count(*) from aclexplode(c.relacl) acl
+          where acl.grantee=(select oid from pg_roles where rolname='service_role')
+            and upper(acl.privilege_type) in ('SELECT','INSERT')
+            and not acl.is_grantable
+        )=2
+        and not exists(
+          select 1 from aclexplode(c.relacl) acl
+          where acl.grantee not in (
+            c.relowner,(select oid from pg_roles where rolname='service_role')
+          )
+             or acl.is_grantable
+             or (acl.grantee=c.relowner and upper(acl.privilege_type) not in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ))
+             or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+               and upper(acl.privilege_type) not in ('SELECT','INSERT'))
+        )
+        and not exists(
+          select 1 from pg_attribute a
+          where a.attrelid=c.oid and a.attnum>0 and not a.attisdropped
+            and a.attacl is not null and exists(select 1 from aclexplode(a.attacl))
+        )
+    ) then 0 else 1 end
   union all select 'b1_exact_object_drift','blocking',
     case when (select count(*) from pg_constraint
         where conrelid='public.admin_audit_events'::regclass)=8

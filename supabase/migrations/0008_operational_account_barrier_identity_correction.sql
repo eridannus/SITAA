@@ -211,6 +211,48 @@ begin
   end if;
 
   if exists (
+    select 1
+    from (values
+      ('profiles'),('role_assignments'),('activities'),
+      ('activity_participants'),('admin_audit_events')
+    ) required(table_name)
+    left join pg_class c on c.oid=to_regclass('public.'||required.table_name)
+    where c.oid is null or not c.relrowsecurity
+  ) then
+    raise exception '0008_preflight_required_rls_disabled';
+  end if;
+
+  if exists (
+       select 1 from public.profiles p left join auth.users u on u.id=p.id
+       where u.id is null
+     )
+     or exists (
+       select 1 from auth.users u left join public.profiles p on p.id=u.id
+       where p.id is null
+     ) then
+    raise exception '0008_preflight_auth_profile_one_to_one_inconsistent';
+  end if;
+
+  if not exists (
+       select 1 from pg_constraint c
+       where c.conrelid='public.profiles'::regclass
+         and c.conname='profiles_id_fkey' and c.contype='f'
+         and pg_get_constraintdef(c.oid)='FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE'
+     )
+     or not exists (
+       select 1 from pg_constraint c
+       where c.conrelid='public.role_assignments'::regclass
+         and c.conname='role_assignments_user_id_fkey' and c.contype='f'
+         and pg_get_constraintdef(c.oid)='FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'
+     )
+     or exists (
+       select 1 from public.role_assignments ra
+       left join public.profiles p on p.id=ra.user_id where p.id is null
+     ) then
+    raise exception '0008_preflight_profile_assignment_fk_drift';
+  end if;
+
+  if exists (
     select 1 from public.profiles p
     where (p.account_status='active' and (not p.is_active or p.activated_at is null or p.deactivated_at is not null))
        or (p.account_status='pending_registration' and (p.is_active or p.activated_at is not null or p.deactivated_at is not null))
@@ -226,6 +268,8 @@ begin
       and p.account_status in ('active','inactive')
       and (
         p.first_names is null or p.paternal_surname is null
+        or p.full_name is null or char_length(p.full_name) not between 2 and 200
+        or p.full_name<>concat_ws(' ',p.first_names,p.paternal_surname,p.maternal_surname)
         or p.person_type not in ('student','professor')
         or p.institutional_id_value is null
         or p.institutional_id_value !~ '^[0-9]{1,50}$'
@@ -235,6 +279,21 @@ begin
       )
   ) then
     raise exception '0008_preflight_institutional_identity_inconsistent';
+  end if;
+
+  if exists (
+    select 1 from public.profiles p
+    where p.account_kind='technical'
+      and p.account_status in ('active','inactive')
+      and (
+        p.first_names is null
+        or p.full_name is null or char_length(p.full_name) not between 2 and 200
+        or p.full_name<>concat_ws(' ',p.first_names,p.paternal_surname,p.maternal_surname)
+        or p.person_type is not null or p.primary_program_id is not null
+        or p.institutional_id_type is not null or p.institutional_id_value is not null
+      )
+  ) then
+    raise exception '0008_preflight_technical_identity_inconsistent';
   end if;
 
   if not has_table_privilege('authenticated','public.activities','SELECT,INSERT,UPDATE,DELETE')
@@ -255,11 +314,19 @@ begin
        and qual='(auth.uid() = id)'
      )
      or not exists (
+       select 1 from pg_policies where schemaname='public' and tablename='profiles'
+       and policyname='Users can update own basic profile' and cmd='UPDATE'
+       and permissive='PERMISSIVE' and roles='{authenticated}'
+       and qual='(auth.uid() = id)' and with_check='(auth.uid() = id)'
+     )
+     or not exists (
        select 1 from pg_policies where schemaname='public' and tablename='role_assignments'
        and policyname='Users can read own role assignments' and cmd='SELECT'
        and permissive='PERMISSIVE' and roles='{authenticated}'
        and qual='(auth.uid() = user_id)'
      )
+     or (select count(*) from pg_policies where schemaname='public' and tablename='profiles')<>2
+     or (select count(*) from pg_policies where schemaname='public' and tablename='role_assignments')<>1
      or (select count(*) from pg_policies where schemaname='public' and tablename='activities')<>4
      or (select count(*) from pg_policies where schemaname='public' and tablename='activity_participants')<>4 then
     raise exception '0008_preflight_policy_drift';
@@ -337,7 +404,41 @@ begin
      or not has_table_privilege('service_role','public.admin_audit_events','SELECT')
      or not has_table_privilege('service_role','public.admin_audit_events','INSERT')
      or has_table_privilege('service_role','public.admin_audit_events','UPDATE')
-     or has_table_privilege('service_role','public.admin_audit_events','DELETE') then
+     or has_table_privilege('service_role','public.admin_audit_events','DELETE')
+     or not exists (
+       select 1 from pg_class c
+       where c.oid='public.admin_audit_events'::regclass and c.relrowsecurity
+         and (
+           select count(*) from aclexplode(c.relacl) acl
+           where acl.grantee=c.relowner
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable
+         )=8
+         and (
+           select count(*) from aclexplode(c.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='service_role')
+             and upper(acl.privilege_type) in ('SELECT','INSERT')
+             and not acl.is_grantable
+         )=2
+         and not exists(
+           select 1 from aclexplode(c.relacl) acl
+           where acl.grantee not in (
+             c.relowner,(select oid from pg_roles where rolname='service_role')
+           )
+              or acl.is_grantable
+              or (acl.grantee=c.relowner and upper(acl.privilege_type) not in (
+                'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+              ))
+              or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+                and upper(acl.privilege_type) not in ('SELECT','INSERT'))
+         )
+         and not exists(
+           select 1 from pg_attribute a
+           where a.attrelid=c.oid and a.attnum>0 and not a.attisdropped
+             and a.attacl is not null and exists(select 1 from aclexplode(a.attacl))
+         )
+     ) then
     raise exception '0008_preflight_0007_audit_contract_drift';
   end if;
 
@@ -528,6 +629,10 @@ begin
     raise exception 'sitaa_operational_account_inactive' using errcode = '42501';
   end if;
 
+  -- El INSERT adquiere ROW EXCLUSIVE al inicio del protocolo para mantener el
+  -- mismo orden de bloqueo que la corrección administrativa de identidad.
+  lock table public.activity_participants in row exclusive mode;
+
   if not public.can_edit_activity(target_activity_id) then
     raise exception 'No tienes permiso para agregar participantes a esta actividad.' using errcode = '42501';
   end if;
@@ -536,7 +641,9 @@ begin
     raise exception 'La actividad no tiene programa académico asignado.' using errcode = 'P0001';
   end if;
   select p.primary_program_id, p.person_type into participant_program_id, participant_person_type
-  from public.profiles p where p.id = target_profile_id and p.is_active = true;
+  from public.profiles p
+  where p.id = target_profile_id and p.is_active = true
+  for share;
   if participant_program_id is null then
     raise exception 'El perfil seleccionado no existe, no está activo o no tiene programa asignado.' using errcode = 'P0001';
   end if;
@@ -2837,6 +2944,7 @@ declare
   normalized_first_names text;
   normalized_paternal_surname text;
   normalized_maternal_surname text;
+  normalized_full_name text;
   normalized_reason text;
   derived_identifier_type text;
   requested_division_id uuid;
@@ -2848,6 +2956,12 @@ begin
   if auth.uid() is null or not public.is_b1_account_admin() then
     raise exception 'sitaa_admin_access_denied' using errcode='42501';
   end if;
+
+  -- Protocolo fijo y corto: las escrituras normales toman ROW EXCLUSIVE y no
+  -- pueden cruzar la decisión de dependencias protegida por estos SHARE locks.
+  lock table public.role_assignments in share mode;
+  lock table public.activities in share mode;
+  lock table public.activity_participants in share mode;
 
   if requested_profile_id=auth.uid() then
     raise exception 'sitaa_identity_self_correction_forbidden' using errcode='42501';
@@ -2870,7 +2984,7 @@ begin
   end if;
 
   normalized_reason:=nullif(
-    regexp_replace(btrim(coalesce(correction_reason,'')),'\s+',' ','g'),
+    btrim(regexp_replace(coalesce(correction_reason,''),'\s+',' ','g')),
     ''
   );
   if normalized_reason is null
@@ -2880,15 +2994,19 @@ begin
   end if;
 
   normalized_first_names:=nullif(
-    regexp_replace(btrim(coalesce(requested_first_names,'')),'\s+',' ','g'),
+    btrim(regexp_replace(coalesce(requested_first_names,''),'\s+',' ','g')),
     ''
   );
   normalized_paternal_surname:=nullif(
-    regexp_replace(btrim(coalesce(requested_paternal_surname,'')),'\s+',' ','g'),
+    btrim(regexp_replace(coalesce(requested_paternal_surname,''),'\s+',' ','g')),
     ''
   );
   normalized_maternal_surname:=nullif(
-    regexp_replace(btrim(coalesce(requested_maternal_surname,'')),'\s+',' ','g'),
+    btrim(regexp_replace(coalesce(requested_maternal_surname,''),'\s+',' ','g')),
+    ''
+  );
+  normalized_full_name:=nullif(
+    concat_ws(' ',normalized_first_names,normalized_paternal_surname,normalized_maternal_surname),
     ''
   );
 
@@ -2896,7 +3014,7 @@ begin
      or char_length(normalized_first_names)>150
      or char_length(normalized_paternal_surname)>150
      or char_length(normalized_maternal_surname)>150
-     or char_length(concat_ws(' ',normalized_first_names,normalized_paternal_surname,normalized_maternal_surname))>200 then
+     or char_length(normalized_full_name) not between 2 and 200 then
     raise exception 'sitaa_identity_invalid_name' using errcode='22023';
   end if;
 
@@ -2910,7 +3028,8 @@ begin
     if normalized_paternal_surname is null then
       raise exception 'sitaa_identity_invalid_name' using errcode='22023';
     end if;
-    if requested_person_type not in ('student','professor') then
+    if requested_person_type is null
+       or requested_person_type not in ('student','professor') then
       raise exception 'sitaa_identity_invalid_person_type' using errcode='22023';
     end if;
     if requested_institutional_id_value is null
@@ -3181,31 +3300,88 @@ begin
        where n.nspname='public' and p.proname='is_sitaa_operational_account_active'
          and p.pronargs=0 and p.prosecdef and p.provolatile='s'
          and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.prorettype='boolean'::regtype
+         and coalesce(cardinality(p.proargnames),0)=0
+         and p.proallargtypes is null
+         and pg_get_function_identity_arguments(p.oid)=''
      )
      or not exists (
        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
        where n.nspname='public' and p.proname='get_admin_identity_correction_context_b2a'
          and p.pronargs=1 and p.prosecdef and p.provolatile='s'
          and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.prorettype='record'::regtype
+         and p.proargnames=array[
+           'requested_profile_id','target_profile_id','can_correct','denial_code',
+           'account_kind','account_status','is_self',
+           'current_or_future_assignment_count','open_responsibility_count',
+           'open_participation_count'
+         ]::text[]
+         and p.proargmodes=array['i','t','t','t','t','t','t','t','t','t']::"char"[]
+         and p.proallargtypes=array[
+           'uuid'::regtype::oid,'uuid'::regtype::oid,'boolean'::regtype::oid,
+           'text'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'boolean'::regtype::oid,'bigint'::regtype::oid,'bigint'::regtype::oid,
+           'bigint'::regtype::oid
+         ]::oid[]
+         and regexp_replace(lower(pg_get_function_identity_arguments(p.oid)),'\s+','','g')
+           ='requested_profile_iduuid'
      )
      or not exists (
        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
        where n.nspname='public' and p.proname='correct_admin_account_identity_b2a'
          and p.pronargs=8 and p.prosecdef and p.provolatile='v'
          and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.prorettype='record'::regtype
+         and p.proargnames=array[
+           'requested_profile_id','requested_first_names','requested_paternal_surname',
+           'requested_maternal_surname','requested_person_type',
+           'requested_institutional_id_value','requested_primary_program_id',
+           'correction_reason','target_profile_id','audit_event_id',
+           'changed_fields','updated_at'
+         ]::text[]
+         and p.proargmodes=array[
+           'i','i','i','i','i','i','i','i','t','t','t','t'
+         ]::"char"[]
+         and p.proallargtypes=array[
+           'uuid'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'text'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'uuid'::regtype::oid,'text'::regtype::oid,'uuid'::regtype::oid,
+           'uuid'::regtype::oid,'text[]'::regtype::oid,'timestamptz'::regtype::oid
+         ]::oid[]
+         and regexp_replace(lower(pg_get_function_identity_arguments(p.oid)),'\s+','','g')
+           ='requested_profile_iduuid,requested_first_namestext,requested_paternal_surnametext,requested_maternal_surnametext,requested_person_typetext,requested_institutional_id_valuetext,requested_primary_program_iduuid,correction_reasontext'
      ) then
     raise exception '0008_post_ddl_new_function_properties_mismatch';
   end if;
 
-  if not has_function_privilege('authenticated','public.is_sitaa_operational_account_active()','EXECUTE')
-     or not has_function_privilege('authenticated','public.get_admin_identity_correction_context_b2a(uuid)','EXECUTE')
-     or not has_function_privilege('authenticated','public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)','EXECUTE')
-     or has_function_privilege('anon','public.is_sitaa_operational_account_active()','EXECUTE')
-     or has_function_privilege('service_role','public.is_sitaa_operational_account_active()','EXECUTE')
-     or has_function_privilege('anon','public.get_admin_identity_correction_context_b2a(uuid)','EXECUTE')
-     or has_function_privilege('service_role','public.get_admin_identity_correction_context_b2a(uuid)','EXECUTE')
-     or has_function_privilege('anon','public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)','EXECUTE')
-     or has_function_privilege('service_role','public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)','EXECUTE') then
+  select count(*) into mismatch_count
+  from (values
+    (to_regprocedure('public.is_sitaa_operational_account_active()')),
+    (to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)')),
+    (to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)'))
+  ) expected(function_oid)
+  join pg_proc p on p.oid=expected.function_oid
+  where (
+    select count(*)
+    from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+    left join pg_roles grantee on grantee.oid=acl.grantee
+    where acl.privilege_type='EXECUTE'
+      and (acl.grantee=p.proowner or grantee.rolname='authenticated')
+      and not acl.is_grantable
+  )<>2
+  or not has_function_privilege('authenticated',p.oid,'EXECUTE')
+  or has_function_privilege('anon',p.oid,'EXECUTE')
+  or has_function_privilege('service_role',p.oid,'EXECUTE')
+  or exists (
+    select 1
+    from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+    left join pg_roles grantee on grantee.oid=acl.grantee
+    where acl.privilege_type<>'EXECUTE'
+       or (acl.grantee<>p.proowner and coalesce(grantee.rolname,'PUBLIC')<>'authenticated')
+       or acl.is_grantable
+  );
+  if mismatch_count<>0 then
     raise exception '0008_post_ddl_new_function_acl_mismatch';
   end if;
 

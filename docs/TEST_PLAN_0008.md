@@ -76,12 +76,17 @@ El preflight:
 - bloquea por deriva de inventario, firmas, definiciones, ACL, políticas, grants directos, identidad/lifecycle, programas, catálogos, auditoría B.1 o conflictos 0008;
 - informa sólo conteos agregados de dependencias potenciales;
 - no expone nombres, correos, identificadores, UUID ni filas operativas.
+- exige RLS activa en `profiles`, `role_assignments`, `activities`, `activity_participants` y `admin_audit_events`;
+- bloquea huérfanos Auth/profile, deriva de las FK exactas y asignaciones con usuario huérfano;
+- verifica por separado identidad institucional/técnica activa o inactiva, ciclo de vida, políticas propias y el RLS/ACL exacto de la auditoría.
 
 Todos los bloqueos se repiten dentro de la migración antes del DDL.
 
 ## Verificador transaccional
 
 El verificador usa UUID aleatorios, correos `.invalid`, tablas/funciones `pg_temp`, grants temporales mínimos y termina con `ROLLBACK`. Los cambios de rol a `authenticated` conservan la evaluación real de RLS y RPC. No usa PII operativa.
+
+La actividad programada ya no depende de `hoy + 1`: cada ejecución crea un semestre sintético único, activo y futuro, cuyo inicio queda después del mayor `ends_on` conocido más un margen seguro. La fecha fixture pertenece a ese rango y se resuelve por ID contra `get_academic_period_for_date`. Esto hace al arnés independiente de que la fecha real caiga dentro de un semestre o en un intersemestre; todo desaparece con el `ROLLBACK`.
 
 Cobertura mínima numerada:
 
@@ -175,8 +180,39 @@ Cobertura mínima numerada:
 88. No aparece campo/código de Fase C.
 89. No aparece auth.admin ni cliente service-role en aplicación.
 90. El ROLLBACK elimina fixtures y grants temporales.
+91. `requested_person_type = NULL` en una cuenta institucional produce `sitaa_identity_invalid_person_type` sin cambios ni auditoría.
+92. Un nombre técnico derivado de un solo carácter produce `sitaa_identity_invalid_name` antes del `UPDATE`.
+93. Nombres y razón colapsan tabs, saltos de línea y espacios repetidos antes de recortar extremos y convertir vacío en `NULL`.
+94. Un cambio aparente que sólo agrega whitespace exterior es `sitaa_identity_no_changes`.
+95. Ningún rechazo de validación filtra nombres de restricciones `CHECK` ni crea auditoría.
+96. El semestre sintético se resuelve por su ID y la actividad programada conserva ese mismo ID y fecha.
+97. RLS está activa en las cinco tablas requeridas.
+98. Las tres funciones nuevas conservan nombres, tipos y orden exactos de entradas y salidas para PostgREST.
+99. Cada función nueva tiene exactamente dos entradas `EXECUTE` no delegables: owner y `authenticated`.
+100. La mutación contiene, en orden, locks `SHARE` sobre `role_assignments`, `activities` y `activity_participants`, antes del perfil objetivo.
+101. `add_activity_participant` toma primero `ROW EXCLUSIVE` sobre su tabla y después relee el perfil con `FOR SHARE`.
+102. La razón normalizada se persiste sin whitespace exterior.
+103. La corrección normalizada exitosa registra únicamente los nombres esperados en `changed_fields`.
+104. El ACL y RLS exactos de `admin_audit_events` permanecen inalterados.
+105. El dominio de hash del rollback usa `md5(btrim(regexp_replace(lower(p.prosrc), '\s+', ' ', 'g')))` para las 29 restauraciones.
 
 El verificador también compara hashes normalizados de `prosrc` para las 29 rutinas reemplazadas, el ACL exacto de esas rutinas, las propiedades/ACL de las tres nuevas funciones, las dos políticas restrictivas y el inventario estructural sin delta no autorizado.
+
+## Protocolo de locks y prueba manual en dos sesiones
+
+La mutación autoriza primero y adquiere siempre `SHARE` en este orden: `role_assignments`, `activities`, `activity_participants`; después bloquea el perfil, relee el programa, evalúa dependencias, actualiza e inserta auditoría. Las escrituras normales toman `ROW EXCLUSIVE`, incompatible con `SHARE`, por lo que no atraviesan la decisión. `add_activity_participant` adelanta explícitamente su `ROW EXCLUSIVE` y relee el perfil con `FOR SHARE` antes de validar e insertar.
+
+Prueba manual futura, no ejecutada en esta preparación:
+
+| Caso | Sesión A | Sesión B | Resultado esperado |
+|---|---|---|---|
+| 1 | Corrección de tipo/programa | `INSERT` de asignación | Se serializa; o se observa y rechaza la dependencia, o el escritor espera y revalida. |
+| 2 | Corrección de tipo/programa | `INSERT`/`UPDATE` de actividad | Mismo resultado serializado. |
+| 3 | Corrección de tipo/programa | `add_activity_participant` | Mismo resultado; el writer relee el perfil tras esperar. |
+| 4 | Escritura de dependencia inicia primero | Corrección | La corrección espera, observa la fila confirmada y rechaza si es incompatible. |
+| 5 | Corrección inicia primero | Escritura de dependencia | El writer espera y valida contra la identidad ya corregida. |
+
+No se afirmará verificación concurrente en PostgreSQL hasta ejecutar esta matriz coordinada.
 
 ## Pruebas de aplicación compatibles antes de aplicar 0008
 
@@ -202,6 +238,7 @@ El rollback:
 - no reconstruye valores de identidad anteriores;
 - conserva correcciones válidas y sus eventos append-only;
 - finaliza con `COMMIT` sólo tras verificar el estado exacto post-0007.
+- verifica los 29 cuerpos restaurados en el mismo dominio de hash normalizado de `prosrc` usado por el preflight post-0007, con una regresión explícita sobre `activity_attendance_deadline(uuid)`.
 
 ## Secuencia futura coordinada
 

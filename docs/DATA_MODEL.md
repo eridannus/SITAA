@@ -191,3 +191,5 @@ La Fase A de identidad Google y los nombres estructurados de 0006 están aplicad
 0008 no crea tablas, columnas, índices, restricciones, triggers ni semillas. Añade una frontera de autorización y dos RPC administrativas sobre el modelo post-0007.
 
 Una corrección exitosa conserva UUID de perfil, email, vínculo Auth, clase/estado de cuenta, ciclo de vida, asignaciones y toda la historia operativa. Inserta exactamente un evento append-only en `admin_audit_events` con `action_code = account_identity_corrected`, `outcome = success`, razón normalizada y metadata que contiene sólo el arreglo ordenado `changed_fields`.
+
+La normalización administrativa colapsa whitespace antes de recortar; el nombre derivado mide 2–200 caracteres en ambos tipos de cuenta y `person_type` institucional nunca puede ser nulo. Las decisiones sobre cambios de tipo/programa se serializan contra asignaciones, actividades y participantes mediante locks de tabla en orden documentado.

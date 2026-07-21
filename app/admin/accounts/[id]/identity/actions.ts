@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { canAccessAccountAdministration } from "@/lib/admin/authorization";
 import {
   AdminIdentityCorrectionDataError,
   correctAdminAccountIdentity,
   getAdminIdentityCorrectionContext,
 } from "@/lib/admin/identity-correction";
+import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
 import type { AccountKind, PersonType } from "@/types/sitaa";
 
 export type IdentityCorrectionField =
@@ -44,7 +46,7 @@ function textValue(formData: FormData, field: string) {
 }
 
 function normalizedText(value: string) {
-  return value.trim().replace(/\s+/g, " ");
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function valuesFrom(formData: FormData): IdentityCorrectionValues {
@@ -72,6 +74,9 @@ function validateNames(
   const firstNames = normalizedText(values.first_names);
   const paternalSurname = normalizedText(values.paternal_surname);
   const maternalSurname = normalizedText(values.maternal_surname);
+  const fullName = [firstNames, paternalSurname, maternalSurname]
+    .filter(Boolean)
+    .join(" ");
 
   if (!firstNames || firstNames.length > 150) {
     errors.first_names = "Indica nombre(s) de hasta 150 caracteres.";
@@ -88,12 +93,9 @@ function validateNames(
     errors.maternal_surname =
       "El apellido materno admite hasta 150 caracteres.";
   }
-  if (
-    [firstNames, paternalSurname, maternalSurname]
-      .filter(Boolean)
-      .join(" ").length > 200
-  ) {
-    errors.first_names = "El nombre completo no puede exceder 200 caracteres.";
+  if (fullName.length < 2 || fullName.length > 200) {
+    errors.first_names =
+      "El nombre completo debe contener entre 2 y 200 caracteres.";
   }
 }
 
@@ -172,6 +174,20 @@ export async function submitIdentityCorrection(
   formData: FormData,
 ): Promise<IdentityCorrectionState> {
   const values = valuesFrom(formData);
+
+  let actorContext;
+  try {
+    actorContext = await getAuthenticatedUserContext();
+  } catch {
+    return errorState(values, "No fue posible validar tu sesión administrativa.");
+  }
+  if (!actorContext || !canAccessAccountAdministration(actorContext)) {
+    return mappedActionError(
+      new AdminIdentityCorrectionDataError("forbidden"),
+      values,
+    );
+  }
+
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(values.target_profile_id)) {
     return errorState(values, "La cuenta solicitada no está disponible.");
   }
