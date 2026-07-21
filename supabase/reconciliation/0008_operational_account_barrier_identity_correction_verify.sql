@@ -383,32 +383,62 @@ begin
          and attribute_definition.attnum>0 and not attribute_definition.attisdropped
      )
      or exists (
-       select 1 from information_schema.column_privileges
-       where table_schema='public' and table_name='activity_participants'
-         and grantee<>(
-           select rolname from pg_roles
-           where oid=(select relowner from pg_class
-             where oid='public.activity_participants'::regclass)
-         )
+       with table_derived as (
+         select coalesce(grantee_role.rolname,'PUBLIC')::text grantee,
+           attribute_definition.attname::text column_name,
+           upper(table_acl.privilege_type)::text privilege_type,
+           case when pg_has_role(
+             table_acl.grantee,table_definition.relowner,'USAGE'
+           ) or table_acl.is_grantable then 'YES' else 'NO' end is_grantable
+         from pg_class table_definition
+         join pg_attribute attribute_definition
+           on attribute_definition.attrelid=table_definition.oid
+          and attribute_definition.attnum>0
+          and not attribute_definition.attisdropped
+         cross join lateral aclexplode(coalesce(
+           table_definition.relacl,
+           acldefault('r',table_definition.relowner)
+         )) table_acl
+         left join pg_roles grantee_role on grantee_role.oid=table_acl.grantee
+         where table_definition.oid='public.activity_participants'::regclass
+           and upper(table_acl.privilege_type) in ('SELECT','INSERT','UPDATE','REFERENCES')
+       ), observed as (
+         select grantee::text,column_name::text,
+           upper(privilege_type::text) privilege_type,is_grantable::text
+         from information_schema.column_privileges
+         where table_schema='public' and table_name='activity_participants'
+       )
+       select 1 from (
+         (select * from table_derived except select * from observed)
+         union all
+         (select * from observed except select * from table_derived)
+       ) projection_difference
      )
      or exists (
        select 1
        from pg_attribute attribute_definition
-       cross join (values
-         ((select oid from pg_roles where rolname='authenticated'),'authenticated'),
-         ((select oid from pg_roles where rolname='anon'),'anon'),
-         (0::oid,'PUBLIC')
-       ) actor(role_oid,role_name)
+       cross join (
+         select role_definition.oid role_oid from pg_roles role_definition
+         union all select 0::oid
+       ) actor
        cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) permission(privilege_type)
        where attribute_definition.attrelid='public.activity_participants'::regclass
          and attribute_definition.attnum>0 and not attribute_definition.attisdropped
-         and coalesce(has_column_privilege(
-           actor.role_oid,attribute_definition.attrelid,
-           attribute_definition.attnum,permission.privilege_type
-         ),false)
          and (
-           actor.role_name<>'authenticated'
-           or permission.privilege_type in ('INSERT','UPDATE','REFERENCES')
+           coalesce(has_column_privilege(
+             actor.role_oid,attribute_definition.attrelid,
+             attribute_definition.attnum,permission.privilege_type
+           ),false) is distinct from coalesce(has_table_privilege(
+             actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+           ),false)
+           or (
+             actor.role_oid in (
+               0::oid,(select oid from pg_roles where rolname='anon')
+             )
+             and coalesce(has_table_privilege(
+               actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+             ),false)
+           )
          )
      ) then
     raise exception '0008_verify_participant_acl_mismatch';
@@ -707,9 +737,10 @@ begin
 end;
 $static_contract$;
 
--- Regresión controlada: una concesión por columna debe activar las tres señales
--- usadas por el contrato estático. Se retira de inmediato y el ROLLBACK final
--- conserva una segunda barrera de seguridad.
+-- Regresión controlada: el contrato estático anterior establece la proyección
+-- legítima post-0008. Una concesión explícita por columna debe aparecer en
+-- attacl, quedar sin explicación en la ACL de tabla y ampliar el acceso efectivo.
+-- Se retira de inmediato y el ROLLBACK final conserva una segunda barrera.
 grant update(attendance_notes) on table public.activity_participants
   to authenticated;
 
@@ -735,6 +766,9 @@ begin
      )
      or not has_column_privilege(
        'authenticated','public.activity_participants','attendance_notes','UPDATE'
+     )
+     or has_table_privilege(
+       'authenticated','public.activity_participants','UPDATE'
      ) then
     raise exception '0008_verify_column_acl_detection_regression_failed';
   end if;
@@ -754,17 +788,42 @@ begin
          and attribute_definition.attnum>0 and not attribute_definition.attisdropped
      )
      or exists (
-       select 1 from information_schema.column_privileges
-       where table_schema='public' and table_name='activity_participants'
-         and grantee<>(
-           select owner_role.rolname
-           from pg_class table_definition
-           join pg_roles owner_role on owner_role.oid=table_definition.relowner
-           where table_definition.oid='public.activity_participants'::regclass
-         )
+       with table_derived as (
+         select coalesce(grantee_role.rolname,'PUBLIC')::text grantee,
+           attribute_definition.attname::text column_name,
+           upper(table_acl.privilege_type)::text privilege_type,
+           case when pg_has_role(
+             table_acl.grantee,table_definition.relowner,'USAGE'
+           ) or table_acl.is_grantable then 'YES' else 'NO' end is_grantable
+         from pg_class table_definition
+         join pg_attribute attribute_definition
+           on attribute_definition.attrelid=table_definition.oid
+          and attribute_definition.attnum>0
+          and not attribute_definition.attisdropped
+         cross join lateral aclexplode(coalesce(
+           table_definition.relacl,
+           acldefault('r',table_definition.relowner)
+         )) table_acl
+         left join pg_roles grantee_role on grantee_role.oid=table_acl.grantee
+         where table_definition.oid='public.activity_participants'::regclass
+           and upper(table_acl.privilege_type) in ('SELECT','INSERT','UPDATE','REFERENCES')
+       ), observed as (
+         select grantee::text,column_name::text,
+           upper(privilege_type::text) privilege_type,is_grantable::text
+         from information_schema.column_privileges
+         where table_schema='public' and table_name='activity_participants'
+       )
+       select 1 from (
+         (select * from table_derived except select * from observed)
+         union all
+         (select * from observed except select * from table_derived)
+       ) projection_difference
      )
      or has_column_privilege(
        'authenticated','public.activity_participants','attendance_notes','UPDATE'
+     )
+     or has_table_privilege(
+       'authenticated','public.activity_participants','UPDATE'
      ) then
     raise exception '0008_verify_column_acl_cleanup_failed';
   end if;

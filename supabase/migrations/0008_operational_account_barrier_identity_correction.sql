@@ -340,9 +340,50 @@ begin
     raise exception '0008_preflight_client_grant_drift';
   end if;
 
-  -- El estado post-0007 no contiene grants de columna. Las escrituras efectivas
-  -- de authenticated proceden exclusivamente de su ACL de tabla y, por tanto,
-  -- deben coincidir exactamente con ella antes del REVOKE de 0008.
+  if not exists (
+       select 1
+       from pg_class table_definition
+       where table_definition.oid='public.activity_participants'::regclass
+         and (select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=table_definition.relowner
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable)=8
+         and (select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='service_role')
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable)=8
+         and (select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='authenticated')
+             and upper(acl.privilege_type) in ('SELECT','INSERT','UPDATE','DELETE')
+             and not acl.is_grantable)=4
+         and not exists (
+           select 1 from aclexplode(table_definition.relacl) acl
+           where acl.is_grantable
+              or acl.grantee not in (
+                table_definition.relowner,
+                (select oid from pg_roles where rolname='service_role'),
+                (select oid from pg_roles where rolname='authenticated')
+              )
+              or (acl.grantee=table_definition.relowner and upper(acl.privilege_type) not in (
+                'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+              ))
+              or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+                and upper(acl.privilege_type) not in (
+                  'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+                ))
+              or (acl.grantee=(select oid from pg_roles where rolname='authenticated')
+                and upper(acl.privilege_type) not in ('SELECT','INSERT','UPDATE','DELETE'))
+         )
+     ) then
+    raise exception '0008_preflight_participant_table_acl_drift';
+  end if;
+
+  -- El estado post-0007 no contiene ACL explícita de columna. La vista
+  -- column_privileges sí proyecta por columna los grants directos de tabla;
+  -- cada fila debe estar explicada por esa ACL y el acceso efectivo debe
+  -- coincidir con el privilegio de tabla correspondiente.
   if exists (
        select 1
        from pg_attribute attribute_definition
@@ -352,44 +393,62 @@ begin
          and not attribute_definition.attisdropped
      )
      or exists (
-       select 1
-       from information_schema.column_privileges
-       where table_schema='public' and table_name='activity_participants'
-         and grantee<>(
-           select owner_role.rolname
-           from pg_class table_definition
-           join pg_roles owner_role on owner_role.oid=table_definition.relowner
-           where table_definition.oid='public.activity_participants'::regclass
-         )
+       with table_derived as (
+         select coalesce(grantee_role.rolname,'PUBLIC')::text grantee,
+           attribute_definition.attname::text column_name,
+           upper(table_acl.privilege_type)::text privilege_type,
+           case when pg_has_role(
+             table_acl.grantee,table_definition.relowner,'USAGE'
+           ) or table_acl.is_grantable then 'YES' else 'NO' end is_grantable
+         from pg_class table_definition
+         join pg_attribute attribute_definition
+           on attribute_definition.attrelid=table_definition.oid
+          and attribute_definition.attnum>0
+          and not attribute_definition.attisdropped
+         cross join lateral aclexplode(coalesce(
+           table_definition.relacl,
+           acldefault('r',table_definition.relowner)
+         )) table_acl
+         left join pg_roles grantee_role on grantee_role.oid=table_acl.grantee
+         where table_definition.oid='public.activity_participants'::regclass
+           and upper(table_acl.privilege_type) in ('SELECT','INSERT','UPDATE','REFERENCES')
+       ), observed as (
+         select grantee::text,column_name::text,
+           upper(privilege_type::text) privilege_type,is_grantable::text
+         from information_schema.column_privileges
+         where table_schema='public' and table_name='activity_participants'
+       )
+       select 1 from (
+         select * from observed
+         except
+         select * from table_derived
+       ) unexplained
      )
      or exists (
        select 1
        from pg_attribute attribute_definition
-       cross join (values
-         (0::oid,'PUBLIC'),
-         ((select oid from pg_roles where rolname='anon'),'anon'),
-         ((select oid from pg_roles where rolname='authenticated'),'authenticated')
-       ) actor(role_oid,role_name)
+       cross join (
+         select role_definition.oid role_oid from pg_roles role_definition
+         union all select 0::oid
+       ) actor
        cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) permission(privilege_type)
        where attribute_definition.attrelid='public.activity_participants'::regclass
          and attribute_definition.attnum>0
          and not attribute_definition.attisdropped
          and (
-           (actor.role_name in ('PUBLIC','anon') and coalesce(
-             has_column_privilege(
-               actor.role_oid,attribute_definition.attrelid,
-               attribute_definition.attnum,permission.privilege_type
-             ),false
-           ))
+           coalesce(has_column_privilege(
+             actor.role_oid,attribute_definition.attrelid,
+             attribute_definition.attnum,permission.privilege_type
+           ),false) is distinct from coalesce(has_table_privilege(
+             actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+           ),false)
            or (
-             actor.role_name='authenticated'
-             and permission.privilege_type in ('INSERT','UPDATE','REFERENCES')
-             and has_column_privilege(
-               actor.role_oid,attribute_definition.attrelid,
-               attribute_definition.attnum,permission.privilege_type
-             ) is distinct from has_table_privilege(
-               actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+             actor.role_oid in (
+               0::oid,(select oid from pg_roles where rolname='anon')
              )
+             and coalesce(has_table_privilege(
+               actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+             ),false)
            )
          )
      ) then
@@ -3896,35 +3955,63 @@ begin
          and not attribute_definition.attisdropped
      )
      or exists (
-       select 1
-       from information_schema.column_privileges
-       where table_schema='public' and table_name='activity_participants'
-         and grantee<>(
-           select owner_role.rolname
-           from pg_class table_definition
-           join pg_roles owner_role on owner_role.oid=table_definition.relowner
-           where table_definition.oid='public.activity_participants'::regclass
-         )
+       with table_derived as (
+         select coalesce(grantee_role.rolname,'PUBLIC')::text grantee,
+           attribute_definition.attname::text column_name,
+           upper(table_acl.privilege_type)::text privilege_type,
+           case when pg_has_role(
+             table_acl.grantee,table_definition.relowner,'USAGE'
+           ) or table_acl.is_grantable then 'YES' else 'NO' end is_grantable
+         from pg_class table_definition
+         join pg_attribute attribute_definition
+           on attribute_definition.attrelid=table_definition.oid
+          and attribute_definition.attnum>0
+          and not attribute_definition.attisdropped
+         cross join lateral aclexplode(coalesce(
+           table_definition.relacl,
+           acldefault('r',table_definition.relowner)
+         )) table_acl
+         left join pg_roles grantee_role on grantee_role.oid=table_acl.grantee
+         where table_definition.oid='public.activity_participants'::regclass
+           and upper(table_acl.privilege_type) in ('SELECT','INSERT','UPDATE','REFERENCES')
+       ), observed as (
+         select grantee::text,column_name::text,
+           upper(privilege_type::text) privilege_type,is_grantable::text
+         from information_schema.column_privileges
+         where table_schema='public' and table_name='activity_participants'
+       )
+       select 1 from (
+         (select * from table_derived except select * from observed)
+         union all
+         (select * from observed except select * from table_derived)
+       ) projection_difference
      )
      or exists (
        select 1
        from pg_attribute attribute_definition
-       cross join (values
-         ((select oid from pg_roles where rolname='authenticated'),'authenticated'),
-         ((select oid from pg_roles where rolname='anon'),'anon'),
-         (0::oid,'PUBLIC')
-       ) actor(role_oid,role_name)
+       cross join (
+         select role_definition.oid role_oid from pg_roles role_definition
+         union all select 0::oid
+       ) actor
        cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) permission(privilege_type)
        where attribute_definition.attrelid='public.activity_participants'::regclass
          and attribute_definition.attnum>0
          and not attribute_definition.attisdropped
-         and coalesce(has_column_privilege(
-           actor.role_oid,attribute_definition.attrelid,
-           attribute_definition.attnum,permission.privilege_type
-         ),false)
          and (
-           actor.role_name<>'authenticated'
-           or permission.privilege_type in ('INSERT','UPDATE','REFERENCES')
+           coalesce(has_column_privilege(
+             actor.role_oid,attribute_definition.attrelid,
+             attribute_definition.attnum,permission.privilege_type
+           ),false) is distinct from coalesce(has_table_privilege(
+             actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+           ),false)
+           or (
+             actor.role_oid in (
+               0::oid,(select oid from pg_roles where rolname='anon')
+             )
+             and coalesce(has_table_privilege(
+               actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+             ),false)
+           )
          )
      ) then
     raise exception '0008_post_ddl_participant_column_acl_mismatch';
