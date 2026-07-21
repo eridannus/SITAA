@@ -85,6 +85,15 @@ activity_types	4	sort_order	integer	int4	NO	0		32	0
 activity_types	5	is_active	boolean	bool	NO	true				
 activity_types	6	created_at	timestamp with time zone	timestamptz	NO	now()				6
 activity_types	7	updated_at	timestamp with time zone	timestamptz	NO	now()				6
+admin_audit_events	1	id	uuid	uuid	NO	gen_random_uuid()				
+admin_audit_events	2	actor_profile_id	uuid	uuid	NO					
+admin_audit_events	3	target_profile_id	uuid	uuid	NO					
+admin_audit_events	4	action_code	text	text	NO					
+admin_audit_events	5	outcome	text	text	NO					
+admin_audit_events	6	reason	text	text	YES					
+admin_audit_events	7	role_assignment_id	uuid	uuid	YES					
+admin_audit_events	8	metadata	jsonb	jsonb	NO	'{}'::jsonb				
+admin_audit_events	9	occurred_at	timestamp with time zone	timestamptz	NO	now()				6
 attention_categories	1	code	text	text	NO					
 attention_categories	2	label	text	text	NO					
 attention_categories	3	description	text	text	YES					

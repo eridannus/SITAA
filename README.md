@@ -41,7 +41,7 @@ npm run start  # Inicia la compilación de producción
 - `/profile`: edición protegida de nombre(s) y apellidos estructurados.
 - `/activities`: listado protegido de actividades visibles.
 - `/activities/new`: alta protegida de una actividad básica.
-- `/admin/accounts`: directorio administrativo protegido y de sólo lectura, preparado para B.1.
+- `/admin/accounts`: directorio administrativo operativo y de sólo lectura para administradores con autoridad B.1 exacta.
 - `/admin/accounts/[id]`: detalle administrativo de cuenta, asignaciones V1 e historial sanitizado.
 
 ## Configuración de Supabase
@@ -63,7 +63,7 @@ El registro autentica primero con Google y sólo después solicita identidad ins
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 
-La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-18T04:05:40Z` quedó reconciliado contra 0001–0006 sin deriva inexplicada. 0006 está aplicada y verificada: los nombres personales estructurados son autoritativos y `full_name` se conserva como compatibilidad derivada. La migración 0007 del directorio B.1 está aplicada y la aplicación compatible está publicada. Su primera verificación se detuvo antes de crear fixtures por un defecto del arnés ya corregido localmente; la reejecución, los smoke tests y la reconciliación post-0007 permanecen pendientes.
+La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-21T00:16:03Z` quedó reconciliado contra 0001–0007 sin deriva inexplicada. 0006 mantiene los nombres personales estructurados como autoridad y `full_name` como compatibilidad derivada. Fase B.1 está cerrada y operativa mediante 0007: el directorio y el historial sanitizado son de sólo lectura, con autoridad exacta y sin controles de mutación.
 
 La navegación autenticada usa avatar Google validado o iniciales, menú de cuenta accesible y estados seleccionados de alto contraste. El acceso público emplea una tarjeta única que cabe en el viewport; el fondo canvas es decorativo, pausa en pestañas ocultas y respeta movimiento reducido.
 
@@ -71,4 +71,4 @@ El sistema visual canónico está en `docs/DESIGN_SYSTEM.md`. Toda interfaz usa 
 
 ## Alcance actual
 
-Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes y asistencia manual o por QR/enlace/código. El dashboard aún no aplica paneles especializados por rol y los formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.
+Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes, asistencia manual o por QR/enlace/código y el directorio administrativo B.1 de sólo lectura. B.2/B.3 para ciclo de cuenta y Auth, Fase C para roles, paneles especializados, formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.

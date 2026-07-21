@@ -51,6 +51,8 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-044 | Puerta pública y navegación autenticada | Aceptada |
 | DEC-045 | Sistema visual canónico y estados semánticos | Aceptada |
 | DEC-046 | Cierre reconciliado de 0006 | Aceptada |
+| DEC-047 | Directorio de cuentas de sólo lectura y base de auditoría administrativa | Aceptada |
+| DEC-048 | Cierre y reconciliación de Fase B.1 / migración 0007 | Aceptada |
 | DEC-037 | Administración confiable y filtrado posterior a autorización | Aceptada |
 | DEC-038 | Implementación por fases y check-in abierto posterior | Aceptada |
 | DEC-039 | Sincronización Auth/profile en Fase A | Aceptada |
@@ -498,8 +500,18 @@ La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM
 
 **Decisión:** preparar 0007 con cuatro RPC `SECURITY DEFINER` de sólo lectura y una bitácora `admin_audit_events` append-only. La autoridad exacta exige cuenta activa y asignación actual `technical_admin/system/technical`, sin programa/división; `starts_at` y `ends_at` son fechas calendario inclusivas de `America/Mexico_City`. Un helper privado deriva esa fecha explícitamente, por lo que Next.js y las RPC comparten el contrato y la autorización no depende de la zona horaria de la sesión PostgreSQL. El directorio no navega el padrón sin criterios, escapa comodines literales, limita página a 1–1 000 000 y tamaño a 1–50, exige coincidencia de rol/servicio/alcance en una misma asignación y recupera el total mediante la misma RPC si una página queda fuera de rango. La lista enmascara identificadores; el detalle expone sólo identidad necesaria y un booleano de confirmación por Auth o Google verificado. La auditoría bloquea `UPDATE`/`DELETE`/`TRUNCATE`, admite únicamente metadata de objeto JSON de hasta 16 384 bytes, concede a `service_role` sólo `SELECT`/`INSERT` y omite metadata en su proyección B.1.
 
-**Consecuencias:** B.1 no activa, desactiva, corrige, invita, recupera ni administra roles. Las operaciones de ciclo de vida/Auth quedan en B.2/B.3 y las mutaciones de rol en Fase C. El código compatible muestra “migración pendiente” hasta aplicar 0007 coordinadamente. 0007 está creado localmente, no aplicado ni incorporado al inventario vivo posterior a 0006.
+**Consecuencias:** B.1 no activa, desactiva, corrige, invita, recupera ni administra roles. Las operaciones de ciclo de vida/Auth quedan en B.2/B.3 y las mutaciones de rol en Fase C. Durante la preparación, el código compatible mostró “migración pendiente” hasta la aplicación coordinada de 0007; ese estado histórico quedó cerrado por DEC-048.
 
 **Consecuencias:** las migraciones aplicadas permanecen inmutables. Los grants temporales del verificador desaparecen con su sesión/transacción y no amplían producción. Reportes y exportaciones CSV/PDF siguen pendientes. Cualquier cambio posterior requiere una nueva migración, snapshot y reconciliación cuando corresponda.
 
-**Estado:** Aceptada y cerrada sin deriva inexplicada.
+**Estado:** Aceptada; implementada y cerrada por DEC-048.
+
+## DEC-048 — Cierre y reconciliación de Fase B.1 / migración 0007
+
+**Contexto:** 0007 fue aplicada con `COMMIT` después de aprobar el preflight y desplegar la aplicación compatible. La primera ejecución del verificador falló antes de crear fixtures por una normalización defectuosa del arnés, no por el esquema vivo. El verificador corregido terminó con `ROLLBACK`, los smoke tests de producción aprobaron y el snapshot completo `2026-07-21T00:16:03Z` fue generado con herramientas PostgreSQL 18.4 en modo de sólo lectura.
+
+**Decisión:** cerrar Fase B.1 y fijar `0001`–`0007` como cadena aplicada, verificada y reconciliada. El directorio administrativo permanece exclusivamente de lectura, con autoridad exacta B.1 y auditoría append-only. La corrección del verificador no representa una migración ni un cambio de objetos vivos. La reconciliación estructural, funcional, RLS, privilegios, ACL y catálogos no encontró deriva inexplicada.
+
+**Consecuencias:** 0007 es inmutable. B.2, B.3 y Fase C continúan pendientes; B.1 no incorpora mutaciones de cuentas, Auth o roles. El snapshot post-0007 es la evidencia autoritativa actual y `0008` es el siguiente número disponible para un cambio futuro real.
+
+**Estado:** Aceptada; Fase B.1 operativa y reconciliada sin deriva inexplicada.

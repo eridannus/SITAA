@@ -1,8 +1,8 @@
 # Estado reconciliado de la base de datos
 
-**Fecha de cierre documental:** 2026-07-18.
+**Fecha de cierre documental:** 2026-07-20.
 
-**Snapshot vivo comparado:** `2026-07-18T04:05:40Z`, estado `SUCCESS`.
+**Snapshot vivo comparado:** `2026-07-21T00:16:03Z`, estado `SUCCESS`.
 
 La fuente de verdad histórica y evolutiva es la cadena aplicada y verificada:
 
@@ -12,30 +12,31 @@ La fuente de verdad histórica y evolutiva es la cadena aplicada y verificada:
 4. `0004_identity_registration_foundation.sql`: identidad y registro institucional.
 5. `0005_fix_google_oauth_user_creation.sql`: secuencia de alta Google.
 6. `0006_structured_person_names.sql`: nombres personales estructurados y `full_name` derivado.
+7. `0007_admin_account_directory_audit.sql`: directorio administrativo B.1 de sólo lectura y bitácora append-only.
 
 La comparación fue local contra los artefactos ya generados en `supabase/reconciliation/live/`. No se conectó a Supabase ni se ejecutó SQL durante este cierre.
 
-## Inventario posterior a 0006
+## Inventario posterior a 0007
 
 | Categoría | Cantidad |
 | --- | ---: |
-| Tablas públicas | 17 |
-| Columnas | 156 |
-| Restricciones PK, FK, UNIQUE o CHECK | 72 |
-| Índices, incluidos los respaldados por restricciones | 38 |
-| Triggers sobre tablas públicas | 8 |
-| Funciones y firmas públicas | 39 |
+| Tablas públicas | 18 |
+| Columnas | 165 |
+| Restricciones PK, FK, UNIQUE o CHECK | 80 |
+| Índices, incluidos los respaldados por restricciones | 43 |
+| Triggers sobre tablas públicas | 10 |
+| Funciones y firmas públicas | 47 |
 | Políticas RLS | 23 |
-| Tablas con RLS habilitado | 17 |
+| Tablas con RLS habilitado | 18 |
 | Filas de semillas en catálogos controlados | 51 |
-| Grants de rutinas | 112 |
-| Grants de tablas | 261 |
+| Grants de rutinas | 125 |
+| Grants de tablas publicados por `information_schema` | 270 |
 | Grants de secuencia | 6 |
-| Entradas ACL expandidas | 413 |
+| Entradas ACL expandidas | 436 |
 
-Frente al snapshot posterior a 0005, 0006 conserva tablas, columnas, índices, políticas, RLS, grants de tablas y secuencias y catálogos. Los incrementos esperados son cuatro restricciones, un trigger, dos firmas de función, cuatro grants de rutina y cuatro entradas ACL.
+Frente al snapshot posterior a 0006, 0007 añade exactamente una tabla, nueve columnas, ocho restricciones, cinco índices, dos triggers, ocho firmas y una tabla con RLS. Los deltas de privilegio son +13 grants de rutina, +9 grants de tabla publicados por `information_schema`, cero de secuencia y +23 entradas ACL expandidas. El delta de tabla es +9 porque `information_schema.table_privileges` no representa `MAINTAIN`; la ACL expandida sí lo incluye y confirma diez entradas nuevas de tabla.
 
-## Contrato vivo de identidad posterior a 0006
+## Contratos vivos posteriores a 0007
 
 - `first_names`, `paternal_surname` y `maternal_surname` existen como `text`; el apellido materno admite `NULL`.
 - Los componentes estructurados son autoritativos y `normalize_sitaa_profile_names()` deriva `full_name` de forma determinista.
@@ -48,6 +49,8 @@ Frente al snapshot posterior a 0005, 0006 conserva tablas, columnas, índices, p
 
 El snapshot de tablas y ACL no captura ACL de columna (`pg_attribute.attacl`). La autorización exacta de `UPDATE (first_names, paternal_surname, maternal_surname)` y el rechazo de `full_name` o campos administrativos quedaron comprobados por el verificador 0006 ejecutado bajo `SET LOCAL ROLE authenticated`. Esta limitación de cobertura no altera el privilegio efectivo ni constituye deriva.
 
+`admin_audit_events` está implementada con nueve columnas, referencias restrictivas, cuatro validaciones, RLS sin políticas de cliente, dos triggers append-only y ACL mínimo. Las cuatro RPC B.1 exigen la autoridad exacta `technical_admin/system/technical`, minimizan sus proyecciones y no mutan cuentas, Auth ni roles. Los helpers privados y el validador de metadata conservan los ACL verificados por 0007.
+
 ## Protecciones acumuladas conservadas
 
 - Los borradores sólo son visibles para `created_by`; `technical_admin` no amplía la lectura de borradores ajenos.
@@ -56,42 +59,45 @@ El snapshot de tablas y ACL no captura ACL de columna (`pg_attribute.attacl`). L
 - Participación, asistencia manual y masiva, expiración, reapertura y check-in QR/enlace/código conservan sus funciones y triggers.
 - Google crea exactamente un perfil pendiente; signup público por contraseña, proveedores no soportados y metadata inválida se rechazan atómicamente.
 - `PUBLIC` y `anon` no tienen `EXECUTE` sobre funciones SITAA; `anon` conserva sólo lectura de `system_health`.
-- RLS permanece habilitado en las 17 tablas y las 23 políticas no cambiaron.
+- RLS permanece habilitado en las 18 tablas y las 23 políticas no cambiaron.
 - Los 11 catálogos controlados conservan 51 filas; no se exportaron datos operativos o personales.
 
-## Evidencia de aplicación y verificación de 0006
+## Evidencia de aplicación y verificación acumulada
 
 - El preflight reportó cero filas en todas las categorías bloqueantes.
 - La migración terminó con `COMMIT` y la aplicación compatible fue desplegada.
 - El verificador transaccional terminó con código de salida 0 y `ROLLBACK`; las fixtures sintéticas no persistieron.
 - El arnés fue corregido para conceder a `authenticated` sólo `SELECT` sobre `pg_temp.sitaa_0006_cases` y `EXECUTE` sobre sus dos helpers temporales. Esos grants desaparecen con la sesión/transacción y no cambian producción ni la migración aplicada.
 - Los smoke tests de producción confirmaron registro, edición y representación de nombres estructurados.
+- Para 0007, el preflight aprobó todos los bloqueos, la migración terminó en `COMMIT` y la aplicación compatible fue desplegada.
+- La primera ejecución del verificador 0007 falló antes de crear fixtures por un defecto de normalización del arnés. La corrección no cambió objetos vivos; la reejecución terminó con `ROLLBACK` y sin efectos persistentes.
+- Los smoke tests B.1 aprobaron autoridad exacta, rechazo de usuarios ordinarios, búsqueda, filtros, lista, detalle, asignaciones V1 e historial sanitizado sin mutaciones.
 
 ## Resultado de reconciliación
 
 | Diferencia observada | Clasificación |
 | --- | --- |
-| Objetos de 0002–0005 | Coincidencia exacta o semántica con la cadena acumulada |
-| Restricciones, normalizador, trigger, RPC estructurada y ACL de rutina de 0006 | Coincidencia exacta o semántica |
-| Omisión textual de `SECURITY INVOKER`, predeterminado en PostgreSQL, y representación ACL de `MAINTAIN` | Diferencia ambiental inocua |
-| Timestamp y formato producido por `pg_dump`/`psql` | Diferencia ambiental inocua |
+| Objetos acumulados de 0002–0006 | Coincidencia exacta o semántica con la cadena acumulada |
+| Tabla, restricciones, índices, triggers, funciones, RLS y ACL de 0007 | Coincidencia exacta o semántica con 0007 |
+| Omisión textual de `SECURITY INVOKER` y representación de `MAINTAIN` entre `information_schema` y ACL expandida | Diferencia ambiental inocua |
+| Timestamp, token aleatorio `\restrict` y formato producido por `pg_dump`/`psql` | Diferencia ambiental inocua |
 | Backfill revisado de nombres y separación ya documentada entre cuentas técnica y académica | Diferencia controlada de datos operativos; no se exporta |
 
 **Deriva inexplicada:** ninguna en esquema, funciones, triggers, políticas, privilegios efectivos, ACL, catálogos o restricciones.
 
-El detalle probatorio está en `supabase/reconciliation/0006_post_apply_reconciliation.md`.
+El detalle probatorio está en `supabase/reconciliation/0007_post_apply_reconciliation.md`.
 
 ## Pendientes conocidos
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- Administración de cuentas, roles V2, filtros/reportes, retiro de A-02 y check-in abierto siguen sus fases documentadas.
-- Reportes y exportaciones CSV/PDF permanecen como trabajo futuro; 0006 sólo establece el modelo de nombres que deberán consumir.
+- Las mutaciones administrativas B.2/B.3, roles V2/Fase C, filtros/reportes futuros, retiro de A-02 y check-in abierto siguen sus fases documentadas.
+- Reportes y exportaciones CSV/PDF permanecen como trabajo futuro.
 - Overloads heredados, `activities.updated_by`, `starts_at`/`ends_at`, alcance divisional y `token_type = 'registration'` permanecen reservados o pendientes de análisis.
 
 ## Inmutabilidad y siguiente migración
 
-`0001`–`0006` forman historia aplicada, verificada y reconciliada y no se reescriben. `0007_admin_account_directory_audit.sql` también está aplicada con `COMMIT` y es inmutable; su preflight fue aprobado y la aplicación compatible está publicada. Su primera verificación falló antes de crear fixtures por una normalización defectuosa del arnés, aunque el diagnóstico de sólo lectura confirmó que las definiciones y ACL persistentes son correctos.
+`0001`–`0007` forman historia aplicada, verificada y reconciliada y no se reescriben. 0007 es inmutable y Fase B.1 está operativa y cerrada dentro de su alcance de sólo lectura. No existe deriva inexplicada.
 
-La reejecución del verificador corregido, los smoke tests, el snapshot posterior a 0007 y la reconciliación `0001`–`0007` permanecen pendientes. Por ello, los conteos y el snapshot vigente de este documento todavía representan el estado reconciliado posterior a 0006, no un inventario actualizado posterior a 0007. No se ha creado, reservado ni requerido una migración 0008.
+`0008` es el siguiente número disponible para un cambio futuro real; no se crea en este cierre.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.

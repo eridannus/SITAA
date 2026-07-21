@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 aplicada mediante 0007 y publicada en la aplicación. La reejecución del verificador corregido, los smoke tests y la reconciliación post-0007 permanecen pendientes. Las fases B.2, B.3 y C no están implementadas.
+**Estado funcional:** Fase B.1 implementada y operativa mediante 0007, verificada, probada en producción y reconciliada. Las fases B.2, B.3 y C no están implementadas.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -8,7 +8,7 @@ La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza
 
 ### B.1 — Directorio de sólo lectura y base de auditoría
 
-Aplicado y publicado:
+Implementado y operativo:
 
 - rutas protegidas `/admin/accounts` y `/admin/accounts/[id]`;
 - búsqueda, filtros, orden y paginación en servidor mediante RPC;
@@ -44,7 +44,7 @@ La lista devuelve únicamente nombre estructurado/derivado, correo, clasificaci�
 
 `admin_audit_events` fue aplicada en 0007 como bitácora append-only. Tiene referencias restrictivas a actor, objetivo y asignación opcional; acción y resultado controlados; motivo acotado; y metadata que debe ser un objeto JSON de hasta 16 384 bytes, con llaves superiores normalizadas antes de detectar términos sensibles. RLS está activa, no hay políticas de cliente y los triggers impiden `UPDATE`, `DELETE` y `TRUNCATE`. El ACL explícito de `service_role` es sólo `SELECT`/`INSERT` sobre la tabla y `EXECUTE` sobre el validador de metadata; 0007 bloqueó la aplicación si ese rol no conservaba `rolbypassrls=true`.
 
-El preflight y la aplicación de 0007 concluyeron correctamente. La primera ejecución del verificador falló en el bloque estático, antes de crear fixtures, por el orden de normalización de saltos de línea externos en `pg_proc.prosrc`. Un diagnóstico de sólo lectura confirmó que las definiciones y ACL persistentes cumplen el contrato. El verificador corregido conserva la cobertura completa y debe reejecutarse antes de cerrar smoke tests y reconciliación.
+El preflight y la aplicación de 0007 concluyeron correctamente. La primera ejecución del verificador falló en el bloque estático, antes de crear fixtures, por el orden de normalización de saltos de línea externos en `pg_proc.prosrc`. Un diagnóstico de sólo lectura confirmó que las definiciones y ACL persistentes cumplen el contrato. El verificador corregido aprobó la cobertura completa con `ROLLBACK`; los smoke tests de producción y el snapshot `2026-07-21T00:16:03Z` permitieron reconciliar B.1 sin deriva inexplicada.
 
 El cierre de verificación B.1 fija también la forma física: nueve columnas en orden, PK y tres FK restrictivas, cuatro validaciones semánticas, cuatro índices concretos y dos triggers exactos. Las cuatro RPC se verifican por nombre, tipo y orden de entradas/salidas; los helpers privados se verifican por autoridad, fecha institucional, límite de 16 384 bytes, protección append-only y privilegio mínimo.
 

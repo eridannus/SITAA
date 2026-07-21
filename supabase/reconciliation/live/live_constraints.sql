@@ -37,6 +37,14 @@ activity_participants	activity_participants_profile_id_fkey	foreign_key	FOREIGN 
 activity_participants	activity_participants_unique_profile_per_activity	unique	UNIQUE (activity_id, profile_id)
 activity_statuses	activity_statuses_pkey	primary_key	PRIMARY KEY (code)
 activity_types	activity_types_pkey	primary_key	PRIMARY KEY (code)
+admin_audit_events	admin_audit_events_action_code_check	check	CHECK (char_length(action_code) >= 1 AND char_length(action_code) <= 100 AND action_code ~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'::text)
+admin_audit_events	admin_audit_events_actor_profile_id_fkey	foreign_key	FOREIGN KEY (actor_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT
+admin_audit_events	admin_audit_events_metadata_check	check	CHECK (admin_audit_metadata_is_safe(metadata))
+admin_audit_events	admin_audit_events_outcome_check	check	CHECK (outcome = ANY (ARRAY['success'::text, 'failure'::text]))
+admin_audit_events	admin_audit_events_pkey	primary_key	PRIMARY KEY (id)
+admin_audit_events	admin_audit_events_reason_check	check	CHECK (reason IS NULL OR reason = btrim(reason) AND char_length(reason) >= 1 AND char_length(reason) <= 1000)
+admin_audit_events	admin_audit_events_role_assignment_id_fkey	foreign_key	FOREIGN KEY (role_assignment_id) REFERENCES role_assignments(id) ON DELETE RESTRICT
+admin_audit_events	admin_audit_events_target_profile_id_fkey	foreign_key	FOREIGN KEY (target_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT
 attention_categories	attention_categories_pkey	primary_key	PRIMARY KEY (code)
 divisions	divisions_code_key	unique	UNIQUE (code)
 divisions	divisions_pkey	primary_key	PRIMARY KEY (id)

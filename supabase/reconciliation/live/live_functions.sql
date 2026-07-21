@@ -107,6 +107,23 @@ begin
 end;
 $function$
 
+admin_audit_metadata_is_safe(jsonb)	candidate jsonb	candidate jsonb	CREATE OR REPLACE FUNCTION public.admin_audit_metadata_is_safe(candidate jsonb)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+  select case
+    when candidate is null or jsonb_typeof(candidate) <> 'object'
+      or octet_length(candidate::text) > 16384 then false
+    else not exists (
+      select 1 from jsonb_object_keys(candidate) as key_name
+      where regexp_replace(lower(key_name), '[^a-z0-9]+', '', 'g')
+        ~ '(password|passwd|token|cookie|secret|authorization|credential|recovery|session|bearer|apikey)'
+    )
+  end;
+$function$
+
 can_create_activity(text,uuid,uuid,text)	target_scope_type text, target_program_id uuid, target_division_id uuid, target_service_type_code text	target_scope_type text, target_program_id uuid, target_division_id uuid, target_service_type_code text	CREATE OR REPLACE FUNCTION public.can_create_activity(target_scope_type text, target_program_id uuid, target_division_id uuid, target_service_type_code text)
  RETURNS boolean
  LANGUAGE sql
@@ -1033,6 +1050,94 @@ begin
 end;
 $function$
 
+get_admin_account_assignments_b1(uuid)	target_profile_id uuid	target_profile_id uuid	CREATE OR REPLACE FUNCTION public.get_admin_account_assignments_b1(target_profile_id uuid)
+ RETURNS TABLE(id uuid, role_code text, role_label text, scope_type text, service_area text, division_id uuid, division_name text, program_id uuid, program_name text, starts_at date, ends_at date, is_active boolean, assigned_by uuid, created_at timestamp with time zone, presentation_status text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode = '42501';
+  end if;
+  return query
+  select ra.id, ra.role_code, r.label, ra.scope_type, ra.service_area,
+    ra.division_id, d.name, ra.program_id, ap.name, ra.starts_at, ra.ends_at,
+    ra.is_active, ra.assigned_by, ra.created_at,
+    case
+      when not ra.is_active then 'inactive'
+      when ra.starts_at > public.sitaa_current_mexico_date() then 'future'
+      when ra.ends_at is not null and ra.ends_at < public.sitaa_current_mexico_date() then 'expired'
+      when p.account_status <> 'active' then 'suspended_by_account_status'
+      else 'current'
+    end
+  from public.role_assignments ra
+  join public.profiles p on p.id = ra.user_id
+  join public.roles r on r.code = ra.role_code
+  left join public.divisions d on d.id = ra.division_id
+  left join public.academic_programs ap on ap.id = ra.program_id
+  where ra.user_id = target_profile_id
+  order by ra.created_at desc, ra.id desc;
+end;
+$function$
+
+get_admin_account_audit_history_b1(uuid,integer,integer)	requested_profile_id uuid, result_limit integer, result_offset integer	requested_profile_id uuid, result_limit integer DEFAULT 50, result_offset integer DEFAULT 0	CREATE OR REPLACE FUNCTION public.get_admin_account_audit_history_b1(requested_profile_id uuid, result_limit integer DEFAULT 50, result_offset integer DEFAULT 0)
+ RETURNS TABLE(id uuid, actor_profile_id uuid, actor_display_name text, target_profile_id uuid, action_code text, outcome text, reason text, role_assignment_id uuid, occurred_at timestamp with time zone)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode = '42501';
+  end if;
+  if result_limit is null or result_limit < 1 or result_limit > 50
+     or result_offset is null or result_offset < 0 or result_offset > 1000000 then
+    raise exception 'sitaa_admin_invalid_audit_pagination' using errcode = '22023';
+  end if;
+  return query
+  select e.id, e.actor_profile_id, actor.full_name, e.target_profile_id,
+    e.action_code, e.outcome, e.reason, e.role_assignment_id, e.occurred_at
+  from public.admin_audit_events e
+  left join public.profiles actor on actor.id = e.actor_profile_id
+  where e.target_profile_id = requested_profile_id
+  order by e.occurred_at desc, e.id desc
+  limit result_limit offset result_offset;
+end;
+$function$
+
+get_admin_account_detail_b1(uuid)	target_profile_id uuid	target_profile_id uuid	CREATE OR REPLACE FUNCTION public.get_admin_account_detail_b1(target_profile_id uuid)
+ RETURNS TABLE(profile_id uuid, first_names text, paternal_surname text, maternal_surname text, full_name text, email text, account_kind text, account_status text, person_type text, institutional_id_type text, institutional_id_value text, primary_program_id uuid, primary_program_name text, activated_at timestamp with time zone, deactivated_at timestamp with time zone, auth_email_confirmed boolean)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'auth'
+AS $function$
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode = '42501';
+  end if;
+  return query
+  select p.id, p.first_names, p.paternal_surname, p.maternal_surname,
+    p.full_name, p.email, p.account_kind, p.account_status, p.person_type,
+    p.institutional_id_type, p.institutional_id_value, p.primary_program_id,
+    ap.name, p.activated_at, p.deactivated_at,
+    (
+      u.email_confirmed_at is not null
+      or exists (
+        select 1 from auth.identities identity_row
+        where identity_row.user_id = u.id
+          and identity_row.provider = 'google'
+          and lower(btrim(identity_row.identity_data ->> 'email')) = lower(btrim(u.email))
+          and lower(btrim(coalesce(identity_row.identity_data ->> 'email_verified', ''))) in ('true','t','1')
+      )
+    )
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  left join public.academic_programs ap on ap.id = p.primary_program_id
+  where p.id = target_profile_id;
+end;
+$function$
+
 get_visible_activity_cards()			CREATE OR REPLACE FUNCTION public.get_visible_activity_cards()
  RETURNS TABLE(id uuid, title text, description text, activity_type_label text, service_type_label text, service_type_code text, modality_label text, status_label text, status_code text, semester_label text, program_label text, location_type_label text, location_detail text, start_date date, start_time time without time zone, end_date date, end_time time without time zone, duration_mode text, responsible_full_name text, viewer_can_edit boolean, viewer_is_participant boolean, viewer_attendance_status text, viewer_attendance_source text, viewer_checked_in_at timestamp with time zone)
  LANGUAGE sql
@@ -1215,6 +1320,30 @@ AS $function$
   );
 $function$
 
+is_b1_account_admin()			CREATE OR REPLACE FUNCTION public.is_b1_account_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+  select exists (
+    select 1
+    from public.profiles p
+    join public.role_assignments ra on ra.user_id = p.id
+    where p.id = auth.uid()
+      and p.account_status = 'active'
+      and p.is_active = true
+      and ra.role_code = 'technical_admin'
+      and ra.scope_type = 'system'
+      and ra.service_area = 'technical'
+      and ra.program_id is null
+      and ra.division_id is null
+      and ra.is_active = true
+      and ra.starts_at <= public.sitaa_current_mexico_date()
+      and (ra.ends_at is null or ra.ends_at >= public.sitaa_current_mexico_date())
+  );
+$function$
+
 normalize_sitaa_profile_names()			CREATE OR REPLACE FUNCTION public.normalize_sitaa_profile_names()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -1321,6 +1450,17 @@ begin
 end;
 $function$
 
+prevent_admin_audit_event_mutation()			CREATE OR REPLACE FUNCTION public.prevent_admin_audit_event_mutation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+begin
+  raise exception 'sitaa_admin_audit_is_append_only' using errcode = '55000';
+end;
+$function$
+
 publish_activity(uuid)	target_activity_id uuid	target_activity_id uuid	CREATE OR REPLACE FUNCTION public.publish_activity(target_activity_id uuid)
  RETURNS TABLE(activity_id uuid, status_code text, academic_period_id uuid, semester_label text)
  LANGUAGE plpgsql
@@ -1418,6 +1558,100 @@ begin
 end;
 $function$
 
+search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)	search_text text, program_filter uuid, account_kind_filter text, account_status_filter text, person_type_filter text, role_code_filter text, service_area_filter text, scope_type_filter text, page_number integer, page_size integer	search_text text DEFAULT NULL::text, program_filter uuid DEFAULT NULL::uuid, account_kind_filter text DEFAULT NULL::text, account_status_filter text DEFAULT NULL::text, person_type_filter text DEFAULT NULL::text, role_code_filter text DEFAULT NULL::text, service_area_filter text DEFAULT NULL::text, scope_type_filter text DEFAULT NULL::text, page_number integer DEFAULT 1, page_size integer DEFAULT 20	CREATE OR REPLACE FUNCTION public.search_admin_accounts_b1(search_text text DEFAULT NULL::text, program_filter uuid DEFAULT NULL::uuid, account_kind_filter text DEFAULT NULL::text, account_status_filter text DEFAULT NULL::text, person_type_filter text DEFAULT NULL::text, role_code_filter text DEFAULT NULL::text, service_area_filter text DEFAULT NULL::text, scope_type_filter text DEFAULT NULL::text, page_number integer DEFAULT 1, page_size integer DEFAULT 20)
+ RETURNS TABLE(profile_id uuid, first_names text, paternal_surname text, maternal_surname text, full_name text, email text, account_kind text, account_status text, person_type text, primary_program_id uuid, primary_program_name text, institutional_id_type text, masked_institutional_id text, current_assignment_count bigint, total_count bigint)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'extensions'
+AS $function$
+declare
+  normalized_query text := nullif(regexp_replace(btrim(search_text), '\s+', ' ', 'g'), '');
+  escaped_query text;
+  search_pattern text;
+  calculated_offset bigint;
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode = '42501';
+  end if;
+  if normalized_query is not null and (char_length(normalized_query) < 2 or char_length(normalized_query) > 200) then
+    raise exception 'sitaa_admin_invalid_search_length' using errcode = '22023';
+  end if;
+  if page_number is null or page_number < 1 or page_number > 1000000
+     or page_size is null or page_size < 1 or page_size > 50 then
+    raise exception 'sitaa_admin_invalid_pagination' using errcode = '22023';
+  end if;
+  calculated_offset := (page_number::bigint - 1) * page_size::bigint;
+  if account_kind_filter is not null and account_kind_filter not in ('institutional','technical')
+     or account_status_filter is not null and account_status_filter not in ('pending_registration','active','inactive')
+     or person_type_filter is not null and person_type_filter not in ('student','professor')
+     or service_area_filter is not null and service_area_filter not in ('tutoring','advising','both','logistics','technical')
+     or scope_type_filter is not null and scope_type_filter not in ('own','program','division','system') then
+    raise exception 'sitaa_admin_invalid_filter' using errcode = '22023';
+  end if;
+  if program_filter is not null and not exists (select 1 from public.academic_programs ap where ap.id = program_filter)
+     or role_code_filter is not null and not exists (select 1 from public.roles r where r.code = role_code_filter) then
+    raise exception 'sitaa_admin_unknown_filter' using errcode = '22023';
+  end if;
+
+  if normalized_query is null and program_filter is null and account_kind_filter is null
+     and account_status_filter is null and person_type_filter is null and role_code_filter is null
+     and service_area_filter is null and scope_type_filter is null then
+    return;
+  end if;
+
+  if normalized_query is not null then
+    escaped_query := replace(normalized_query, E'\\', E'\\\\');
+    escaped_query := replace(escaped_query, '%', E'\\%');
+    escaped_query := replace(escaped_query, '_', E'\\_');
+    search_pattern := '%' || extensions.unaccent(lower(escaped_query)) || '%';
+  end if;
+
+  return query
+  select p.id, p.first_names, p.paternal_surname, p.maternal_surname,
+    p.full_name, p.email, p.account_kind, p.account_status, p.person_type,
+    p.primary_program_id, ap.name, p.institutional_id_type,
+    case
+      when p.institutional_id_value is null then null
+      when char_length(p.institutional_id_value) <= 4 then repeat('•', char_length(p.institutional_id_value))
+      else repeat('•', char_length(p.institutional_id_value) - 4) || right(p.institutional_id_value, 4)
+    end,
+    (
+      select count(*) from public.role_assignments current_ra
+      where current_ra.user_id = p.id and current_ra.is_active = true
+        and current_ra.starts_at <= public.sitaa_current_mexico_date()
+        and (current_ra.ends_at is null or current_ra.ends_at >= public.sitaa_current_mexico_date())
+    ),
+    count(*) over()
+  from public.profiles p
+  left join public.academic_programs ap on ap.id = p.primary_program_id
+  where (program_filter is null or p.primary_program_id = program_filter)
+    and (account_kind_filter is null or p.account_kind = account_kind_filter)
+    and (account_status_filter is null or p.account_status = account_status_filter)
+    and (person_type_filter is null or p.person_type = person_type_filter)
+    and (
+      normalized_query is null
+      or extensions.unaccent(lower(concat_ws(' ', p.first_names, p.paternal_surname, p.maternal_surname, p.full_name))) like search_pattern escape E'\\'
+      or lower(p.email) like search_pattern escape E'\\'
+      or p.institutional_id_value like search_pattern escape E'\\'
+    )
+    and (
+      (role_code_filter is null and service_area_filter is null and scope_type_filter is null)
+      or exists (
+        select 1 from public.role_assignments filtered_ra
+        where filtered_ra.user_id = p.id and filtered_ra.is_active = true
+          and filtered_ra.starts_at <= public.sitaa_current_mexico_date()
+          and (filtered_ra.ends_at is null or filtered_ra.ends_at >= public.sitaa_current_mexico_date())
+          and (role_code_filter is null or filtered_ra.role_code = role_code_filter)
+          and (service_area_filter is null or filtered_ra.service_area = service_area_filter)
+          and (scope_type_filter is null or filtered_ra.scope_type = scope_type_filter)
+      )
+    )
+  order by p.paternal_surname asc nulls last, p.maternal_surname asc nulls last,
+    p.first_names asc nulls last, p.id
+  limit page_size offset calculated_offset;
+end;
+$function$
+
 search_profiles_for_participation(uuid,text)	target_activity_id uuid, search_text text	target_activity_id uuid, search_text text	CREATE OR REPLACE FUNCTION public.search_profiles_for_participation(target_activity_id uuid, search_text text)
  RETURNS TABLE(id uuid, full_name text, email text, person_type text, institutional_id_type text, institutional_id_value text, primary_program_id uuid, program_name text)
  LANGUAGE plpgsql
@@ -1479,6 +1713,15 @@ begin
   new.updated_at = now();
   return new;
 end;
+$function$
+
+sitaa_current_mexico_date()			CREATE OR REPLACE FUNCTION public.sitaa_current_mexico_date()
+ RETURNS date
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'pg_catalog'
+AS $function$
+  select (current_timestamp at time zone 'America/Mexico_City')::date;
 $function$
 
 sync_sitaa_profile_email_from_auth()			CREATE OR REPLACE FUNCTION public.sync_sitaa_profile_email_from_auth()

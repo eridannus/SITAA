@@ -124,6 +124,15 @@ public	activity_types	postgres	service_role	SELECT	NO	YES
 public	activity_types	postgres	service_role	TRIGGER	NO	NO
 public	activity_types	postgres	service_role	TRUNCATE	NO	NO
 public	activity_types	postgres	service_role	UPDATE	NO	NO
+public	admin_audit_events	postgres	postgres	DELETE	YES	NO
+public	admin_audit_events	postgres	postgres	INSERT	YES	NO
+public	admin_audit_events	postgres	postgres	REFERENCES	YES	NO
+public	admin_audit_events	postgres	postgres	SELECT	YES	YES
+public	admin_audit_events	postgres	postgres	TRIGGER	YES	NO
+public	admin_audit_events	postgres	postgres	TRUNCATE	YES	NO
+public	admin_audit_events	postgres	postgres	UPDATE	YES	NO
+public	admin_audit_events	postgres	service_role	INSERT	NO	NO
+public	admin_audit_events	postgres	service_role	SELECT	NO	YES
 public	attention_categories	postgres	authenticated	SELECT	NO	YES
 public	attention_categories	postgres	postgres	DELETE	YES	NO
 public	attention_categories	postgres	postgres	INSERT	YES	NO

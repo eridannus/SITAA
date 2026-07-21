@@ -3,6 +3,8 @@ activities	set_activities_updated_at	CREATE TRIGGER set_activities_updated_at BE
 activities	validate_activities_scheduled_state	CREATE TRIGGER validate_activities_scheduled_state BEFORE INSERT OR UPDATE ON activities FOR EACH ROW EXECUTE FUNCTION validate_activity_scheduled_state()
 activity_participants	guard_activity_participants_pending_deadline	CREATE TRIGGER guard_activity_participants_pending_deadline BEFORE UPDATE OF attendance_status ON activity_participants FOR EACH ROW EXECUTE FUNCTION guard_activity_participant_pending_deadline()
 activity_participants	set_activity_participants_updated_at	CREATE TRIGGER set_activity_participants_updated_at BEFORE UPDATE ON activity_participants FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+admin_audit_events	prevent_admin_audit_event_mutation	CREATE TRIGGER prevent_admin_audit_event_mutation BEFORE DELETE OR UPDATE ON admin_audit_events FOR EACH ROW EXECUTE FUNCTION prevent_admin_audit_event_mutation()
+admin_audit_events	prevent_admin_audit_event_truncate	CREATE TRIGGER prevent_admin_audit_event_truncate BEFORE TRUNCATE ON admin_audit_events FOR EACH STATEMENT EXECUTE FUNCTION prevent_admin_audit_event_mutation()
 profiles	enforce_sitaa_profile_identity	CREATE TRIGGER enforce_sitaa_profile_identity BEFORE INSERT OR UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION enforce_sitaa_profile_identity()
 profiles	normalize_sitaa_profile_names	CREATE TRIGGER normalize_sitaa_profile_names BEFORE INSERT OR UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION normalize_sitaa_profile_names()
 profiles	set_profiles_updated_at	CREATE TRIGGER set_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION set_updated_at()

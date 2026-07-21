@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lDMwf5GaKGrZWuerG8FKF4RkJ1Y5hgJ3W4oUQ1EXcBZD0kwzJiJmcjajfFFaBAS
+\restrict suF2Y9SqcMuFEUcOGadGKdM5RYV6HNxWaTUMfvC5vGcbe2vmDxdbUXRNMg7mOgK
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -150,6 +150,26 @@ begin
     target_activity_id, target_profile_id, target_participant_role_code, auth.uid()
   );
 end;
+$$;
+
+
+--
+-- Name: admin_audit_metadata_is_safe(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_audit_metadata_is_safe(candidate jsonb) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+  select case
+    when candidate is null or jsonb_typeof(candidate) <> 'object'
+      or octet_length(candidate::text) > 16384 then false
+    else not exists (
+      select 1 from jsonb_object_keys(candidate) as key_name
+      where regexp_replace(lower(key_name), '[^a-z0-9]+', '', 'g')
+        ~ '(password|passwd|token|cookie|secret|authorization|credential|recovery|session|bearer|apikey)'
+    )
+  end;
 $$;
 
 
@@ -1138,6 +1158,103 @@ $$;
 
 
 --
+-- Name: get_admin_account_assignments_b1(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_admin_account_assignments_b1(target_profile_id uuid) RETURNS TABLE(id uuid, role_code text, role_label text, scope_type text, service_area text, division_id uuid, division_name text, program_id uuid, program_name text, starts_at date, ends_at date, is_active boolean, assigned_by uuid, created_at timestamp with time zone, presentation_status text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode = '42501';
+  end if;
+  return query
+  select ra.id, ra.role_code, r.label, ra.scope_type, ra.service_area,
+    ra.division_id, d.name, ra.program_id, ap.name, ra.starts_at, ra.ends_at,
+    ra.is_active, ra.assigned_by, ra.created_at,
+    case
+      when not ra.is_active then 'inactive'
+      when ra.starts_at > public.sitaa_current_mexico_date() then 'future'
+      when ra.ends_at is not null and ra.ends_at < public.sitaa_current_mexico_date() then 'expired'
+      when p.account_status <> 'active' then 'suspended_by_account_status'
+      else 'current'
+    end
+  from public.role_assignments ra
+  join public.profiles p on p.id = ra.user_id
+  join public.roles r on r.code = ra.role_code
+  left join public.divisions d on d.id = ra.division_id
+  left join public.academic_programs ap on ap.id = ra.program_id
+  where ra.user_id = target_profile_id
+  order by ra.created_at desc, ra.id desc;
+end;
+$$;
+
+
+--
+-- Name: get_admin_account_audit_history_b1(uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_admin_account_audit_history_b1(requested_profile_id uuid, result_limit integer DEFAULT 50, result_offset integer DEFAULT 0) RETURNS TABLE(id uuid, actor_profile_id uuid, actor_display_name text, target_profile_id uuid, action_code text, outcome text, reason text, role_assignment_id uuid, occurred_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode = '42501';
+  end if;
+  if result_limit is null or result_limit < 1 or result_limit > 50
+     or result_offset is null or result_offset < 0 or result_offset > 1000000 then
+    raise exception 'sitaa_admin_invalid_audit_pagination' using errcode = '22023';
+  end if;
+  return query
+  select e.id, e.actor_profile_id, actor.full_name, e.target_profile_id,
+    e.action_code, e.outcome, e.reason, e.role_assignment_id, e.occurred_at
+  from public.admin_audit_events e
+  left join public.profiles actor on actor.id = e.actor_profile_id
+  where e.target_profile_id = requested_profile_id
+  order by e.occurred_at desc, e.id desc
+  limit result_limit offset result_offset;
+end;
+$$;
+
+
+--
+-- Name: get_admin_account_detail_b1(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_admin_account_detail_b1(target_profile_id uuid) RETURNS TABLE(profile_id uuid, first_names text, paternal_surname text, maternal_surname text, full_name text, email text, account_kind text, account_status text, person_type text, institutional_id_type text, institutional_id_value text, primary_program_id uuid, primary_program_name text, activated_at timestamp with time zone, deactivated_at timestamp with time zone, auth_email_confirmed boolean)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'auth'
+    AS $$
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode = '42501';
+  end if;
+  return query
+  select p.id, p.first_names, p.paternal_surname, p.maternal_surname,
+    p.full_name, p.email, p.account_kind, p.account_status, p.person_type,
+    p.institutional_id_type, p.institutional_id_value, p.primary_program_id,
+    ap.name, p.activated_at, p.deactivated_at,
+    (
+      u.email_confirmed_at is not null
+      or exists (
+        select 1 from auth.identities identity_row
+        where identity_row.user_id = u.id
+          and identity_row.provider = 'google'
+          and lower(btrim(identity_row.identity_data ->> 'email')) = lower(btrim(u.email))
+          and lower(btrim(coalesce(identity_row.identity_data ->> 'email_verified', ''))) in ('true','t','1')
+      )
+    )
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  left join public.academic_programs ap on ap.id = p.primary_program_id
+  where p.id = target_profile_id;
+end;
+$$;
+
+
+--
 -- Name: get_visible_activity_cards(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1339,6 +1456,33 @@ $$;
 
 
 --
+-- Name: is_b1_account_admin(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_b1_account_admin() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+  select exists (
+    select 1
+    from public.profiles p
+    join public.role_assignments ra on ra.user_id = p.id
+    where p.id = auth.uid()
+      and p.account_status = 'active'
+      and p.is_active = true
+      and ra.role_code = 'technical_admin'
+      and ra.scope_type = 'system'
+      and ra.service_area = 'technical'
+      and ra.program_id is null
+      and ra.division_id is null
+      and ra.is_active = true
+      and ra.starts_at <= public.sitaa_current_mexico_date()
+      and (ra.ends_at is null or ra.ends_at >= public.sitaa_current_mexico_date())
+  );
+$$;
+
+
+--
 -- Name: normalize_sitaa_profile_names(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1452,6 +1596,20 @@ $$;
 
 
 --
+-- Name: prevent_admin_audit_event_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_admin_audit_event_mutation() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+begin
+  raise exception 'sitaa_admin_audit_is_append_only' using errcode = '55000';
+end;
+$$;
+
+
+--
 -- Name: publish_activity(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1555,6 +1713,103 @@ $$;
 
 
 --
+-- Name: search_admin_accounts_b1(text, uuid, text, text, text, text, text, text, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_admin_accounts_b1(search_text text DEFAULT NULL::text, program_filter uuid DEFAULT NULL::uuid, account_kind_filter text DEFAULT NULL::text, account_status_filter text DEFAULT NULL::text, person_type_filter text DEFAULT NULL::text, role_code_filter text DEFAULT NULL::text, service_area_filter text DEFAULT NULL::text, scope_type_filter text DEFAULT NULL::text, page_number integer DEFAULT 1, page_size integer DEFAULT 20) RETURNS TABLE(profile_id uuid, first_names text, paternal_surname text, maternal_surname text, full_name text, email text, account_kind text, account_status text, person_type text, primary_program_id uuid, primary_program_name text, institutional_id_type text, masked_institutional_id text, current_assignment_count bigint, total_count bigint)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'extensions'
+    AS $$
+declare
+  normalized_query text := nullif(regexp_replace(btrim(search_text), '\s+', ' ', 'g'), '');
+  escaped_query text;
+  search_pattern text;
+  calculated_offset bigint;
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode = '42501';
+  end if;
+  if normalized_query is not null and (char_length(normalized_query) < 2 or char_length(normalized_query) > 200) then
+    raise exception 'sitaa_admin_invalid_search_length' using errcode = '22023';
+  end if;
+  if page_number is null or page_number < 1 or page_number > 1000000
+     or page_size is null or page_size < 1 or page_size > 50 then
+    raise exception 'sitaa_admin_invalid_pagination' using errcode = '22023';
+  end if;
+  calculated_offset := (page_number::bigint - 1) * page_size::bigint;
+  if account_kind_filter is not null and account_kind_filter not in ('institutional','technical')
+     or account_status_filter is not null and account_status_filter not in ('pending_registration','active','inactive')
+     or person_type_filter is not null and person_type_filter not in ('student','professor')
+     or service_area_filter is not null and service_area_filter not in ('tutoring','advising','both','logistics','technical')
+     or scope_type_filter is not null and scope_type_filter not in ('own','program','division','system') then
+    raise exception 'sitaa_admin_invalid_filter' using errcode = '22023';
+  end if;
+  if program_filter is not null and not exists (select 1 from public.academic_programs ap where ap.id = program_filter)
+     or role_code_filter is not null and not exists (select 1 from public.roles r where r.code = role_code_filter) then
+    raise exception 'sitaa_admin_unknown_filter' using errcode = '22023';
+  end if;
+
+  if normalized_query is null and program_filter is null and account_kind_filter is null
+     and account_status_filter is null and person_type_filter is null and role_code_filter is null
+     and service_area_filter is null and scope_type_filter is null then
+    return;
+  end if;
+
+  if normalized_query is not null then
+    escaped_query := replace(normalized_query, E'\\', E'\\\\');
+    escaped_query := replace(escaped_query, '%', E'\\%');
+    escaped_query := replace(escaped_query, '_', E'\\_');
+    search_pattern := '%' || extensions.unaccent(lower(escaped_query)) || '%';
+  end if;
+
+  return query
+  select p.id, p.first_names, p.paternal_surname, p.maternal_surname,
+    p.full_name, p.email, p.account_kind, p.account_status, p.person_type,
+    p.primary_program_id, ap.name, p.institutional_id_type,
+    case
+      when p.institutional_id_value is null then null
+      when char_length(p.institutional_id_value) <= 4 then repeat('•', char_length(p.institutional_id_value))
+      else repeat('•', char_length(p.institutional_id_value) - 4) || right(p.institutional_id_value, 4)
+    end,
+    (
+      select count(*) from public.role_assignments current_ra
+      where current_ra.user_id = p.id and current_ra.is_active = true
+        and current_ra.starts_at <= public.sitaa_current_mexico_date()
+        and (current_ra.ends_at is null or current_ra.ends_at >= public.sitaa_current_mexico_date())
+    ),
+    count(*) over()
+  from public.profiles p
+  left join public.academic_programs ap on ap.id = p.primary_program_id
+  where (program_filter is null or p.primary_program_id = program_filter)
+    and (account_kind_filter is null or p.account_kind = account_kind_filter)
+    and (account_status_filter is null or p.account_status = account_status_filter)
+    and (person_type_filter is null or p.person_type = person_type_filter)
+    and (
+      normalized_query is null
+      or extensions.unaccent(lower(concat_ws(' ', p.first_names, p.paternal_surname, p.maternal_surname, p.full_name))) like search_pattern escape E'\\'
+      or lower(p.email) like search_pattern escape E'\\'
+      or p.institutional_id_value like search_pattern escape E'\\'
+    )
+    and (
+      (role_code_filter is null and service_area_filter is null and scope_type_filter is null)
+      or exists (
+        select 1 from public.role_assignments filtered_ra
+        where filtered_ra.user_id = p.id and filtered_ra.is_active = true
+          and filtered_ra.starts_at <= public.sitaa_current_mexico_date()
+          and (filtered_ra.ends_at is null or filtered_ra.ends_at >= public.sitaa_current_mexico_date())
+          and (role_code_filter is null or filtered_ra.role_code = role_code_filter)
+          and (service_area_filter is null or filtered_ra.service_area = service_area_filter)
+          and (scope_type_filter is null or filtered_ra.scope_type = scope_type_filter)
+      )
+    )
+  order by p.paternal_surname asc nulls last, p.maternal_surname asc nulls last,
+    p.first_names asc nulls last, p.id
+  limit page_size offset calculated_offset;
+end;
+$$;
+
+
+--
 -- Name: search_profiles_for_participation(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1621,6 +1876,18 @@ begin
   new.updated_at = now();
   return new;
 end;
+$$;
+
+
+--
+-- Name: sitaa_current_mexico_date(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sitaa_current_mexico_date() RETURNS date
+    LANGUAGE sql STABLE
+    SET search_path TO 'pg_catalog'
+    AS $$
+  select (current_timestamp at time zone 'America/Mexico_City')::date;
 $$;
 
 
@@ -2041,6 +2308,27 @@ CREATE TABLE public.activity_types (
 
 
 --
+-- Name: admin_audit_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_audit_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    actor_profile_id uuid NOT NULL,
+    target_profile_id uuid NOT NULL,
+    action_code text NOT NULL,
+    outcome text NOT NULL,
+    reason text,
+    role_assignment_id uuid,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT admin_audit_events_action_code_check CHECK ((((char_length(action_code) >= 1) AND (char_length(action_code) <= 100)) AND (action_code ~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'::text))),
+    CONSTRAINT admin_audit_events_metadata_check CHECK (public.admin_audit_metadata_is_safe(metadata)),
+    CONSTRAINT admin_audit_events_outcome_check CHECK ((outcome = ANY (ARRAY['success'::text, 'failure'::text]))),
+    CONSTRAINT admin_audit_events_reason_check CHECK (((reason IS NULL) OR ((reason = btrim(reason)) AND ((char_length(reason) >= 1) AND (char_length(reason) <= 1000)))))
+);
+
+
+--
 -- Name: attention_categories; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2302,6 +2590,14 @@ ALTER TABLE ONLY public.activity_types
 
 
 --
+-- Name: admin_audit_events admin_audit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_audit_events
+    ADD CONSTRAINT admin_audit_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: attention_categories attention_categories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2494,6 +2790,34 @@ CREATE INDEX activity_participants_role_idx ON public.activity_participants USIN
 
 
 --
+-- Name: admin_audit_events_actor_occurred_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX admin_audit_events_actor_occurred_idx ON public.admin_audit_events USING btree (actor_profile_id, occurred_at DESC, id DESC);
+
+
+--
+-- Name: admin_audit_events_target_occurred_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX admin_audit_events_target_occurred_idx ON public.admin_audit_events USING btree (target_profile_id, occurred_at DESC, id DESC);
+
+
+--
+-- Name: profiles_admin_directory_filters_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX profiles_admin_directory_filters_idx ON public.profiles USING btree (account_status, account_kind, person_type, primary_program_id);
+
+
+--
+-- Name: profiles_admin_directory_sort_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX profiles_admin_directory_sort_idx ON public.profiles USING btree (paternal_surname, maternal_surname, first_names, id);
+
+
+--
 -- Name: profiles_institutional_identifier_pair_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2519,6 +2843,20 @@ CREATE TRIGGER guard_activity_participants_pending_deadline BEFORE UPDATE OF att
 --
 
 CREATE TRIGGER normalize_sitaa_profile_names BEFORE INSERT OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.normalize_sitaa_profile_names();
+
+
+--
+-- Name: admin_audit_events prevent_admin_audit_event_mutation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER prevent_admin_audit_event_mutation BEFORE DELETE OR UPDATE ON public.admin_audit_events FOR EACH ROW EXECUTE FUNCTION public.prevent_admin_audit_event_mutation();
+
+
+--
+-- Name: admin_audit_events prevent_admin_audit_event_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER prevent_admin_audit_event_truncate BEFORE TRUNCATE ON public.admin_audit_events FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_admin_audit_event_mutation();
 
 
 --
@@ -2714,6 +3052,30 @@ ALTER TABLE ONLY public.activity_participants
 
 ALTER TABLE ONLY public.activity_participants
     ADD CONSTRAINT activity_participants_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: admin_audit_events admin_audit_events_actor_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_audit_events
+    ADD CONSTRAINT admin_audit_events_actor_profile_id_fkey FOREIGN KEY (actor_profile_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: admin_audit_events admin_audit_events_role_assignment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_audit_events
+    ADD CONSTRAINT admin_audit_events_role_assignment_id_fkey FOREIGN KEY (role_assignment_id) REFERENCES public.role_assignments(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: admin_audit_events admin_audit_events_target_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_audit_events
+    ADD CONSTRAINT admin_audit_events_target_profile_id_fkey FOREIGN KEY (target_profile_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
 
 
 --
@@ -2982,6 +3344,12 @@ ALTER TABLE public.activity_statuses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_types ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: admin_audit_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.admin_audit_events ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: attention_categories; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3039,5 +3407,5 @@ ALTER TABLE public.system_health ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lDMwf5GaKGrZWuerG8FKF4RkJ1Y5hgJ3W4oUQ1EXcBZD0kwzJiJmcjajfFFaBAS
+\unrestrict suF2Y9SqcMuFEUcOGadGKdM5RYV6HNxWaTUMfvC5vGcbe2vmDxdbUXRNMg7mOgK
 

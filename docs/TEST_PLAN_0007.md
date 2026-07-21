@@ -1,6 +1,6 @@
 # Plan de prueba — migración 0007
 
-**Estado:** preflight aprobado y migración aplicada con `COMMIT`; la primera ejecución del verificador falló antes de crear fixtures por un defecto de normalización del propio arnés. La corrección local está lista y su reejecución permanece pendiente.
+**Estado:** preflight aprobado; migración aplicada con `COMMIT`; verificador corregido aprobado con `ROLLBACK`; smoke tests de producción aprobados; snapshot y reconciliación post-0007 cerrados sin deriva inexplicada.
 
 **Objetivo:** verificar el directorio administrativo B.1 de sólo lectura, la autoridad técnica exacta y la base append-only de auditoría sin exponer PII real ni modificar permanentemente datos.
 
@@ -11,7 +11,7 @@
 - `supabase/reconciliation/0007_admin_account_directory_audit_verify.sql`
 - `supabase/reconciliation/0007_admin_account_directory_audit_rollback.sql`
 
-El preflight y la migración ya se ejecutaron correctamente. La aplicación compatible ya está publicada. El verificador se detuvo en su bloque estático inicial: el diagnóstico posterior confirmó que los objetos y ACL persistentes de 0007 son correctos y que el fallo fue exclusivamente del comparador de `pg_proc.prosrc`.
+El preflight y la migración se ejecutaron correctamente y la aplicación compatible fue publicada. La primera ejecución del verificador se detuvo en su bloque estático inicial, antes de crear fixtures. El diagnóstico confirmó que los objetos y ACL persistentes eran correctos y que el fallo pertenecía exclusivamente al comparador de `pg_proc.prosrc`. Tras corregir el arnés, la reejecución terminó correctamente con el `ROLLBACK` esperado.
 
 ## Preflight
 
@@ -66,9 +66,9 @@ Matriz mínima de 72 comprobaciones:
 
 El verificador también comprueba `SECURITY DEFINER`, `search_path`, RLS, ausencia de políticas cliente, ACL exacto de auditoría y ejecución sólo para `authenticated` en las cuatro RPC públicas. Todas las fechas de fixtures parten de `institutional_today`, calculada con `(current_timestamp AT TIME ZONE 'America/Mexico_City')::date`; no se convierten desde la zona horaria de sesión. La fixture de `admin_inactive` conserva una sola asignación deliberada.
 
-La primera ejecución no alcanzó estas fixtures. `pg_proc.prosrc` conservó saltos de línea externos; `btrim()` se aplicaba antes de sustituir espacios y dejaba un espacio ordinario al inicio y al final. El contrato corregido usa `btrim(regexp_replace(lower(p.prosrc), '\s+', ' ', 'g'))`, añade una regresión sintética con saltos externos y mantiene todas las aserciones funcionales. La reejecución debe terminar en el `ROLLBACK` final.
+La primera ejecución no alcanzó estas fixtures. `pg_proc.prosrc` conservó saltos de línea externos; `btrim()` se aplicaba antes de sustituir espacios y dejaba un espacio ordinario al inicio y al final. El contrato corregido usa `btrim(regexp_replace(lower(p.prosrc), '\s+', ' ', 'g'))`, añade una regresión sintética con saltos externos y mantiene todas las aserciones funcionales. La reejecución aprobó la matriz completa y terminó en el `ROLLBACK` final; no dejó datos ni grants temporales persistentes.
 
-## Smoke tests posteriores al despliegue compatible
+## Smoke tests de producción aprobados
 
 - La navegación `Cuentas` aparece sólo con el contrato B.1 exacto, también en móvil.
 - Usuarios sin sesión vuelven a login; usuarios autenticados no autorizados vuelven al dashboard.
@@ -79,18 +79,22 @@ La primera ejecución no alcanzó estas fixtures. `pg_proc.prosrc` conservó sal
 - No existen controles de activación, corrección, Auth o roles.
 - La aplicación compatible publicada abre B.1 contra la migración aplicada sin exponer detalles PostgreSQL/Supabase.
 
+La prueba con administrador técnico exacto aprobó acceso y navegación. Profesor y alumno ordinarios no vieron ni abrieron el directorio. Búsqueda, filtros, lista, detalle, asignaciones V1 e historial sanitizado funcionaron y no se expusieron controles de cuenta, Auth o roles.
+
 ## Rollback manual
 
 El rollback sólo se considera tras revisión. Inicia explícitamente en `READ COMMITTED`, confirma de forma mínima que la tabla existe y obtiene `ACCESS EXCLUSIVE NOWAIT` sobre `admin_audit_events` antes del guard completo y de comprobar que esté vacía. Un lector, escritor, mantenimiento o DDL concurrente hace que el intento aborte sin esperar; la operación debe aquietarse y reintentarse, nunca retirando `NOWAIT`, debilitando el lock, saltando el control de vacío o forzando el rollback. El lock impide que un `INSERT` de `service_role` confirme entre la comprobación y el `DROP TABLE`.
 
 Con el lock retenido hasta el final de la transacción, el guard exige el contrato 0007 completo, incluido el ACL exacto de las ocho funciones, el helper privado de fecha institucional y el límite de metadata de 16 384 bytes, y aborta si `admin_audit_events` contiene una fila. Revoca a los cuatro roles la ejecución de todas las RPC y helpers antes de retirarlos, no usa `CASCADE`, elimina únicamente objetos 0007, verifica el contrato post-0006 y confirma con `COMMIT` sólo si la autoverificación termina correctamente. El rollback permanece disponible únicamente mientras no exista historia administrativa.
 
-## Secuencia de cierre pendiente
+## Secuencia ejecutada
 
-1. Reejecutar el verificador corregido y confirmar su `ROLLBACK`.
-2. Ejecutar los smoke tests de B.1.
-3. Regenerar el snapshot vivo posterior a 0007.
-4. Reconciliar `0001`–`0007`.
-5. Cerrar el estado canónico con la evidencia obtenida.
+1. Se aprobó el preflight con todos los bloqueos en cero.
+2. Se aplicó 0007 y terminó con `COMMIT`.
+3. Se publicó la aplicación compatible.
+4. Se corrigió el falso negativo exclusivo del arnés y el verificador reejecutado terminó con `ROLLBACK`.
+5. Se aprobaron los smoke tests de producción.
+6. Se generó el snapshot completo `2026-07-21T00:16:03Z`, estado `SUCCESS`.
+7. Se reconcilió `0001`–`0007` sin deriva inexplicada.
 
-`0007_admin_account_directory_audit.sql` ya forma parte de la historia aplicada y es inmutable. No se ha creado, reservado ni requerido una migración 0008 para corregir este defecto del arnés.
+`0007_admin_account_directory_audit.sql` forma parte de la historia aplicada y es inmutable. Fase B.1 está cerrada; `0008` es el siguiente número disponible.

@@ -1,6 +1,6 @@
 # Filtrado y visibilidad
 
-**Estado funcional:** aprobado.
+**Estado funcional:** reglas generales aprobadas; contrato administrativo B.1 implementado y reconciliado mediante 0007.
 
 ## Regla central
 
@@ -117,6 +117,8 @@ Reglas:
 - El servidor no envía filas prohibidas aunque el cliente oculte controles.
 
 ## Directorio administrativo B.1
+
+**Estado:** implementado, verificado y operativo.
 
 El conjunto se construye sólo después de verificar perfil activo y asignación actual exacta `technical_admin/system/technical` sin programa/división. La interfaz y todas las RPC repiten el control; los filtros nunca son autoridad. La vigencia usa fechas calendario inclusivas de `America/Mexico_City`, tanto en Next.js como en 0007, sin depender de la zona horaria de la sesión PostgreSQL.
 

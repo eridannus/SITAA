@@ -58,10 +58,10 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0006` están aplicadas, verificadas y reconciliadas. `0007` es el siguiente número disponible. Todo cambio futuro debe:
+`0001`–`0007` están aplicadas, verificadas y reconciliadas. `0008` es el siguiente número disponible. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
-2. crear una nueva migración numerada, sin reescribir `0001`–`0006`;
+2. crear una nueva migración numerada, sin reescribir `0001`–`0007`;
 3. incluir verificación y rollback cuando sea apropiado;
 4. aplicarse manualmente a Supabase;
 5. regenerar el snapshot vivo después de cambios significativos;
@@ -135,9 +135,9 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Contrato visual: `docs/DESIGN_SYSTEM.md` es obligatorio para toda la aplicación y `npm run check:ui` forma parte de la validación.
 - El cierre original dejó `0007` disponible; la Fase B.1 se aplicó posteriormente y su cierre intermedio se documenta en el apartado siguiente.
 
-## 0007_admin_account_directory_audit.sql — aplicada; cierre de verificación pendiente
+## 0007_admin_account_directory_audit.sql — aplicada, verificada y reconciliada
 
-- Prepara el directorio administrativo de sólo lectura y `admin_audit_events` append-only.
+- Implementa el directorio administrativo de sólo lectura y `admin_audit_events` append-only.
 - Añade autorización exacta B.1, cuatro RPC minimizadas, índices de consulta, RLS sin políticas cliente, ACL explícito `service_role` sólo `SELECT`/`INSERT` y triggers contra `UPDATE`, `DELETE` y `TRUNCATE` del historial.
 - La revisión local endureció paginación nula/acotada, búsqueda literal de comodines, metadata sensible normalizada, confirmación Google resumida y recuperación del total en páginas fuera de rango.
 - La revisión final hizo determinista el `EXECUTE` de `service_role` sobre el validador de metadata, exige `rolbypassrls=true` y usa fixtures UUID sin colisiones; el verificador cubre funcionalmente ese rol y niega las cuatro RPC a cada actor no autorizado.
@@ -147,9 +147,21 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - La corrección ACL final revoca explícitamente `PUBLIC`, `anon`, `authenticated` y `service_role` antes de conceder los únicos `EXECUTE` permitidos, añade una guarda post-DDL atómica y alinea verificador y rollback. Ninguna función 0007 depende de privilegios por defecto.
 - El cierre de seguridad del rollback fija `READ COMMITTED` y adquiere `ACCESS EXCLUSIVE NOWAIT` antes del guard completo y del control de vacío. Así, la actividad concurrente aborta el intento y ningún `INSERT` de auditoría puede confirmar entre la comprobación y `DROP TABLE`.
 - Artefactos coordinados: migración, preflight de sólo lectura, verificador transaccional con `ROLLBACK`, rollback manual protegido y `docs/TEST_PLAN_0007.md`.
-- No modifica 0001–0006 ni el snapshot vivo posterior a 0006.
+- No modifica 0001–0006.
 - Estado de aplicación: preflight aprobado, migración confirmada con `COMMIT` y aplicación compatible publicada.
 - Primera verificación: falló antes de crear fixtures porque el arnés recortaba `p.prosrc` antes de colapsar espacios. Un diagnóstico de sólo lectura confirmó la definición y los ACL correctos de los objetos persistentes.
 - Corrección del arnés: la comparación usa `btrim(regexp_replace(lower(p.prosrc), '\s+', ' ', 'g'))`, incluye una regresión sintética y separa los errores de definición y ACL por helper. La migración aplicada permanece inmutable.
-- Pendiente: reejecutar el verificador, completar smoke tests, regenerar el snapshot posterior a 0007 y reconciliar la cadena `0001`–`0007`.
-- No se creó, reservó ni requiere 0008 para esta corrección exclusiva del verificador.
+- Verificación final: el verificador corregido terminó correctamente con `ROLLBACK`; no persistieron fixtures ni grants temporales.
+- Smoke tests: el administrador técnico exacto accede; profesor y alumno ordinarios no acceden; búsqueda, filtros, lista, detalle, asignaciones V1 e historial sanitizado funcionan sin controles de mutación.
+- Snapshot: conjunto completo generado en `2026-07-21T00:16:03Z`, estado `SUCCESS`, con `pg_dump 18.4`, `psql 18.4`, UTF-8 y cuatro artefactos de privilegios.
+- Reconciliación: `0001`–`0007` no presenta deriva inexplicada; informe en `supabase/reconciliation/0007_post_apply_reconciliation.md`.
+- Resultado: Fase B.1 cerrada y operativa; 0007 es inmutable y 0008 queda como siguiente número disponible.
+
+## Reconciliación posterior a 0007 — 2026-07-20
+
+- Inventario vivo: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 10 triggers públicos, 47 firmas de función, 23 políticas y 51 semillas controladas.
+- Privilegios vivos: 125 grants de rutina, 270 grants de tabla publicados por `information_schema`, 6 de secuencia y 436 entradas ACL expandidas.
+- Delta post-0006: +1 tabla, +9 columnas, +8 restricciones, +5 índices, +2 triggers, +8 funciones, +13 grants de rutina, +9 grants de tabla publicados y +23 entradas ACL.
+- Representación: `MAINTAIN` aparece en ACL expandida, pero no en `information_schema.table_privileges`; por ello el delta publicado de tabla es +9 aunque la ACL confirma diez entradas nuevas de tabla.
+- Diferencias ambientales: timestamp, token aleatorio `\restrict`, omisión textual opcional de `SECURITY INVOKER` y formato de `pg_dump`/`psql`.
+- Resultado: sin deriva inexplicada; políticas, secuencias, catálogos y objetos post-0006 no modificados por 0007 permanecen intactos.
