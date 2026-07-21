@@ -43,6 +43,32 @@ begin
     raise exception '0008_rollback_contract_incomplete';
   end if;
 
+  if (select count(*) from information_schema.routine_privileges
+      where routine_schema='public')<>132
+     or (select count(*) from information_schema.table_privileges
+         where table_schema='public')<>267
+     or (select count(*)
+         from pg_class c join pg_namespace n on n.oid=c.relnamespace
+         cross join lateral aclexplode(coalesce(c.relacl,acldefault('S',c.relowner))) acl
+         where n.nspname='public' and c.relkind='S')<>6
+     or (
+       (select count(*)
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+        where n.nspname='public' and p.prokind in ('f','p'))
+       +
+       (select count(*)
+        from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        cross join lateral aclexplode(coalesce(
+          c.relacl,
+          case when c.relkind='S' then acldefault('S',c.relowner)
+               else acldefault('r',c.relowner) end
+        )) acl
+        where n.nspname='public' and c.relkind in ('r','p','v','m','S'))
+     )<>440 then
+    raise exception '0008_rollback_privilege_inventory_drift';
+  end if;
+
   if not exists (
        select 1 from pg_proc p
        where p.oid=helper_oid and p.prorettype='boolean'::regtype
@@ -101,8 +127,22 @@ begin
          ]::oid[]
          and regexp_replace(lower(pg_get_function_identity_arguments(p.oid)),'\s+','','g')
            ='requested_profile_iduuid,requested_first_namestext,requested_paternal_surnametext,requested_maternal_surnametext,requested_person_typetext,requested_institutional_id_valuetext,requested_primary_program_iduuid,correction_reasontext'
-     ) then
+  ) then
     raise exception '0008_rollback_new_function_definition_drift';
+  end if;
+
+  select count(*) into mismatch_count
+  from (values
+    ('is_sitaa_operational_account_active()','f85f733578f09c0f7466af7e18a90f4c'),
+    ('get_admin_identity_correction_context_b2a(uuid)','83932d04ff8f1b33793e8c7a49bb8e68'),
+    ('correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)','ce05cbc529473c070953e765e3ee05b2'),
+    ('enforce_activity_writer_integrity_b2a()','c58bd04859f1e2a044fcca58d3333e3c')
+  ) expected(signature,body_hash)
+  left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
+  where p.oid is null
+     or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash;
+  if mismatch_count<>0 then
+    raise exception '0008_rollback_new_function_body_drift';
   end if;
 
   select count(*) into mismatch_count
@@ -173,7 +213,7 @@ begin
   from (values
     ('activity_attendance_deadline(uuid)','fa3b7c8ef43aab1a8ede008671b5dc08'),
     ('activity_attendance_open_at(uuid)','ae06ee4eb6cb93d433aed430b6b07e8c'),
-    ('activity_has_ended(uuid)','c318afdb983e1a21461fe071b7a4fa95'),
+      ('activity_has_ended(uuid)','e044cf53c592485c9762634866469deb'),
     ('add_activity_participant(uuid,uuid,text)','49ace655e29301b5a2d34438d3689296'),
     ('can_create_activity(text,uuid,uuid,text)','a681afcc9eb243295418bcb048658c3f'),
     ('can_create_activity(uuid,text)','d2b5f611bc457b0533a270302deb0362'),
@@ -259,10 +299,9 @@ begin
          and p.pronargs=0 and coalesce(cardinality(p.proargnames),0)=0
          and p.proallargtypes is null
          and pg_get_function_identity_arguments(p.oid)=''
-         and md5(regexp_replace(p.prosrc,'\s+','','g'))=
-           'f3015ca3f14ada575b19a6d39d1622ea'
          and lower(p.prosrc) like '%sitaa_activity_writer_identity_mismatch%'
          and lower(p.prosrc) like '%sitaa_activity_participant_identity_incompatible%'
+         and lower(p.prosrc) like '%lock table public.activity_participants in share mode%'
          and lower(p.prosrc) like '%for share of profile%'
      )
      or not exists (
@@ -298,6 +337,91 @@ begin
      or has_table_privilege('authenticated','public.role_assignments','UPDATE')
      or has_table_privilege('authenticated','public.role_assignments','DELETE') then
     raise exception '0008_rollback_writer_integrity_contract_drift';
+  end if;
+
+  if not exists (
+       select 1
+       from pg_class table_definition
+       where table_definition.oid='public.activity_participants'::regclass
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=table_definition.relowner
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable
+         )=8
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='service_role')
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable
+         )=8
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='authenticated')
+             and acl.privilege_type='SELECT' and not acl.is_grantable
+         )=1
+         and not exists (
+           select 1 from aclexplode(table_definition.relacl) acl
+           where acl.is_grantable
+              or acl.grantee not in (
+                table_definition.relowner,
+                (select oid from pg_roles where rolname='service_role'),
+                (select oid from pg_roles where rolname='authenticated')
+              )
+              or (acl.grantee=table_definition.relowner and upper(acl.privilege_type) not in (
+                'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+              ))
+              or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+                and upper(acl.privilege_type) not in (
+                  'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+                ))
+              or (acl.grantee=(select oid from pg_roles where rolname='authenticated')
+                and acl.privilege_type<>'SELECT')
+         )
+     ) then
+    raise exception '0008_rollback_participant_table_acl_drift';
+  end if;
+
+  if exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join lateral aclexplode(attribute_definition.attacl) acl
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0 and not attribute_definition.attisdropped
+     )
+     or exists (
+       select 1 from information_schema.column_privileges
+       where table_schema='public' and table_name='activity_participants'
+         and grantee<>(
+           select owner_role.rolname
+           from pg_class table_definition
+           join pg_roles owner_role on owner_role.oid=table_definition.relowner
+           where table_definition.oid='public.activity_participants'::regclass
+         )
+     )
+     or exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join (values
+         ((select oid from pg_roles where rolname='authenticated'),'authenticated'),
+         ((select oid from pg_roles where rolname='anon'),'anon'),
+         (0::oid,'PUBLIC')
+       ) actor(role_oid,role_name)
+       cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) permission(privilege_type)
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0 and not attribute_definition.attisdropped
+         and coalesce(has_column_privilege(
+           actor.role_oid,attribute_definition.attrelid,
+           attribute_definition.attnum,permission.privilege_type
+         ),false)
+         and (
+           actor.role_name<>'authenticated'
+           or permission.privilege_type in ('INSERT','UPDATE','REFERENCES')
+         )
+     ) then
+    raise exception '0008_rollback_participant_column_acl_drift';
   end if;
 
   if (select count(*) from pg_attribute
@@ -2785,6 +2909,32 @@ begin
     raise exception '0008_rollback_inventory_mismatch';
   end if;
 
+  if (select count(*) from information_schema.routine_privileges
+      where routine_schema='public')<>125
+     or (select count(*) from information_schema.table_privileges
+         where table_schema='public')<>270
+     or (select count(*)
+         from pg_class c join pg_namespace n on n.oid=c.relnamespace
+         cross join lateral aclexplode(coalesce(c.relacl,acldefault('S',c.relowner))) acl
+         where n.nspname='public' and c.relkind='S')<>6
+     or (
+       (select count(*)
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+        where n.nspname='public' and p.prokind in ('f','p'))
+       +
+       (select count(*)
+        from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        cross join lateral aclexplode(coalesce(
+          c.relacl,
+          case when c.relkind='S' then acldefault('S',c.relowner)
+               else acldefault('r',c.relowner) end
+        )) acl
+        where n.nspname='public' and c.relkind in ('r','p','v','m','S'))
+     )<>436 then
+    raise exception '0008_rollback_privilege_restoration_mismatch';
+  end if;
+
   if to_regprocedure('public.is_sitaa_operational_account_active()') is not null
      or to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)') is not null
      or to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)') is not null
@@ -2912,6 +3062,69 @@ begin
      or has_table_privilege('authenticated','public.role_assignments','UPDATE')
      or has_table_privilege('authenticated','public.role_assignments','DELETE') then
     raise exception '0008_rollback_writer_privilege_restoration_mismatch';
+  end if;
+
+  if not exists (
+       select 1
+       from pg_class table_definition
+       where table_definition.oid='public.activity_participants'::regclass
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=table_definition.relowner
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable
+         )=8
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='service_role')
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable
+         )=8
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='authenticated')
+             and acl.privilege_type in ('SELECT','INSERT','UPDATE','DELETE')
+             and not acl.is_grantable
+         )=4
+         and not exists (
+           select 1 from aclexplode(table_definition.relacl) acl
+           where acl.is_grantable
+              or acl.grantee not in (
+                table_definition.relowner,
+                (select oid from pg_roles where rolname='service_role'),
+                (select oid from pg_roles where rolname='authenticated')
+              )
+              or (acl.grantee=table_definition.relowner and upper(acl.privilege_type) not in (
+                'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+              ))
+              or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+                and upper(acl.privilege_type) not in (
+                  'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+                ))
+              or (acl.grantee=(select oid from pg_roles where rolname='authenticated')
+                and acl.privilege_type not in ('SELECT','INSERT','UPDATE','DELETE'))
+         )
+     )
+     or exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join lateral aclexplode(attribute_definition.attacl) acl
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0 and not attribute_definition.attisdropped
+     )
+     or exists (
+       select 1 from information_schema.column_privileges
+       where table_schema='public' and table_name='activity_participants'
+         and grantee<>(
+           select owner_role.rolname
+           from pg_class table_definition
+           join pg_roles owner_role on owner_role.oid=table_definition.relowner
+           where table_definition.oid='public.activity_participants'::regclass
+         )
+     ) then
+    raise exception '0008_rollback_participant_acl_restoration_mismatch';
   end if;
 
   if has_table_privilege('authenticated','public.admin_audit_events','SELECT')

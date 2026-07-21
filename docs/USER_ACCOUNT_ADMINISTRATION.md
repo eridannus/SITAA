@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 está operativa mediante 0007. Fase B.2a está preparada localmente mediante 0008, todavía no aplicada; B.2b, B.3 y C permanecen pendientes.
+**Estado funcional:** Fase B.1 está operativa mediante 0007. Fase B.2a está preparada localmente mediante 0008, todavía no aplicada, no verificada en PostgreSQL, sin smoke tests y no reconciliada; B.2b, B.3 y C permanecen pendientes.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -22,11 +22,13 @@ El acceso exige simultáneamente perfil activo y una asignación actual `technic
 
 ### B.2a — Barrera operativa y corrección de identidad
 
-Preparada localmente mediante 0008, todavía no aplicada. Una cuenta distinta de `active` queda fuera de actividades, participantes, asistencia y check-in mediante políticas RLS restrictivas y guardas explícitas en las RPC `SECURITY DEFINER`, sin depender de que expire su JWT.
+Preparada localmente mediante 0008, todavía no aplicada ni verificada en PostgreSQL. Una cuenta distinta de `active` queda fuera de actividades, participantes, asistencia y check-in mediante políticas RLS restrictivas y guardas explícitas en las RPC `SECURITY DEFINER`, sin depender de que expire su JWT.
 
 Un administrador B.1 exacto podrá corregir nombres estructurados, tipo/identificador/programa institucional según el tipo de cuenta, con motivo obligatorio, bloqueos de dependencias y un único evento append-only `account_identity_corrected`. No puede corregirse a sí mismo ni corregir objetivos pendientes. UUID, email, clase/estado de cuenta, ciclo de vida, Auth, roles y toda la historia operativa permanecen inmutables.
 
-La corrección usa un protocolo fijo de concurrencia: autoriza; bloquea `role_assignments`, `activities` y `activity_participants` en `SHARE`; bloquea el perfil; relee el programa; evalúa; actualiza; audita. `activity_participants` deja de aceptar DML directo de `authenticated` y sus altas pasan exclusivamente por RPC con lock/relectura. `activities` conserva las escrituras de aplicación, con un trigger que inmoviliza creador/responsable y revalida alcance y participantes después de cualquier espera. `role_assignments` no incorpora writer B.2a; Fase C deberá adoptar este mismo contrato. La verificación transaccional usa un semestre sintético futuro y no depende de la posición de hoy en el calendario académico. Las pruebas concurrentes de dos sesiones quedan documentadas para la verificación coordinada posterior.
+La corrección usa un protocolo fijo de concurrencia: captura al actor una vez; autoriza de forma optimista; rechaza autocorrección; bloquea `role_assignments`, `activities` y `activity_participants` en `SHARE`; bloquea actor y objetivo en orden UUID; vuelve a exigir autoridad B.1; y sólo entonces carga, valida, actualiza y audita el objetivo. Las revocaciones de rol y desactivaciones del actor se serializan con este segundo control. Sólo bloquean las dependencias abiertas: borradores o actividades que todavía no terminan según la fecha y hora de Ciudad de México. Las cuatro pruebas manuales de dos sesiones siguen pendientes de PostgreSQL.
+
+`activity_participants` deja de aceptar DML directo de `authenticated` tanto por ACL de tabla como por ACL de columna, y sus altas pasan exclusivamente por RPC con lock/relectura. El preflight bloquea cualquier deriva de columna en vez de repararla; el verificador demuestra el detector con un grant transaccional que revoca de inmediato. `activities` conserva las escrituras de aplicación, con un trigger que inmoviliza creador/responsable, revalida alcance y participantes después de cualquier espera y rechaza que un cliente reabra una actividad histórica mediante estado u horario. `role_assignments` no incorpora writer B.2a; Fase C deberá adoptar este mismo contrato.
 
 ### B.2b — Activación y reactivación coordinadas con Auth
 

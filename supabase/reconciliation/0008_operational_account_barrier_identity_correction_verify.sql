@@ -14,6 +14,19 @@ declare
   correction_source text;
   participant_writer_source text;
   activity_writer_source text;
+  actor_uid_reference_count integer;
+  actor_capture_position integer;
+  initial_authority_position integer;
+  self_rejection_position integer;
+  role_lock_position integer;
+  activity_lock_position integer;
+  participant_lock_position integer;
+  profile_lock_position integer;
+  second_authority_position integer;
+  target_load_position integer;
+  dependency_position integer;
+  profile_update_position integer;
+  audit_insert_position integer;
 begin
   if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='public' and c.relkind='r')<>18
@@ -28,6 +41,32 @@ begin
          where n.nspname='public')<>51
      or (select count(*) from pg_policies where schemaname='public')<>25 then
     raise exception '0008_verify_inventory_mismatch';
+  end if;
+
+  if (select count(*) from information_schema.routine_privileges
+      where routine_schema='public')<>132
+     or (select count(*) from information_schema.table_privileges
+         where table_schema='public')<>267
+     or (select count(*)
+         from pg_class c join pg_namespace n on n.oid=c.relnamespace
+         cross join lateral aclexplode(coalesce(c.relacl,acldefault('S',c.relowner))) acl
+         where n.nspname='public' and c.relkind='S')<>6
+     or (
+       (select count(*)
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+        where n.nspname='public' and p.prokind in ('f','p'))
+       +
+       (select count(*)
+        from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        cross join lateral aclexplode(coalesce(
+          c.relacl,
+          case when c.relkind='S' then acldefault('S',c.relowner)
+               else acldefault('r',c.relowner) end
+        )) acl
+        where n.nspname='public' and c.relkind in ('r','p','v','m','S'))
+     )<>440 then
+    raise exception '0008_verify_privilege_inventory_mismatch';
   end if;
 
   if helper_oid is null or context_oid is null or correction_oid is null
@@ -112,10 +151,22 @@ begin
          and p.pronargs=0 and coalesce(cardinality(p.proargnames),0)=0
          and p.proallargtypes is null
          and pg_get_function_identity_arguments(p.oid)=''
-         and md5(regexp_replace(p.prosrc,'\s+','','g'))=
-           'f3015ca3f14ada575b19a6d39d1622ea'
      ) then
     raise exception '0008_verify_new_function_definition_mismatch';
+  end if;
+
+  select count(*) into mismatch_count
+  from (values
+    ('is_sitaa_operational_account_active()','f85f733578f09c0f7466af7e18a90f4c'),
+    ('get_admin_identity_correction_context_b2a(uuid)','83932d04ff8f1b33793e8c7a49bb8e68'),
+    ('correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)','ce05cbc529473c070953e765e3ee05b2'),
+    ('enforce_activity_writer_integrity_b2a()','c58bd04859f1e2a044fcca58d3333e3c')
+  ) expected(signature,body_hash)
+  left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
+  where p.oid is null
+     or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash;
+  if mismatch_count<>0 then
+    raise exception '0008_verify_new_function_body_mismatch';
   end if;
 
   select count(*) into mismatch_count
@@ -169,20 +220,73 @@ begin
     raise exception '0008_verify_writer_trigger_acl_mismatch';
   end if;
 
-  select lower(prosrc) into correction_source from pg_proc where oid=correction_oid;
+  select regexp_replace(lower(prosrc),'\s+',' ','g')
+  into correction_source from pg_proc where oid=correction_oid;
   select lower(prosrc) into participant_writer_source
   from pg_proc where oid=to_regprocedure('public.add_activity_participant(uuid,uuid,text)');
   select lower(prosrc) into activity_writer_source
   from pg_proc where oid=writer_trigger_oid;
-  if position('lock table public.role_assignments in share mode' in correction_source)=0
-     or position('lock table public.activities in share mode' in correction_source)=0
-     or position('lock table public.activity_participants in share mode' in correction_source)=0
-     or position('lock table public.role_assignments in share mode' in correction_source)
-       >=position('lock table public.activities in share mode' in correction_source)
-     or position('lock table public.activities in share mode' in correction_source)
-       >=position('lock table public.activity_participants in share mode' in correction_source)
-     or position('lock table public.activity_participants in share mode' in correction_source)
-       >=position('for update' in correction_source)
+  select count(*) into actor_uid_reference_count
+  from regexp_matches(correction_source,'auth\.uid\(\)','g');
+  actor_capture_position:=position('actor_profile_id uuid:=auth.uid()' in correction_source);
+  initial_authority_position:=position(
+    'if actor_profile_id is null or not public.is_b1_account_admin() then'
+    in correction_source
+  );
+  self_rejection_position:=position(
+    'if actor_profile_id=requested_profile_id then' in correction_source
+  );
+  role_lock_position:=position(
+    'lock table public.role_assignments in share mode' in correction_source
+  );
+  activity_lock_position:=position(
+    'lock table public.activities in share mode' in correction_source
+  );
+  participant_lock_position:=position(
+    'lock table public.activity_participants in share mode' in correction_source
+  );
+  profile_lock_position:=position(
+    'where profile.id in (actor_profile_id,requested_profile_id) order by profile.id for update'
+    in correction_source
+  );
+  second_authority_position:=position(
+    'if not public.is_b1_account_admin() then' in correction_source
+  );
+  target_load_position:=position(
+    'select p.* into target_profile from public.profiles p where p.id=requested_profile_id'
+    in correction_source
+  );
+  dependency_position:=position(
+    'if requested_person_type is distinct from target_profile.person_type then'
+    in correction_source
+  );
+  profile_update_position:=position('update public.profiles p' in correction_source);
+  audit_insert_position:=position('insert into public.admin_audit_events' in correction_source);
+
+  if actor_uid_reference_count<>1
+     or actor_capture_position=0
+     or initial_authority_position=0
+     or self_rejection_position=0
+     or role_lock_position=0
+     or activity_lock_position=0
+     or participant_lock_position=0
+     or profile_lock_position=0
+     or second_authority_position=0
+     or target_load_position=0
+     or dependency_position=0
+     or profile_update_position=0
+     or audit_insert_position=0
+     or actor_capture_position>=initial_authority_position
+     or initial_authority_position>=self_rejection_position
+     or self_rejection_position>=role_lock_position
+     or role_lock_position>=activity_lock_position
+     or activity_lock_position>=participant_lock_position
+     or participant_lock_position>=profile_lock_position
+     or profile_lock_position>=second_authority_position
+     or second_authority_position>=target_load_position
+     or target_load_position>=dependency_position
+     or second_authority_position>=profile_update_position
+     or profile_update_position>=audit_insert_position
      or participant_writer_source not like '%lock table public.activity_participants in row exclusive mode%'
      or participant_writer_source not like '%for share%'
      or position('lock table public.activity_participants in row exclusive mode' in participant_writer_source)
@@ -191,8 +295,18 @@ begin
      or activity_writer_source not like '%new.responsible_profile_id is distinct from auth.uid()%'
      or activity_writer_source not like '%new.responsible_profile_id is distinct from old.responsible_profile_id%'
      or activity_writer_source not like '%can_create_activity(%'
+     or activity_writer_source not like '%lock table public.activity_participants in share mode%'
      or activity_writer_source not like '%for share of profile%'
-     or activity_writer_source not like '%sitaa_activity_participant_identity_incompatible%' then
+     or activity_writer_source not like '%sitaa_activity_participant_identity_incompatible%'
+     or activity_writer_source not like '%sitaa_activity_responsibility_identity_incompatible%'
+     or activity_writer_source not like '%sitaa_activity_reopen_forbidden%'
+     or activity_writer_source not like '%new.status_code is distinct from old.status_code%'
+     or activity_writer_source not like '%new.start_date is distinct from old.start_date%'
+     or activity_writer_source not like '%new.start_time is distinct from old.start_time%'
+     or activity_writer_source not like '%new.end_date is distinct from old.end_date%'
+     or activity_writer_source not like '%new.end_time is distinct from old.end_time%'
+     or activity_writer_source not like '%new.starts_at is distinct from old.starts_at%'
+     or activity_writer_source not like '%new.ends_at is distinct from old.ends_at%' then
     raise exception '0008_verify_dependency_lock_protocol_mismatch';
   end if;
 
@@ -217,6 +331,87 @@ begin
      or has_table_privilege('authenticated','public.role_assignments','UPDATE')
      or has_table_privilege('authenticated','public.role_assignments','DELETE') then
     raise exception '0008_verify_supported_writer_privilege_mismatch';
+  end if;
+
+  if not exists (
+       select 1
+       from pg_class table_definition
+       where table_definition.oid='public.activity_participants'::regclass
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=table_definition.relowner
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable
+         )=8
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='service_role')
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable
+         )=8
+         and (
+           select count(*) from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='authenticated')
+             and acl.privilege_type='SELECT' and not acl.is_grantable
+         )=1
+         and not exists (
+           select 1 from aclexplode(table_definition.relacl) acl
+           where acl.is_grantable
+              or acl.grantee not in (
+                table_definition.relowner,
+                (select oid from pg_roles where rolname='service_role'),
+                (select oid from pg_roles where rolname='authenticated')
+              )
+              or (acl.grantee=table_definition.relowner and upper(acl.privilege_type) not in (
+                'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+              ))
+              or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+                and upper(acl.privilege_type) not in (
+                  'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+                ))
+              or (acl.grantee=(select oid from pg_roles where rolname='authenticated')
+                and acl.privilege_type<>'SELECT')
+         )
+     )
+     or exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join lateral aclexplode(attribute_definition.attacl) acl
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0 and not attribute_definition.attisdropped
+     )
+     or exists (
+       select 1 from information_schema.column_privileges
+       where table_schema='public' and table_name='activity_participants'
+         and grantee<>(
+           select rolname from pg_roles
+           where oid=(select relowner from pg_class
+             where oid='public.activity_participants'::regclass)
+         )
+     )
+     or exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join (values
+         ((select oid from pg_roles where rolname='authenticated'),'authenticated'),
+         ((select oid from pg_roles where rolname='anon'),'anon'),
+         (0::oid,'PUBLIC')
+       ) actor(role_oid,role_name)
+       cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) permission(privilege_type)
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0 and not attribute_definition.attisdropped
+         and coalesce(has_column_privilege(
+           actor.role_oid,attribute_definition.attrelid,
+           attribute_definition.attnum,permission.privilege_type
+         ),false)
+         and (
+           actor.role_name<>'authenticated'
+           or permission.privilege_type in ('INSERT','UPDATE','REFERENCES')
+         )
+     ) then
+    raise exception '0008_verify_participant_acl_mismatch';
   end if;
 
   if exists (
@@ -283,7 +478,7 @@ begin
   from (values
       ('activity_attendance_deadline(uuid)','fa3b7c8ef43aab1a8ede008671b5dc08'),
       ('activity_attendance_open_at(uuid)','ae06ee4eb6cb93d433aed430b6b07e8c'),
-      ('activity_has_ended(uuid)','c318afdb983e1a21461fe071b7a4fa95'),
+      ('activity_has_ended(uuid)','e044cf53c592485c9762634866469deb'),
       ('add_activity_participant(uuid,uuid,text)','49ace655e29301b5a2d34438d3689296'),
       ('can_create_activity(text,uuid,uuid,text)','a681afcc9eb243295418bcb048658c3f'),
       ('can_create_activity(uuid,text)','d2b5f611bc457b0533a270302deb0362'),
@@ -512,6 +707,70 @@ begin
 end;
 $static_contract$;
 
+-- Regresión controlada: una concesión por columna debe activar las tres señales
+-- usadas por el contrato estático. Se retira de inmediato y el ROLLBACK final
+-- conserva una segunda barrera de seguridad.
+grant update(attendance_notes) on table public.activity_participants
+  to authenticated;
+
+do $column_acl_detection_regression$
+begin
+  if not exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join lateral aclexplode(attribute_definition.attacl) acl
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attname='attendance_notes'
+         and acl.grantee=(select oid from pg_roles where rolname='authenticated')
+         and acl.privilege_type='UPDATE'
+         and not acl.is_grantable
+     )
+     or not exists (
+       select 1
+       from information_schema.column_privileges
+       where table_schema='public' and table_name='activity_participants'
+         and column_name='attendance_notes'
+         and grantee='authenticated' and privilege_type='UPDATE'
+         and is_grantable='NO'
+     )
+     or not has_column_privilege(
+       'authenticated','public.activity_participants','attendance_notes','UPDATE'
+     ) then
+    raise exception '0008_verify_column_acl_detection_regression_failed';
+  end if;
+end;
+$column_acl_detection_regression$;
+
+revoke update(attendance_notes) on table public.activity_participants
+  from authenticated;
+
+do $column_acl_cleanup_contract$
+begin
+  if exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join lateral aclexplode(attribute_definition.attacl) acl
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0 and not attribute_definition.attisdropped
+     )
+     or exists (
+       select 1 from information_schema.column_privileges
+       where table_schema='public' and table_name='activity_participants'
+         and grantee<>(
+           select owner_role.rolname
+           from pg_class table_definition
+           join pg_roles owner_role on owner_role.oid=table_definition.relowner
+           where table_definition.oid='public.activity_participants'::regclass
+         )
+     )
+     or has_column_privilege(
+       'authenticated','public.activity_participants','attendance_notes','UPDATE'
+     ) then
+    raise exception '0008_verify_column_acl_cleanup_failed';
+  end if;
+end;
+$column_acl_cleanup_contract$;
+
 -- Fixtures sintéticos.
 create temporary table sitaa_0008_context(
   run_marker text not null,
@@ -535,6 +794,7 @@ create temporary table sitaa_0008_context(
   activity_open_program_participation uuid not null,
   activity_completed_history uuid not null,
   activity_inactive_attempt uuid not null,
+  activity_missing uuid not null,
   activity_writer_compatible uuid not null,
   activity_writer_incompatible uuid not null
 ) on commit drop;
@@ -546,7 +806,8 @@ insert into sitaa_0008_context(
   academic_period_sort_order,activity_draft,activity_scheduled,
   activity_open_person_dependency,activity_open_program_responsibility,
   activity_open_program_participation,activity_completed_history,
-  activity_inactive_attempt,activity_writer_compatible,activity_writer_incompatible
+  activity_inactive_attempt,activity_missing,
+  activity_writer_compatible,activity_writer_incompatible
 )
 select
   'v8'||replace(seed::text,'-',''),
@@ -558,7 +819,8 @@ select
   period_start,period_start+120,period_start+10,
   1000000000+mod(abs(hashtext(seed::text)::bigint),1000000000)::integer,
   gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
-  gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid()
+  gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
+  gen_random_uuid(),gen_random_uuid()
 from (
   select
     seed,
@@ -946,6 +1208,13 @@ select activity_completed_history,'Actividad histórica sintética '||run_marker
   pg_temp.case_id('target_history_only'),pg_temp.case_id('target_history_only')
 from sitaa_0008_context;
 
+insert into public.activity_participants(
+  activity_id,profile_id,participant_role_code,added_by
+)
+select activity_completed_history,pg_temp.case_id('target_history_only'),
+  'responsible',pg_temp.case_id('admin_exact')
+from sitaa_0008_context;
+
 -- Preservar instantáneas de objetos que la corrección nunca debe modificar.
 create temporary table sitaa_0008_snapshots as
 select 'roles'::text category,coalesce(jsonb_agg(to_jsonb(ra) order by ra.id),'[]'::jsonb) payload
@@ -990,6 +1259,15 @@ begin
   if not public.is_sitaa_operational_account_active()
      or not exists(select 1 from public.activities)
      or not exists(select 1 from public.get_visible_activity_cards())
+     or public.activity_has_ended(
+       (select activity_draft from pg_temp.sitaa_0008_context)
+     ) is distinct from false
+     or public.activity_has_ended(
+       (select activity_completed_history from pg_temp.sitaa_0008_context)
+     ) is distinct from true
+     or public.activity_has_ended(
+       (select activity_missing from pg_temp.sitaa_0008_context)
+     ) is not null
      or public.activity_attendance_deadline(
        (select activity_scheduled from pg_temp.sitaa_0008_context)
      ) is null then
@@ -1039,6 +1317,12 @@ begin
      or public.activity_attendance_deadline(
        (select activity_scheduled from pg_temp.sitaa_0008_context)
      ) is not null
+     or public.activity_has_ended(
+       (select activity_scheduled from pg_temp.sitaa_0008_context)
+     ) is distinct from false
+     or public.activity_has_ended(
+       (select activity_missing from pg_temp.sitaa_0008_context)
+     ) is distinct from false
      or public.can_edit_activity((select activity_scheduled from pg_temp.sitaa_0008_context)) then
     raise exception '0008_verify_inactive_read_barrier_failed';
   end if;
@@ -1741,6 +2025,119 @@ begin
   end if;
 end;
 $successful_corrections$;
+
+do $historical_boundary_contract$
+declare
+  activity_before jsonb;
+  activity_after jsonb;
+  identity_before jsonb;
+  identity_after jsonb;
+  audit_before bigint;
+  audit_after bigint;
+  actual_state text;
+  actual_message text;
+begin
+  if not exists (
+       select 1
+       from public.activity_participants participant
+       join public.activities activity on activity.id=participant.activity_id
+       join public.profiles profile on profile.id=participant.profile_id
+       where activity.id=(
+         select activity_completed_history from pg_temp.sitaa_0008_context
+         )
+         and participant.profile_id=pg_temp.case_id('target_history_only')
+         and participant.participant_role_code='responsible'
+         and profile.person_type='student'
+         and profile.primary_program_id is distinct from activity.program_id
+         and activity.status_code<>'draft'
+         and coalesce(
+           (
+             coalesce(activity.end_date,activity.start_date)::timestamp
+             + coalesce(activity.end_time,activity.start_time,time '23:59:59')
+           ) < (now() at time zone 'America/Mexico_City'),
+           false
+         )
+     )
+     or exists (
+       select 1
+       from public.activity_participants participant
+       join public.activities activity on activity.id=participant.activity_id
+       join public.profiles profile on profile.id=participant.profile_id
+       where activity.id=(
+         select activity_completed_history from pg_temp.sitaa_0008_context
+         )
+         and participant.profile_id=pg_temp.case_id('target_history_only')
+         and participant.participant_role_code='responsible'
+         and profile.person_type='student'
+         and profile.primary_program_id is distinct from activity.program_id
+         and (
+           activity.status_code='draft'
+           or not coalesce(
+             (
+               coalesce(activity.end_date,activity.start_date)::timestamp
+               + coalesce(activity.end_time,activity.start_time,time '23:59:59')
+             ) < (now() at time zone 'America/Mexico_City'),
+             false
+           )
+         )
+     ) then
+    raise exception '0008_verify_historical_dependency_boundary_mismatch';
+  end if;
+
+  select to_jsonb(activity) into activity_before
+  from public.activities activity
+  where activity.id=(
+    select activity_completed_history from pg_temp.sitaa_0008_context
+  );
+  select to_jsonb(profile) into identity_before
+  from public.profiles profile
+  where profile.id=pg_temp.case_id('target_history_only');
+  select count(*) into audit_before
+  from public.admin_audit_events
+  where target_profile_id=pg_temp.case_id('target_history_only');
+
+  begin
+    update public.activities activity
+    set
+      start_date=fixture.fixture_activity_date,
+      start_time=time '10:00',
+      end_date=fixture.fixture_activity_date,
+      end_time=time '11:00',
+      starts_at=(fixture.fixture_activity_date+time '10:00')
+        at time zone 'America/Mexico_City',
+      ends_at=(fixture.fixture_activity_date+time '11:00')
+        at time zone 'America/Mexico_City'
+    from pg_temp.sitaa_0008_context fixture
+    where activity.id=fixture.activity_completed_history;
+  exception when sqlstate '23514' then
+    get stacked diagnostics
+      actual_state=returned_sqlstate,actual_message=message_text;
+  end;
+
+  if actual_state is distinct from '23514'
+     or actual_message is distinct from 'sitaa_activity_reopen_forbidden' then
+    raise exception '0008_verify_historical_reopen_contract_mismatch';
+  end if;
+
+  select to_jsonb(activity) into activity_after
+  from public.activities activity
+  where activity.id=(
+    select activity_completed_history from pg_temp.sitaa_0008_context
+  );
+  select to_jsonb(profile) into identity_after
+  from public.profiles profile
+  where profile.id=pg_temp.case_id('target_history_only');
+  select count(*) into audit_after
+  from public.admin_audit_events
+  where target_profile_id=pg_temp.case_id('target_history_only');
+
+  if activity_before is distinct from activity_after
+     or identity_before is distinct from identity_after
+     or audit_before<>audit_after then
+    raise exception '0008_verify_rejected_reopen_not_atomic';
+  end if;
+end;
+$historical_boundary_contract$;
 reset role;
 
 -- Matriz de escritores soportados: DML directo cerrado para participantes,
@@ -1751,6 +2148,7 @@ do $supported_writer_contract$
 declare
   actual_state text;
   actual_message text;
+  affected integer;
 begin
   begin
     insert into public.activity_participants(
@@ -1803,6 +2201,23 @@ begin
     time '16:00',fixture_activity_date,time '17:00','one_hour','program',
     division_a,pg_temp.case_id('active_professor'),pg_temp.case_id('active_professor')
   from pg_temp.sitaa_0008_context;
+
+  update public.activities activity
+  set start_time=time '16:30',end_time=time '17:30'
+  where activity.id=(
+    select activity_writer_compatible from pg_temp.sitaa_0008_context
+  );
+  get diagnostics affected=row_count;
+  if affected<>1 or not exists (
+    select 1 from public.activities activity
+    where activity.id=(
+      select activity_writer_compatible from pg_temp.sitaa_0008_context
+    ) and activity.status_code='draft'
+      and activity.start_time=time '16:30'
+      and activity.end_time=time '17:30'
+  ) then
+    raise exception '0008_verify_open_schedule_update_failed';
+  end if;
 
   actual_state:=null;
   actual_message:=null;

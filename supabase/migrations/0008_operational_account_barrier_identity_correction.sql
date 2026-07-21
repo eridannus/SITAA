@@ -24,6 +24,32 @@ begin
     raise exception '0008_preflight_inventory_mismatch';
   end if;
 
+  if (select count(*) from information_schema.routine_privileges
+      where routine_schema='public')<>125
+     or (select count(*) from information_schema.table_privileges
+         where table_schema='public')<>270
+     or (select count(*)
+         from pg_class c join pg_namespace n on n.oid=c.relnamespace
+         cross join lateral aclexplode(coalesce(c.relacl,acldefault('S',c.relowner))) acl
+         where n.nspname='public' and c.relkind='S')<>6
+     or (
+       (select count(*)
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+        where n.nspname='public' and p.prokind in ('f','p'))
+       +
+       (select count(*)
+        from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        cross join lateral aclexplode(coalesce(
+          c.relacl,
+          case when c.relkind='S' then acldefault('S',c.relowner)
+               else acldefault('r',c.relowner) end
+        )) acl
+        where n.nspname='public' and c.relkind in ('r','p','v','m','S'))
+     )<>436 then
+    raise exception '0008_preflight_privilege_inventory_mismatch';
+  end if;
+
   with expected(signature) as (
     values
       ('activity_attendance_deadline(uuid)'),
@@ -314,19 +340,87 @@ begin
     raise exception '0008_preflight_client_grant_drift';
   end if;
 
+  -- El estado post-0007 no contiene grants de columna. Las escrituras efectivas
+  -- de authenticated proceden exclusivamente de su ACL de tabla y, por tanto,
+  -- deben coincidir exactamente con ella antes del REVOKE de 0008.
+  if exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join lateral aclexplode(attribute_definition.attacl) acl
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0
+         and not attribute_definition.attisdropped
+     )
+     or exists (
+       select 1
+       from information_schema.column_privileges
+       where table_schema='public' and table_name='activity_participants'
+         and grantee<>(
+           select owner_role.rolname
+           from pg_class table_definition
+           join pg_roles owner_role on owner_role.oid=table_definition.relowner
+           where table_definition.oid='public.activity_participants'::regclass
+         )
+     )
+     or exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join (values
+         (0::oid,'PUBLIC'),
+         ((select oid from pg_roles where rolname='anon'),'anon'),
+         ((select oid from pg_roles where rolname='authenticated'),'authenticated')
+       ) actor(role_oid,role_name)
+       cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) permission(privilege_type)
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0
+         and not attribute_definition.attisdropped
+         and (
+           (actor.role_name in ('PUBLIC','anon') and coalesce(
+             has_column_privilege(
+               actor.role_oid,attribute_definition.attrelid,
+               attribute_definition.attnum,permission.privilege_type
+             ),false
+           ))
+           or (
+             actor.role_name='authenticated'
+             and permission.privilege_type in ('INSERT','UPDATE','REFERENCES')
+             and has_column_privilege(
+               actor.role_oid,attribute_definition.attrelid,
+               attribute_definition.attnum,permission.privilege_type
+             ) is distinct from has_table_privilege(
+               actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+             )
+           )
+         )
+     ) then
+    raise exception '0008_preflight_participant_column_acl_drift';
+  end if;
+
   if exists (
        select 1
        from public.activity_participants participant
        join public.activities activity on activity.id=participant.activity_id
        join public.profiles profile on profile.id=participant.profile_id
        left join public.academic_programs program on program.id=profile.primary_program_id
-       where profile.primary_program_id is null
-          or (activity.scope_type='program'
-            and profile.primary_program_id is distinct from activity.program_id)
-          or (activity.scope_type='division'
-            and program.division_id is distinct from activity.division_id)
-          or (participant.participant_role_code='responsible'
-            and profile.person_type is distinct from 'professor')
+       where (
+         activity.status_code='draft'
+         or not coalesce(
+           (
+             coalesce(activity.end_date,activity.start_date)::timestamp
+             + coalesce(activity.end_time,activity.start_time,time '23:59:59')
+           ) < (now() at time zone 'America/Mexico_City'),
+           false
+         )
+       )
+       and (
+         profile.primary_program_id is null
+         or (activity.scope_type='program'
+           and profile.primary_program_id is distinct from activity.program_id)
+         or (activity.scope_type='division'
+           and program.division_id is distinct from activity.division_id)
+         or (participant.participant_role_code='responsible'
+           and profile.person_type is distinct from 'professor')
+       )
      ) then
     raise exception '0008_preflight_existing_participant_identity_incompatible';
   end if;
@@ -621,20 +715,23 @@ CREATE OR REPLACE FUNCTION public.activity_has_ended(target_activity_id uuid)
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  select public.is_sitaa_operational_account_active() and coalesce((
-    select case
-      when a.status_code = 'draft' then false
-      else coalesce(
-        (
-          coalesce(a.end_date, a.start_date)::timestamp
-          + coalesce(a.end_time, a.start_time, time '23:59:59')
-        ) < (now() at time zone 'America/Mexico_City'),
-        false
-      )
-    end
-    from public.activities a
-    where a.id = target_activity_id
-  ), false);
+  select case
+    when not public.is_sitaa_operational_account_active() then false
+    else (
+      select case
+        when a.status_code = 'draft' then false
+        else coalesce(
+          (
+            coalesce(a.end_date, a.start_date)::timestamp
+            + coalesce(a.end_time, a.start_time, time '23:59:59')
+          ) < (now() at time zone 'America/Mexico_City'),
+          false
+        )
+      end
+      from public.activities a
+      where a.id = target_activity_id
+    )
+  end;
 $function$;
 
 -- Barrera operativa: add_activity_participant(uuid,uuid,text)
@@ -2976,9 +3073,14 @@ declare
   changed text[]:=array[]::text[];
   persisted_updated_at timestamptz;
   event_id uuid;
+  actor_profile_id uuid:=auth.uid();
 begin
-  if auth.uid() is null or not public.is_b1_account_admin() then
+  if actor_profile_id is null or not public.is_b1_account_admin() then
     raise exception 'sitaa_admin_access_denied' using errcode='42501';
+  end if;
+
+  if actor_profile_id=requested_profile_id then
+    raise exception 'sitaa_identity_self_correction_forbidden' using errcode='42501';
   end if;
 
   -- Protocolo fijo y corto: las escrituras normales toman ROW EXCLUSIVE y no
@@ -2987,14 +3089,23 @@ begin
   lock table public.activities in share mode;
   lock table public.activity_participants in share mode;
 
-  if requested_profile_id=auth.uid() then
-    raise exception 'sitaa_identity_self_correction_forbidden' using errcode='42501';
+  -- Actor y objetivo se bloquean juntos y por UUID para que dos administradores
+  -- que se corrijan de forma cruzada no adquieran las filas en orden opuesto.
+  perform 1
+  from public.profiles profile
+  where profile.id in (actor_profile_id,requested_profile_id)
+  order by profile.id
+  for update;
+
+  -- La autorización inicial es optimista. Ésta es la decisión autoritativa:
+  -- ocurre tras esperar roles, dependencias y estado de ambos perfiles.
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode='42501';
   end if;
 
   select p.* into target_profile
   from public.profiles p
-  where p.id=requested_profile_id
-  for update;
+  where p.id=requested_profile_id;
 
   if not found then
     raise exception 'sitaa_identity_target_unavailable' using errcode='P0001';
@@ -3207,7 +3318,7 @@ begin
     actor_profile_id,target_profile_id,action_code,outcome,reason,
     role_assignment_id,metadata
   ) values (
-    auth.uid(),target_profile.id,'account_identity_corrected','success',
+    actor_profile_id,target_profile.id,'account_identity_corrected','success',
     normalized_reason,null,
     jsonb_build_object('changed_fields',to_jsonb(changed))
   )
@@ -3227,7 +3338,49 @@ set search_path=pg_catalog,public
 as $function$
 declare
   participant record;
+  responsible record;
+  old_is_open boolean:=false;
+  new_is_open boolean:=false;
+  scope_changed boolean:=false;
+  schedule_changed boolean:=false;
+  revalidate_dependencies boolean:=false;
 begin
+  if tg_op='UPDATE' then
+    old_is_open:=old.status_code='draft' or not coalesce(
+      (
+        coalesce(old.end_date,old.start_date)::timestamp
+        + coalesce(old.end_time,old.start_time,time '23:59:59')
+      ) < (now() at time zone 'America/Mexico_City'),
+      false
+    );
+    new_is_open:=new.status_code='draft' or not coalesce(
+      (
+        coalesce(new.end_date,new.start_date)::timestamp
+        + coalesce(new.end_time,new.start_time,time '23:59:59')
+      ) < (now() at time zone 'America/Mexico_City'),
+      false
+    );
+    scope_changed:=new.scope_type is distinct from old.scope_type
+      or new.program_id is distinct from old.program_id
+      or new.division_id is distinct from old.division_id;
+    schedule_changed:=new.status_code is distinct from old.status_code
+      or new.start_date is distinct from old.start_date
+      or new.start_time is distinct from old.start_time
+      or new.end_date is distinct from old.end_date
+      or new.end_time is distinct from old.end_time
+      or new.starts_at is distinct from old.starts_at
+      or new.ends_at is distinct from old.ends_at;
+
+    if schedule_changed and not old_is_open and new_is_open
+       and auth.uid() is not null then
+      raise exception 'sitaa_activity_reopen_forbidden' using errcode='23514';
+    end if;
+
+    revalidate_dependencies:=new_is_open and (
+      scope_changed or (schedule_changed and not old_is_open)
+    );
+  end if;
+
   if auth.uid() is not null then
     if tg_op='INSERT' then
       if new.created_by is distinct from auth.uid()
@@ -3257,11 +3410,9 @@ begin
     end if;
   end if;
 
-  if tg_op='UPDATE' and (
-    new.scope_type is distinct from old.scope_type
-    or new.program_id is distinct from old.program_id
-    or new.division_id is distinct from old.division_id
-  ) then
+  if tg_op='UPDATE' and revalidate_dependencies then
+    lock table public.activity_participants in share mode;
+
     for participant in
       select
         activity_participant.participant_role_code,
@@ -3285,6 +3436,28 @@ begin
           using errcode='23514';
       end if;
     end loop;
+
+    select
+      profile.account_kind,
+      profile.primary_program_id,
+      program.division_id
+    into responsible
+    from public.profiles profile
+    left join public.academic_programs program
+      on program.id=profile.primary_program_id
+    where profile.id=new.responsible_profile_id
+    for share of profile;
+
+    if responsible.account_kind='institutional' and (
+      responsible.primary_program_id is null
+      or (new.scope_type='program'
+        and responsible.primary_program_id is distinct from new.program_id)
+      or (new.scope_type='division'
+        and responsible.division_id is distinct from new.division_id)
+    ) then
+      raise exception 'sitaa_activity_responsibility_identity_incompatible'
+        using errcode='23514';
+    end if;
   end if;
 
   return new;
@@ -3349,6 +3522,32 @@ begin
     raise exception '0008_post_ddl_inventory_mismatch';
   end if;
 
+  if (select count(*) from information_schema.routine_privileges
+      where routine_schema='public')<>132
+     or (select count(*) from information_schema.table_privileges
+         where table_schema='public')<>267
+     or (select count(*)
+         from pg_class c join pg_namespace n on n.oid=c.relnamespace
+         cross join lateral aclexplode(coalesce(c.relacl,acldefault('S',c.relowner))) acl
+         where n.nspname='public' and c.relkind='S')<>6
+     or (
+       (select count(*)
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+        where n.nspname='public' and p.prokind in ('f','p'))
+       +
+       (select count(*)
+        from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        cross join lateral aclexplode(coalesce(
+          c.relacl,
+          case when c.relkind='S' then acldefault('S',c.relowner)
+               else acldefault('r',c.relowner) end
+        )) acl
+        where n.nspname='public' and c.relkind in ('r','p','v','m','S'))
+     )<>440 then
+    raise exception '0008_post_ddl_privilege_inventory_mismatch';
+  end if;
+
   if not exists (
        select 1 from pg_policies
        where schemaname='public' and tablename='activities'
@@ -3395,8 +3594,6 @@ begin
          and coalesce(cardinality(function_definition.proargnames),0)=0
          and function_definition.proallargtypes is null
          and pg_get_function_identity_arguments(function_definition.oid)=''
-         and md5(regexp_replace(function_definition.prosrc,'\s+','','g'))=
-           'f3015ca3f14ada575b19a6d39d1622ea'
      ) then
     raise exception '0008_post_ddl_writer_trigger_mismatch';
   end if;
@@ -3437,6 +3634,14 @@ begin
   where lower(p.prosrc) not like '%is_sitaa_operational_account_active%';
   if mismatch_count<>0 then
     raise exception '0008_post_ddl_operational_barrier_incomplete';
+  end if;
+
+  if (
+    select md5(regexp_replace(p.prosrc,'\s+','','g'))
+    from pg_proc p
+    where p.oid=to_regprocedure('public.activity_has_ended(uuid)')
+  ) is distinct from 'e044cf53c592485c9762634866469deb' then
+    raise exception '0008_post_ddl_activity_has_ended_body_mismatch';
   end if;
 
   if not exists (
@@ -3495,8 +3700,22 @@ begin
          ]::oid[]
          and regexp_replace(lower(pg_get_function_identity_arguments(p.oid)),'\s+','','g')
            ='requested_profile_iduuid,requested_first_namestext,requested_paternal_surnametext,requested_maternal_surnametext,requested_person_typetext,requested_institutional_id_valuetext,requested_primary_program_iduuid,correction_reasontext'
-     ) then
+  ) then
     raise exception '0008_post_ddl_new_function_properties_mismatch';
+  end if;
+
+  select count(*) into mismatch_count
+  from (values
+    ('is_sitaa_operational_account_active()','f85f733578f09c0f7466af7e18a90f4c'),
+    ('get_admin_identity_correction_context_b2a(uuid)','83932d04ff8f1b33793e8c7a49bb8e68'),
+    ('correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)','ce05cbc529473c070953e765e3ee05b2'),
+    ('enforce_activity_writer_integrity_b2a()','c58bd04859f1e2a044fcca58d3333e3c')
+  ) expected(signature,body_hash)
+  left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
+  where p.oid is null
+     or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash;
+  if mismatch_count<>0 then
+    raise exception '0008_post_ddl_new_function_body_mismatch';
   end if;
 
   select count(*) into mismatch_count
@@ -3589,6 +3808,126 @@ begin
      or has_table_privilege('service_role','public.admin_audit_events','UPDATE')
      or has_table_privilege('service_role','public.admin_audit_events','DELETE') then
     raise exception '0008_post_ddl_audit_acl_changed';
+  end if;
+
+  if not exists (
+       select 1
+       from pg_class table_definition
+       where table_definition.oid='public.activity_participants'::regclass
+         and (
+           select count(*)
+           from aclexplode(table_definition.relacl) acl
+           where acl.grantee=table_definition.relowner
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             )
+             and not acl.is_grantable
+         )=8
+         and (
+           select count(*)
+           from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='service_role')
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             )
+             and not acl.is_grantable
+         )=8
+         and (
+           select count(*)
+           from aclexplode(table_definition.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='authenticated')
+             and acl.privilege_type='SELECT'
+             and not acl.is_grantable
+         )=1
+         and not exists (
+           select 1
+           from aclexplode(table_definition.relacl) acl
+           where acl.is_grantable
+              or acl.grantee not in (
+                table_definition.relowner,
+                (select oid from pg_roles where rolname='service_role'),
+                (select oid from pg_roles where rolname='authenticated')
+              )
+              or (acl.grantee=table_definition.relowner and upper(acl.privilege_type) not in (
+                'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+              ))
+              or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+                and upper(acl.privilege_type) not in (
+                  'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+                ))
+              or (acl.grantee=(select oid from pg_roles where rolname='authenticated')
+                and acl.privilege_type<>'SELECT')
+         )
+     )
+     or not has_table_privilege('authenticated','public.activity_participants','SELECT')
+     or exists (
+       select 1
+       from (values
+         ('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),
+         ('REFERENCES'),('TRIGGER'),('MAINTAIN')
+       ) permission(privilege_type)
+       where has_table_privilege(
+         'authenticated','public.activity_participants',permission.privilege_type
+       )
+     )
+     or exists (
+       select 1
+       from (values
+         (0::oid),
+         ((select oid from pg_roles where rolname='anon'))
+       ) actor(role_oid)
+       cross join (values
+         ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),
+         ('REFERENCES'),('TRIGGER'),('MAINTAIN')
+       ) permission(privilege_type)
+       where coalesce(has_table_privilege(
+         actor.role_oid,'public.activity_participants',permission.privilege_type
+       ),false)
+     ) then
+    raise exception '0008_post_ddl_participant_table_acl_mismatch';
+  end if;
+
+  if exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join lateral aclexplode(attribute_definition.attacl) acl
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0
+         and not attribute_definition.attisdropped
+     )
+     or exists (
+       select 1
+       from information_schema.column_privileges
+       where table_schema='public' and table_name='activity_participants'
+         and grantee<>(
+           select owner_role.rolname
+           from pg_class table_definition
+           join pg_roles owner_role on owner_role.oid=table_definition.relowner
+           where table_definition.oid='public.activity_participants'::regclass
+         )
+     )
+     or exists (
+       select 1
+       from pg_attribute attribute_definition
+       cross join (values
+         ((select oid from pg_roles where rolname='authenticated'),'authenticated'),
+         ((select oid from pg_roles where rolname='anon'),'anon'),
+         (0::oid,'PUBLIC')
+       ) actor(role_oid,role_name)
+       cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) permission(privilege_type)
+       where attribute_definition.attrelid='public.activity_participants'::regclass
+         and attribute_definition.attnum>0
+         and not attribute_definition.attisdropped
+         and coalesce(has_column_privilege(
+           actor.role_oid,attribute_definition.attrelid,
+           attribute_definition.attnum,permission.privilege_type
+         ),false)
+         and (
+           actor.role_name<>'authenticated'
+           or permission.privilege_type in ('INSERT','UPDATE','REFERENCES')
+         )
+     ) then
+    raise exception '0008_post_ddl_participant_column_acl_mismatch';
   end if;
 
   if not has_table_privilege('authenticated','public.activity_participants','SELECT')

@@ -188,8 +188,10 @@ La Fase A de identidad Google y los nombres estructurados de 0006 están aplicad
 
 ## Delta preparado por 0008
 
-0008 no crea tablas, columnas, índices, restricciones ni semillas. Añade una frontera de autorización, dos RPC administrativas y un trigger de integridad para las escrituras directas soportadas de `activities`; además retira el DML directo de `authenticated` sobre `activity_participants` para obligar a usar sus RPC validados.
+0008 permanece local, no aplicada, no verificada en PostgreSQL, sin smoke tests y no reconciliada. No crea tablas, columnas, índices, restricciones ni semillas. Añade una frontera de autorización, dos RPC administrativas y un trigger de integridad para las escrituras directas soportadas de `activities`; además retira el DML directo de `authenticated` sobre `activity_participants` para obligar a usar sus RPC validados.
 
 Una corrección exitosa conserva UUID de perfil, email, vínculo Auth, clase/estado de cuenta, ciclo de vida, asignaciones y toda la historia operativa. Inserta exactamente un evento append-only en `admin_audit_events` con `action_code = account_identity_corrected`, `outcome = success`, razón normalizada y metadata que contiene sólo el arreglo ordenado `changed_fields`.
 
 La normalización administrativa colapsa whitespace antes de recortar; el nombre derivado mide 2–200 caracteres en ambos tipos de cuenta y `person_type` institucional nunca puede ser nulo. Las decisiones sobre cambios de tipo/programa se serializan contra asignaciones, actividades y participantes mediante locks de tabla en orden documentado.
+
+Para estas dependencias, “abierta” significa `status_code = draft` o no terminada mediante el cálculo post-0007 de fecha/hora en `America/Mexico_City`; “histórica” significa no borrador y terminada por ese mismo cálculo. La historia puede quedar incompatible después de una corrección válida sin ser reescrita. El trigger de `activities` impide que DML autenticado convierta esa historia en actividad abierta; una ruta confiable que lo hiciera tendría que revalidar participantes y responsabilidad primaria antes del commit.

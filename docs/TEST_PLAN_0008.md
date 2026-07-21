@@ -2,9 +2,11 @@
 
 ## Estado y alcance
 
-`0008_operational_account_barrier_identity_correction.sql` está preparada localmente y **no aplicada**. Este plan valida la barrera operativa de cuenta activa y la corrección administrativa de identidad de Fase B.2a. No autoriza conexión ni ejecución contra Supabase.
+`0008_operational_account_barrier_identity_correction.sql` está preparada localmente y **no aplicada**. Tampoco está verificada en PostgreSQL, probada mediante smoke tests ni reconciliada contra un snapshot post-0008. Este plan valida la barrera operativa de cuenta activa y la corrección administrativa de identidad de Fase B.2a. No autoriza conexión ni ejecución contra Supabase.
 
-Inventario esperado después de aplicar 0008: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados.
+Inventario esperado después de aplicar 0008: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados. La clausura comprende tanto ACL de tabla como ACL de columna: ninguna concesión por columna puede sobrevivir al `REVOKE` de tabla.
+
+Partiendo de los snapshots de privilegios post-0007 (125 grants de rutina, 270 de tabla, 6 de secuencia y 436 ACL expandidas), el contrato exacto post-0008 es 132/267/6/440. Las cuatro funciones añaden siete entradas de rutina —owner + `authenticated` para tres, sólo owner para el trigger— y la tabla de participantes pierde tres grants de `authenticated`; el delta ACL neto es +4.
 
 ## Matriz completa de superficie funcional
 
@@ -74,6 +76,9 @@ El preflight:
 - inicia una transacción de sólo lectura y termina con `ROLLBACK`;
 - emite únicamente `category`, `classification` y `aggregate_count`;
 - bloquea por deriva de inventario, firmas, definiciones, ACL, políticas, grants directos, identidad/lifecycle, programas, catálogos, auditoría B.1 o conflictos 0008;
+- inspecciona `pg_attribute.attacl`/`aclexplode`, `information_schema.column_privileges` y `has_column_privilege` para impedir que una concesión de columna preserve escritura sobre participantes después del `REVOKE` de tabla;
+- bloquea incompatibilidades de participantes únicamente en dependencias abiertas: borrador o actividad aún no terminada mediante fecha/hora de Ciudad de México;
+- informa como agregado no bloqueante las incompatibilidades históricas terminadas, sin PII;
 - informa sólo conteos agregados de dependencias potenciales;
 - no expone nombres, correos, identificadores, UUID ni filas operativas.
 - exige RLS activa en `profiles`, `role_assignments`, `activities`, `activity_participants` y `admin_audit_events`;
@@ -191,7 +196,7 @@ Cobertura mínima numerada:
 97. RLS está activa en las cinco tablas requeridas.
 98. Las tres funciones nuevas conservan nombres, tipos y orden exactos de entradas y salidas para PostgREST.
 99. Cada función nueva tiene exactamente dos entradas `EXECUTE` no delegables: owner y `authenticated`.
-100. La mutación contiene, en orden, locks `SHARE` sobre `role_assignments`, `activities` y `activity_participants`, antes del perfil objetivo.
+100. La mutación captura `auth.uid()` una sola vez, autoriza de forma optimista, rechaza autocorrección y contiene en orden locks `SHARE` sobre `role_assignments`, `activities` y `activity_participants`.
 101. `add_activity_participant` toma primero `ROW EXCLUSIVE` sobre su tabla y después relee el perfil con `FOR SHARE`.
 102. La razón normalizada se persiste sin whitespace exterior.
 103. La corrección normalizada exitosa registra únicamente los nombres esperados en `changed_fields`.
@@ -205,20 +210,36 @@ Cobertura mínima numerada:
 111. Una escritura directa de actividad no puede sustituir creador/responsable y un cambio de alcance no puede dejar participantes incompatibles.
 112. El trigger de escritor relee perfiles participantes con `FOR SHARE`; `add_activity_participant` mantiene su lock/relectura y la corrección conserva el orden fijo de locks.
 113. El guard predestructivo del rollback verifica inventario, políticas, firmas/salidas, hashes y ACL de las 29 rutinas, trigger de escritor, barrera activa y contrato físico/ACL de auditoría antes de cambiar objeto alguno.
+114. Con actor activo, `activity_has_ended` devuelve false para borrador, true para actividad terminada y NULL para UUID inexistente.
+115. Con actor inactivo, `activity_has_ended` devuelve false tanto para UUID existente como inexistente y no filtra existencia.
+116. Una actividad histórica compatible admite que su participante y responsable primario cambien de programa/tipo mediante la corrección auditada.
+117. La incompatibilidad histórica resultante no satisface el predicado abierto ni convierte el preflight en bloqueo.
+118. Un `UPDATE` autenticado que mueve esa actividad histórica al futuro falla exactamente con `23514` y `sitaa_activity_reopen_forbidden`.
+119. El rechazo anterior deja todos los campos de actividad e identidad intactos y no agrega auditoría.
+120. Una actividad compatible todavía abierta puede actualizar campos permitidos de horario.
+121. Un cambio abierto de alcance/programa con participante incompatible se rechaza.
+122. El cuerpo del trigger inspecciona `status_code`, fechas/horas separadas y `starts_at`/`ends_at`, y revalida participantes más responsabilidad primaria en cualquier reapertura confiable.
+123. La responsabilidad primaria no exige universalmente profesor; el requisito permanece sólo en el rol participante `responsible`.
+124. Los cuatro cuerpos nuevos coinciden exactamente con `md5(regexp_replace(prosrc,'\s+','','g'))` en migración, verificador y rollback.
+125. El inventario final es exactamente 51 funciones, 11 triggers y 25 políticas, sin modificar tablas, columnas, restricciones, índices o semillas.
+126. `authenticated` tiene sólo `SELECT` directo sobre `activity_participants`; owner y `service_role` conservan sus ocho privilegios, no existe ACL de columna, no hay grant option y los totales exactos son 132/267/6/440.
+127. La aplicación compatible conserva tipos completos, carga opcional de contexto, autoridad B.1 independiente, NULL reales para identidad técnica, errores controlados y un formulario accesible sin PII en URL o `localStorage`.
+128. El verificador concede temporalmente `UPDATE(attendance_notes)` a `authenticated`, demuestra que `attacl`, `column_privileges` y el privilegio efectivo lo detectan, lo revoca y comprueba la limpieza antes de crear fixtures.
+129. Actor y objetivo se bloquean juntos mediante `ORDER BY profile.id FOR UPDATE`; la segunda comprobación exacta B.1 ocurre después de todos los locks y antes de cargar, validar o modificar el objetivo.
 
-El verificador también compara hashes normalizados de `prosrc` para las 29 rutinas reemplazadas, el ACL exacto de esas rutinas, las propiedades/ACL de las tres nuevas funciones, las dos políticas restrictivas y el inventario estructural sin delta no autorizado.
+El verificador también compara hashes normalizados de `prosrc` para las 29 rutinas reemplazadas y, en un dominio exacto independiente y uniforme, para las cuatro funciones nuevas; conserva el ACL exacto de esas rutinas, las dos políticas restrictivas y el inventario estructural y de privilegios sin delta no autorizado.
 
 ## Protocolo de locks y prueba manual en dos sesiones
 
-La mutación autoriza primero y adquiere siempre `SHARE` en este orden: `role_assignments`, `activities`, `activity_participants`; después bloquea el perfil, relee el programa, evalúa dependencias, actualiza e inserta auditoría. Las escrituras normales toman `ROW EXCLUSIVE`, incompatible con `SHARE`, por lo que no atraviesan la decisión. `add_activity_participant` adelanta explícitamente su `ROW EXCLUSIVE` y relee el perfil con `FOR SHARE` antes de validar e insertar.
+La mutación captura al actor una sola vez y lo autoriza primero. Rechaza autocorrección antes de locks amplios; adquiere siempre `SHARE` en este orden: `role_assignments`, `activities`, `activity_participants`; luego bloquea actor y objetivo en una sola consulta ordenada por UUID. Sólo entonces repite la autoridad B.1 exacta, carga el objetivo, relee el programa, evalúa dependencias, actualiza e inserta auditoría. Las escrituras normales toman `ROW EXCLUSIVE`, incompatible con `SHARE`, por lo que no atraviesan la decisión. `add_activity_participant` adelanta explícitamente su `ROW EXCLUSIVE` y relee el perfil con `FOR SHARE` antes de validar e insertar.
 
 ### Matriz completa de escritores de dependencias
 
 | Tabla | Privilegios directos | Políticas DML | Escritores soportados | Invariantes y revalidación |
 |---|---|---|---|---|
 | `role_assignments` | `authenticated`: sólo `SELECT`; `postgres`/`service_role` conservan ACL post-0007 | No hay `INSERT/UPDATE/DELETE` para cliente | Ningún writer de aplicación en B.2a; Fase C queda pendiente | La corrección toma `SHARE`. Todo writer futuro de Fase C deberá tomar el lock incompatible y revalidar perfil, alcance, vigencia y autoridad después de esperar. |
-| `activities` | `authenticated`: `SELECT/INSERT/UPDATE/DELETE` | Políticas permisivas existentes más barrera restrictiva de cuenta activa | Server Actions de crear, editar y eliminar; trigger de publicación; roles privilegiados heredados | El trigger B.2a exige creador/responsable propios al insertar, los hace inmutables, revalida `can_create_activity` si cambia alcance/servicio y relee con `FOR SHARE` los perfiles participantes al cambiar programa/división. Un writer que espere observa la identidad confirmada. |
-| `activity_participants` | `authenticated`: sólo `SELECT`; DML directo revocado | Las políticas heredadas permanecen, pero ya no conceden por sí solas capacidad de escritura | `add_activity_participant`, `remove_activity_participant`, actualización manual/masiva y check-in; triggers de asistencia | `add_activity_participant` bloquea la tabla en `ROW EXCLUSIVE` y relee el perfil `FOR SHARE`; los demás RPC sólo alteran asistencia o eliminan filas. La inserción directa que omitía programa/persona queda cerrada. |
+| `activities` | `authenticated`: `SELECT/INSERT/UPDATE/DELETE` | Políticas permisivas existentes más barrera restrictiva de cuenta activa | Server Actions de crear, editar y eliminar; trigger de publicación; roles privilegiados heredados | El trigger B.2a exige creador/responsable propios al insertar, los hace inmutables, revalida `can_create_activity` si cambia alcance/servicio, relee con `FOR SHARE` los perfiles participantes al cambiar alcance abierto y rechaza toda transición autenticada de histórica a abierta. Un writer confiable que reabra debe revalidar participantes y responsabilidad primaria. |
+| `activity_participants` | `authenticated`: sólo `SELECT`; DML directo revocado en tabla y sin ACL de columna | Las políticas heredadas permanecen, pero ya no conceden por sí solas capacidad de escritura | `add_activity_participant`, `remove_activity_participant`, actualización manual/masiva y check-in; triggers de asistencia | `add_activity_participant` bloquea la tabla en `ROW EXCLUSIVE` y relee el perfil `FOR SHARE`; los demás RPC sólo alteran asistencia o eliminan filas. Preflight y guardas exactas rechazan grants de columna, grantees inesperados y grant option. |
 
 No existe cliente `service_role` en la aplicación. Los privilegios persistentes de `postgres`/`service_role` son superficies confiables fuera del flujo cliente; no se declaran escritores administrativos nuevos. El diseño de Fase C deberá adoptar el mismo protocolo antes de habilitar mutaciones de roles.
 
@@ -233,6 +254,32 @@ Prueba manual futura, no ejecutada en esta preparación:
 | 5 | Corrección inicia primero | Escritura de dependencia | El writer espera y valida contra la identidad ya corregida. |
 
 No se afirmará verificación concurrente en PostgreSQL hasta ejecutar esta matriz coordinada.
+
+### Autoridad administrativa: cuatro pruebas manuales de dos sesiones
+
+Estas pruebas siguen pendientes y usarán exclusivamente perfiles, asignaciones y objetivos sintéticos. Cada escenario parte de un administrador B.1 exacto activo, un objetivo distinto y cero eventos `account_identity_corrected` para ese objetivo.
+
+1. **La revocación de rol inicia primero.** Sesión A abre transacción, revoca la asignación sintética `technical_admin/system/technical` del actor y pausa antes de confirmar. Sesión B abre transacción e invoca la corrección; debe esperar en `role_assignments IN SHARE MODE`. Sesión A confirma primero. Sesión B continúa, bloquea ambos perfiles y falla en la segunda autorización con `42501 / sitaa_admin_access_denied`; después revierte. El perfil objetivo queda idéntico y el conteo de auditoría permanece en cero. La limpieza elimina la asignación, cuentas y objetivo sintéticos que hayan sido confirmados.
+
+2. **La corrección inicia antes que la revocación.** Sesión A abre transacción, invoca la corrección y pausa antes de confirmar, conservando sus locks. Sesión B intenta revocar la asignación y debe esperar. Sesión A confirma primero: el objetivo contiene la identidad corregida y existe exactamente un evento. Sesión B continúa y confirma la revocación después. La limpieza retira evento, asignación y perfiles sintéticos en orden compatible con FK; nunca reutiliza datos reales.
+
+3. **La desactivación del actor inicia primero.** Sesión A abre transacción, cambia el perfil sintético del actor a inactivo y pausa reteniendo su row lock. Sesión B invoca la corrección: puede adquirir los locks de dependencias, pero debe esperar al bloquear conjuntamente actor y objetivo. Sesión A confirma primero. Sesión B continúa y falla en la segunda autorización con `42501 / sitaa_admin_access_denied`; después revierte. El objetivo no cambia y no aparece auditoría. La limpieza elimina los fixtures sintéticos confirmados.
+
+4. **La corrección inicia antes que la desactivación.** Sesión A invoca la corrección dentro de una transacción y pausa antes de confirmar, reteniendo el lock del actor. Sesión B intenta desactivar al actor y debe esperar. Sesión A confirma primero bajo autoridad todavía válida: el perfil objetivo cambia y se crea exactamente un evento. Sesión B continúa y confirma la desactivación. La limpieza retira historia y cuentas exclusivamente sintéticas con el orden FK previsto.
+
+Dos administradores que intenten corregirse mutuamente bloquean los mismos dos UUID mediante una sola consulta `ORDER BY profile.id FOR UPDATE`; uno espera al otro, pero no se forma un ciclo de locks por adquirir primero “su propia” fila. Este resultado también permanece pendiente de ejecución manual en PostgreSQL.
+
+## Evidencia de aplicación compatible
+
+La inspección local previa a aplicar 0008 debe confirmar, sin modificar archivos correctos:
+
+- `types/admin.ts`: contexto, entrada, resultado y unión completa de errores de corrección;
+- detalle de cuenta: contexto opcional, acción sólo cuando `can_correct` y alerta de éxito;
+- página de identidad: autenticación, autoridad B.1 exacta, estado de migración pendiente, bloqueos de autocorrección/pendiente y valores iniciales;
+- Server Action: autenticación y autorización independientes, recarga de contexto, NULL SQL reales para persona/identificador/programa técnico, RPC, revalidación y redirect;
+- formulario: confirmación de fuente, ayuda/límites de razón, conservación de valores rechazados, resumen accesible y foco del primer campo inválido;
+- cliente de corrección: argumentos RPC nominales y mapeo de errores controlados;
+- ausencia de PII en URL y `localStorage`.
 
 ## Pruebas de aplicación compatibles antes de aplicar 0008
 
@@ -249,9 +296,9 @@ No se afirmará verificación concurrente en PostgreSQL hasta ejecutar esta matr
 
 El rollback:
 
-- exige el contrato completo 0008 antes de su primera operación destructiva, incluidas definiciones/ACL exactas, los 29 hashes, el trigger de escritores y `admin_audit_events`;
+- exige el contrato completo 0008 antes de su primera operación destructiva, incluidas definiciones/ACL exactas de tabla y columna, los 29 hashes operativos, los cuatro hashes nuevos, el protocolo de doble autorización de la corrección, el trigger de escritores, los totales de privilegios y `admin_audit_events`;
 - elimina las dos políticas restrictivas, las dos RPC B.2a y el trigger/helper de escritores;
-- restaura `INSERT/UPDATE/DELETE` de `authenticated` sobre `activity_participants` exactamente como en post-0007;
+- restaura `INSERT/UPDATE/DELETE` de `authenticated` sobre `activity_participants` exactamente como en post-0007 y comprueba que no introdujo ACL de columna;
 - restaura las 29 definiciones y ACL exactos post-0007;
 - elimina al final el helper de cuenta activa;
 - no usa borrado en cascada;

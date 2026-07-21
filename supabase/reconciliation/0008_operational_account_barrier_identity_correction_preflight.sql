@@ -162,6 +162,32 @@ grant_differences as (
   union all
   (select * from actual_authenticated_grants except select * from expected_authenticated_grants)
 ),
+post_0007_privilege_inventory(routine_grants,table_grants,sequence_grants,expanded_acl) as (
+  select
+    (select count(*) from information_schema.routine_privileges
+     where routine_schema='public'),
+    (select count(*) from information_schema.table_privileges
+     where table_schema='public'),
+    (select count(*)
+     from pg_class c join pg_namespace n on n.oid=c.relnamespace
+     cross join lateral aclexplode(coalesce(c.relacl,acldefault('S',c.relowner))) acl
+     where n.nspname='public' and c.relkind='S'),
+    (
+      (select count(*)
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where n.nspname='public' and p.prokind in ('f','p'))
+      +
+      (select count(*)
+       from pg_class c join pg_namespace n on n.oid=c.relnamespace
+       cross join lateral aclexplode(coalesce(
+         c.relacl,
+         case when c.relkind='S' then acldefault('S',c.relowner)
+              else acldefault('r',c.relowner) end
+       )) acl
+       where n.nspname='public' and c.relkind in ('r','p','v','m','S'))
+    )
+),
 checks(category,classification,aggregate_count) as (
   select 'post_0007_inventory','blocking',
     case when
@@ -178,6 +204,10 @@ checks(category,classification,aggregate_count) as (
            where n.nspname='public')=47
       and (select count(*) from pg_policies where schemaname='public')=23
       then 0 else 1 end
+  union all select 'post_0007_privilege_inventory_drift','blocking',
+    case when routine_grants=125 and table_grants=270
+      and sequence_grants=6 and expanded_acl=436 then 0 else 1 end
+    from post_0007_privilege_inventory
   union all select 'public_function_signature_drift','blocking',(select count(*) from signature_differences)
   union all select 'operational_function_definition_drift','blocking',(select count(*) from operational_definition_drift)
   union all select 'operational_function_acl_drift','blocking',(select count(*) from operational_acl_drift)
@@ -299,13 +329,72 @@ checks(category,classification,aggregate_count) as (
      join public.activities activity on activity.id=participant.activity_id
      join public.profiles profile on profile.id=participant.profile_id
      left join public.academic_programs program on program.id=profile.primary_program_id
-     where profile.primary_program_id is null
-        or (activity.scope_type='program'
-          and profile.primary_program_id is distinct from activity.program_id)
-        or (activity.scope_type='division'
-          and program.division_id is distinct from activity.division_id)
-        or (participant.participant_role_code='responsible'
-          and profile.person_type is distinct from 'professor'))
+     where (
+       activity.status_code='draft'
+       or not coalesce(
+         (
+           coalesce(activity.end_date,activity.start_date)::timestamp
+           + coalesce(activity.end_time,activity.start_time,time '23:59:59')
+         ) < (now() at time zone 'America/Mexico_City'),
+         false
+       )
+     )
+     and (
+       profile.primary_program_id is null
+       or (activity.scope_type='program'
+         and profile.primary_program_id is distinct from activity.program_id)
+       or (activity.scope_type='division'
+         and program.division_id is distinct from activity.division_id)
+       or (participant.participant_role_code='responsible'
+          and profile.person_type is distinct from 'professor')
+      ))
+  union all select 'participant_column_acl_entry_drift','blocking',
+    (select count(*)
+     from pg_attribute attribute_definition
+     cross join lateral aclexplode(attribute_definition.attacl) acl
+     where attribute_definition.attrelid='public.activity_participants'::regclass
+       and attribute_definition.attnum>0
+       and not attribute_definition.attisdropped)
+  union all select 'participant_column_privilege_view_drift','blocking',
+    (select count(*)
+     from information_schema.column_privileges
+     where table_schema='public' and table_name='activity_participants'
+       and grantee<>(
+         select owner_role.rolname
+         from pg_class table_definition
+         join pg_roles owner_role on owner_role.oid=table_definition.relowner
+         where table_definition.oid='public.activity_participants'::regclass
+       ))
+  union all select 'participant_effective_column_privilege_drift','blocking',
+    (select count(*)
+     from pg_attribute attribute_definition
+     cross join (values
+       (0::oid,'PUBLIC'),
+       ((select oid from pg_roles where rolname='anon'),'anon'),
+       ((select oid from pg_roles where rolname='authenticated'),'authenticated')
+     ) actor(role_oid,role_name)
+     cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) permission(privilege_type)
+     where attribute_definition.attrelid='public.activity_participants'::regclass
+       and attribute_definition.attnum>0
+       and not attribute_definition.attisdropped
+       and (
+         (actor.role_name in ('PUBLIC','anon') and coalesce(
+           has_column_privilege(
+             actor.role_oid,attribute_definition.attrelid,
+             attribute_definition.attnum,permission.privilege_type
+           ),false
+         ))
+         or (
+           actor.role_name='authenticated'
+           and permission.privilege_type in ('INSERT','UPDATE','REFERENCES')
+           and has_column_privilege(
+             actor.role_oid,attribute_definition.attrelid,
+             attribute_definition.attnum,permission.privilege_type
+           ) is distinct from has_table_privilege(
+             actor.role_oid,attribute_definition.attrelid,permission.privilege_type
+           )
+         )
+       ))
   union all select 'profile_identity_constraint_drift','blocking',
     case when (select count(*) from pg_constraint
       where conrelid='public.profiles'::regclass and conname in (
@@ -432,20 +521,81 @@ checks(category,classification,aggregate_count) as (
   union all select 'profiles_with_open_responsibilities','informational',
     (select count(distinct a.responsible_profile_id) from public.activities a
       where a.status_code='draft'
-         or coalesce(a.ends_at,a.starts_at,now()+interval '1 second')>=now())
+         or not coalesce(
+           (
+             coalesce(a.end_date,a.start_date)::timestamp
+             + coalesce(a.end_time,a.start_time,time '23:59:59')
+           ) < (now() at time zone 'America/Mexico_City'),
+           false
+         ))
   union all select 'profiles_with_open_participations','informational',
     (select count(distinct participant.profile_id)
       from public.activity_participants participant
       join public.activities a on a.id=participant.activity_id
       where a.status_code='draft'
-         or coalesce(a.ends_at,a.starts_at,now()+interval '1 second')>=now())
+         or not coalesce(
+           (
+             coalesce(a.end_date,a.start_date)::timestamp
+             + coalesce(a.end_time,a.start_time,time '23:59:59')
+           ) < (now() at time zone 'America/Mexico_City'),
+           false
+         ))
+  union all select 'historical_participant_identity_inconsistency','informational',
+    (select count(*)
+     from public.activity_participants participant
+     join public.activities activity on activity.id=participant.activity_id
+     join public.profiles profile on profile.id=participant.profile_id
+     left join public.academic_programs program on program.id=profile.primary_program_id
+     where activity.status_code<>'draft'
+       and coalesce(
+         (
+           coalesce(activity.end_date,activity.start_date)::timestamp
+           + coalesce(activity.end_time,activity.start_time,time '23:59:59')
+         ) < (now() at time zone 'America/Mexico_City'),
+         false
+       )
+       and (
+         profile.primary_program_id is null
+         or (activity.scope_type='program'
+           and profile.primary_program_id is distinct from activity.program_id)
+         or (activity.scope_type='division'
+           and program.division_id is distinct from activity.division_id)
+         or (participant.participant_role_code='responsible'
+           and profile.person_type is distinct from 'professor')
+       ))
   union all select 'institutional_profiles_potentially_dependency_blocked','informational',
     (select count(distinct p.id)
       from public.profiles p
       left join public.role_assignments ra on ra.user_id=p.id and ra.is_active
         and (ra.ends_at is null or ra.ends_at>=public.sitaa_current_mexico_date())
-      left join public.activity_participants participant on participant.profile_id=p.id
-      left join public.activities responsible on responsible.responsible_profile_id=p.id
+      left join public.activity_participants participant
+        on participant.profile_id=p.id
+        and exists (
+          select 1 from public.activities participant_activity
+          where participant_activity.id=participant.activity_id
+            and (
+              participant_activity.status_code='draft'
+              or not coalesce(
+                (
+                  coalesce(participant_activity.end_date,participant_activity.start_date)::timestamp
+                  + coalesce(participant_activity.end_time,participant_activity.start_time,time '23:59:59')
+                ) < (now() at time zone 'America/Mexico_City'),
+                false
+              )
+            )
+        )
+      left join public.activities responsible
+        on responsible.responsible_profile_id=p.id
+        and (
+          responsible.status_code='draft'
+          or not coalesce(
+            (
+              coalesce(responsible.end_date,responsible.start_date)::timestamp
+              + coalesce(responsible.end_time,responsible.start_time,time '23:59:59')
+            ) < (now() at time zone 'America/Mexico_City'),
+            false
+          )
+        )
       where p.account_kind='institutional'
         and (ra.id is not null or participant.id is not null or responsible.id is not null))
 )
