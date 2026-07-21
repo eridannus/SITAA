@@ -5,25 +5,129 @@ begin;
 do $guard$
 declare
   guarded_count integer;
+  mismatch_count integer;
+  helper_oid oid:=to_regprocedure('public.is_sitaa_operational_account_active()');
+  context_oid oid:=to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)');
+  correction_oid oid:=to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)');
+  writer_trigger_oid oid:=to_regprocedure('public.enforce_activity_writer_integrity_b2a()');
 begin
-  if (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>50
+  if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public' and c.relkind='r')<>18
+     or (select count(*) from information_schema.columns where table_schema='public')<>165
+     or (select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace
+         where n.nspname='public' and c.contype in ('p','f','u','c'))<>80
+     or (select count(*) from pg_indexes where schemaname='public')<>43
+     or (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid
+         join pg_namespace n on n.oid=c.relnamespace
+         where n.nspname='public' and not t.tgisinternal)<>11
+     or (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>51
      or (select count(*) from pg_policies where schemaname='public')<>25
-     or to_regprocedure('public.is_sitaa_operational_account_active()') is null
-     or to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)') is null
-     or to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)') is null
+     or helper_oid is null or context_oid is null or correction_oid is null
+     or writer_trigger_oid is null
      or not exists (
        select 1 from pg_policies
        where schemaname='public' and tablename='activities'
          and policyname='Active accounts may operate activities'
          and permissive='RESTRICTIVE' and roles='{authenticated}' and cmd='ALL'
+         and qual='is_sitaa_operational_account_active()'
+         and with_check='is_sitaa_operational_account_active()'
      )
      or not exists (
        select 1 from pg_policies
        where schemaname='public' and tablename='activity_participants'
          and policyname='Active accounts may operate activity participants'
          and permissive='RESTRICTIVE' and roles='{authenticated}' and cmd='ALL'
+         and qual='is_sitaa_operational_account_active()'
+         and with_check='is_sitaa_operational_account_active()'
      ) then
     raise exception '0008_rollback_contract_incomplete';
+  end if;
+
+  if not exists (
+       select 1 from pg_proc p
+       where p.oid=helper_oid and p.prorettype='boolean'::regtype
+         and p.prolang=(select oid from pg_language where lanname='sql')
+         and p.provolatile='s' and p.prosecdef
+         and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.pronargs=0 and coalesce(cardinality(p.proargnames),0)=0
+         and p.proallargtypes is null
+         and pg_get_function_identity_arguments(p.oid)=''
+     )
+     or not exists (
+       select 1 from pg_proc p
+       where p.oid=context_oid
+         and p.prolang=(select oid from pg_language where lanname='plpgsql')
+         and p.provolatile='s' and p.prosecdef
+         and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.pronargs=1 and p.prorettype='record'::regtype
+         and p.proargnames=array[
+           'requested_profile_id','target_profile_id','can_correct','denial_code',
+           'account_kind','account_status','is_self',
+           'current_or_future_assignment_count','open_responsibility_count',
+           'open_participation_count'
+         ]::text[]
+         and p.proargmodes=array['i','t','t','t','t','t','t','t','t','t']::"char"[]
+         and p.proallargtypes=array[
+           'uuid'::regtype::oid,'uuid'::regtype::oid,'boolean'::regtype::oid,
+           'text'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'boolean'::regtype::oid,'bigint'::regtype::oid,'bigint'::regtype::oid,
+           'bigint'::regtype::oid
+         ]::oid[]
+         and regexp_replace(lower(pg_get_function_identity_arguments(p.oid)),'\s+','','g')
+           ='requested_profile_iduuid'
+     )
+     or not exists (
+       select 1 from pg_proc p
+       where p.oid=correction_oid
+         and p.prolang=(select oid from pg_language where lanname='plpgsql')
+         and p.provolatile='v' and p.prosecdef
+         and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.pronargs=8 and p.prorettype='record'::regtype
+         and p.proargnames=array[
+           'requested_profile_id','requested_first_names','requested_paternal_surname',
+           'requested_maternal_surname','requested_person_type',
+           'requested_institutional_id_value','requested_primary_program_id',
+           'correction_reason','target_profile_id','audit_event_id',
+           'changed_fields','updated_at'
+         ]::text[]
+         and p.proargmodes=array[
+           'i','i','i','i','i','i','i','i','t','t','t','t'
+         ]::"char"[]
+         and p.proallargtypes=array[
+           'uuid'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'text'::regtype::oid,'text'::regtype::oid,'text'::regtype::oid,
+           'uuid'::regtype::oid,'text'::regtype::oid,'uuid'::regtype::oid,
+           'uuid'::regtype::oid,'text[]'::regtype::oid,'timestamptz'::regtype::oid
+         ]::oid[]
+         and regexp_replace(lower(pg_get_function_identity_arguments(p.oid)),'\s+','','g')
+           ='requested_profile_iduuid,requested_first_namestext,requested_paternal_surnametext,requested_maternal_surnametext,requested_person_typetext,requested_institutional_id_valuetext,requested_primary_program_iduuid,correction_reasontext'
+     ) then
+    raise exception '0008_rollback_new_function_definition_drift';
+  end if;
+
+  select count(*) into mismatch_count
+  from (values (helper_oid),(context_oid),(correction_oid)) expected(function_oid)
+  join pg_proc p on p.oid=expected.function_oid
+  where (
+    select count(*)
+    from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+    left join pg_roles grantee on grantee.oid=acl.grantee
+    where acl.privilege_type='EXECUTE'
+      and (acl.grantee=p.proowner or grantee.rolname='authenticated')
+      and not acl.is_grantable
+  )<>2
+  or not has_function_privilege('authenticated',p.oid,'EXECUTE')
+  or has_function_privilege('anon',p.oid,'EXECUTE')
+  or has_function_privilege('service_role',p.oid,'EXECUTE')
+  or exists (
+    select 1 from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+    left join pg_roles grantee on grantee.oid=acl.grantee
+    where acl.privilege_type<>'EXECUTE'
+       or (acl.grantee<>p.proowner and coalesce(grantee.rolname,'PUBLIC')<>'authenticated')
+       or acl.is_grantable
+  );
+  if mismatch_count<>0 then
+    raise exception '0008_rollback_new_function_acl_drift';
   end if;
 
   select count(*) into guarded_count
@@ -65,16 +169,285 @@ begin
     raise exception '0008_rollback_operational_guard_incomplete';
   end if;
 
-  if has_table_privilege('authenticated','public.admin_audit_events','SELECT')
+  select count(*) into mismatch_count
+  from (values
+    ('activity_attendance_deadline(uuid)','fa3b7c8ef43aab1a8ede008671b5dc08'),
+    ('activity_attendance_open_at(uuid)','ae06ee4eb6cb93d433aed430b6b07e8c'),
+    ('activity_has_ended(uuid)','c318afdb983e1a21461fe071b7a4fa95'),
+    ('add_activity_participant(uuid,uuid,text)','49ace655e29301b5a2d34438d3689296'),
+    ('can_create_activity(text,uuid,uuid,text)','a681afcc9eb243295418bcb048658c3f'),
+    ('can_create_activity(uuid,text)','d2b5f611bc457b0533a270302deb0362'),
+    ('can_delete_activity(uuid)','0ac0d3ee8eb298048e4e13bff43fd2ef'),
+    ('can_edit_activity(uuid)','f6bc990fb143529e32f0164250f28506'),
+    ('can_manage_activity(text,uuid,uuid,text)','f1e367150d36b899050e4fec6f1513cc'),
+    ('can_manage_activity(uuid,text)','e6f946ff2f3a50bd4ff9dda071488a8a'),
+    ('can_read_activity(uuid)','f6bc990fb143529e32f0164250f28506'),
+    ('can_update_activity_base(uuid)','0ac0d3ee8eb298048e4e13bff43fd2ef'),
+    ('check_in_activity(text)','a52e462d8ff4695a2cff9a6d19bf723f'),
+    ('close_activity_attendance_checkin(uuid)','8bb200584cd15cb9cdc4d4d5493d49b2'),
+    ('finalize_expired_attendance()','97d5f2afd2600a22567469d5d67e56fb'),
+    ('generate_three_word_code()','f206add4d10a0dd7a67536f9bfdfd75f'),
+    ('get_active_activity_attendance_checkin(uuid)','da892a66aebc576b635057b6dd8dba3b'),
+    ('get_activity_attendance_checkin_state(uuid)','18066a5aaa19da83b02d76e1ec2d632b'),
+    ('get_activity_participants(uuid)','eb43eed1cf5e7f78d1e87301dd57a36a'),
+    ('get_visible_activity_cards()','38b6f8d1ad3575174f06d43bbe3fecf0'),
+    ('has_active_role(text)','0c2fab12561c4b1e0a6580265c96fe2b'),
+    ('has_any_active_role(text[])','815a4fb483719737cc99ea62208c4bc5'),
+    ('is_activity_participant(uuid)','6c0655c94e0f81bfd70059ece59c4c73'),
+    ('open_activity_attendance_checkin(uuid)','dbe86813387d937a5b710aa88b3c5911'),
+    ('publish_activity(uuid)','f0fbfce1b8185ee1be65c67443f4f607'),
+    ('remove_activity_participant(uuid)','56e63d2e7b4f7f3fa5fee423c224ba13'),
+    ('search_profiles_for_participation(uuid,text)','b3e83dab1d94287066970ac275586f36'),
+    ('update_activity_participant_attendance(uuid,text,text)','12fda7553b4954f7878d23d7b238673a'),
+    ('update_activity_participants_attendance_bulk(uuid,uuid[],text,text)','013f048011b9b617b6af995aeed2fee5')
+  ) expected(signature,body_hash)
+  left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
+  where p.oid is null
+     or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash
+     or lower(p.prosrc) not like '%is_sitaa_operational_account_active%';
+  if mismatch_count<>0 then
+    raise exception '0008_rollback_operational_definition_drift';
+  end if;
+
+  select count(*) into mismatch_count
+  from (values
+    ('activity_attendance_deadline(uuid)'),('activity_attendance_open_at(uuid)'),
+    ('activity_has_ended(uuid)'),('add_activity_participant(uuid,uuid,text)'),
+    ('can_create_activity(text,uuid,uuid,text)'),('can_create_activity(uuid,text)'),
+    ('can_delete_activity(uuid)'),('can_edit_activity(uuid)'),
+    ('can_manage_activity(text,uuid,uuid,text)'),('can_manage_activity(uuid,text)'),
+    ('can_read_activity(uuid)'),('can_update_activity_base(uuid)'),
+    ('check_in_activity(text)'),('close_activity_attendance_checkin(uuid)'),
+    ('finalize_expired_attendance()'),('generate_three_word_code()'),
+    ('get_active_activity_attendance_checkin(uuid)'),
+    ('get_activity_attendance_checkin_state(uuid)'),
+    ('get_activity_participants(uuid)'),('get_visible_activity_cards()'),
+    ('has_active_role(text)'),('has_any_active_role(text[])'),
+    ('is_activity_participant(uuid)'),('open_activity_attendance_checkin(uuid)'),
+    ('publish_activity(uuid)'),('remove_activity_participant(uuid)'),
+    ('search_profiles_for_participation(uuid,text)'),
+    ('update_activity_participant_attendance(uuid,text,text)'),
+    ('update_activity_participants_attendance_bulk(uuid,uuid[],text,text)')
+  ) expected(signature)
+  join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
+  where (
+    select count(*)
+    from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+    left join pg_roles grantee on grantee.oid=acl.grantee
+    where acl.privilege_type='EXECUTE'
+      and coalesce(grantee.rolname,'PUBLIC') in ('postgres','authenticated','service_role')
+      and not acl.is_grantable
+  )<>3
+  or exists (
+    select 1 from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+    left join pg_roles grantee on grantee.oid=acl.grantee
+    where acl.privilege_type<>'EXECUTE'
+       or coalesce(grantee.rolname,'PUBLIC') not in ('postgres','authenticated','service_role')
+       or acl.is_grantable
+  );
+  if mismatch_count<>0 then
+    raise exception '0008_rollback_operational_acl_drift';
+  end if;
+
+  if not exists (
+       select 1 from pg_proc p
+       where p.oid=writer_trigger_oid
+         and p.prorettype='trigger'::regtype
+         and p.prolang=(select oid from pg_language where lanname='plpgsql')
+         and p.provolatile='v' and p.prosecdef
+         and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.pronargs=0 and coalesce(cardinality(p.proargnames),0)=0
+         and p.proallargtypes is null
+         and pg_get_function_identity_arguments(p.oid)=''
+         and md5(regexp_replace(p.prosrc,'\s+','','g'))=
+           'f3015ca3f14ada575b19a6d39d1622ea'
+         and lower(p.prosrc) like '%sitaa_activity_writer_identity_mismatch%'
+         and lower(p.prosrc) like '%sitaa_activity_participant_identity_incompatible%'
+         and lower(p.prosrc) like '%for share of profile%'
+     )
+     or not exists (
+       select 1 from pg_trigger trigger_definition
+       where trigger_definition.tgrelid='public.activities'::regclass
+         and trigger_definition.tgname='enforce_activity_writer_integrity_b2a'
+         and not trigger_definition.tgisinternal
+         and trigger_definition.tgenabled='O'
+         and trigger_definition.tgfoid=writer_trigger_oid
+         and trigger_definition.tgtype=23
+     )
+     or has_function_privilege('authenticated',writer_trigger_oid,'EXECUTE')
+     or has_function_privilege('anon',writer_trigger_oid,'EXECUTE')
+     or has_function_privilege('service_role',writer_trigger_oid,'EXECUTE')
+     or (
+       select count(*) from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid=writer_trigger_oid and acl.grantee=p.proowner
+         and acl.privilege_type='EXECUTE' and not acl.is_grantable
+     )<>1
+     or exists (
+       select 1 from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid=writer_trigger_oid
+         and (acl.grantee<>p.proowner or acl.privilege_type<>'EXECUTE' or acl.is_grantable)
+     )
+     or not has_table_privilege('authenticated','public.activities','SELECT,INSERT,UPDATE,DELETE')
+     or not has_table_privilege('authenticated','public.activity_participants','SELECT')
+     or has_table_privilege('authenticated','public.activity_participants','INSERT')
+     or has_table_privilege('authenticated','public.activity_participants','UPDATE')
+     or has_table_privilege('authenticated','public.activity_participants','DELETE')
+     or has_table_privilege('authenticated','public.role_assignments','INSERT')
+     or has_table_privilege('authenticated','public.role_assignments','UPDATE')
+     or has_table_privilege('authenticated','public.role_assignments','DELETE') then
+    raise exception '0008_rollback_writer_integrity_contract_drift';
+  end if;
+
+  if (select count(*) from pg_attribute
+      where attrelid='public.admin_audit_events'::regclass
+        and attnum>0 and not attisdropped)<>9
+     or exists (
+       with expected(attnum,column_name,type_oid,not_null,default_kind) as (
+         values
+           (1::smallint,'id','uuid'::regtype::oid,true,'uuid'),
+           (2::smallint,'actor_profile_id','uuid'::regtype::oid,true,null),
+           (3::smallint,'target_profile_id','uuid'::regtype::oid,true,null),
+           (4::smallint,'action_code','text'::regtype::oid,true,null),
+           (5::smallint,'outcome','text'::regtype::oid,true,null),
+           (6::smallint,'reason','text'::regtype::oid,false,null),
+           (7::smallint,'role_assignment_id','uuid'::regtype::oid,false,null),
+           (8::smallint,'metadata','jsonb'::regtype::oid,true,'empty_json'),
+           (9::smallint,'occurred_at','timestamptz'::regtype::oid,true,'now')
+       ), observed as (
+         select a.attnum,a.attname,a.atttypid,a.attnotnull,d.oid default_oid,
+           regexp_replace(lower(pg_get_expr(d.adbin,d.adrelid,true)),'\s+','','g') default_expression
+         from pg_attribute a
+         left join pg_attrdef d on d.adrelid=a.attrelid and d.adnum=a.attnum
+         where a.attrelid='public.admin_audit_events'::regclass
+           and a.attnum>0 and not a.attisdropped
+       )
+       select 1 from expected e left join observed o on o.attnum=e.attnum
+       where o.attnum is null or o.attname<>e.column_name
+          or o.atttypid<>e.type_oid or o.attnotnull<>e.not_null
+          or (e.default_kind is null and o.default_oid is not null)
+          or (e.default_kind='uuid' and coalesce(o.default_expression,'')
+            !~ '^(pg_catalog\.)?gen_random_uuid\(\)$')
+          or (e.default_kind='empty_json' and coalesce(o.default_expression,'')<>'''{}''::jsonb')
+          or (e.default_kind='now' and coalesce(o.default_expression,'')
+            !~ '^(pg_catalog\.)?now\(\)$')
+     )
+     or (select count(*) from pg_constraint
+         where conrelid='public.admin_audit_events'::regclass)<>8
+     or exists (
+       with expected(constraint_name,constraint_definition) as (
+         values
+           ('admin_audit_events_action_code_check',
+             'CHECK (char_length(action_code) >= 1 AND char_length(action_code) <= 100 AND action_code ~ ''^[a-z][a-z0-9]*(_[a-z0-9]+)*$''::text)'),
+           ('admin_audit_events_actor_profile_id_fkey',
+             'FOREIGN KEY (actor_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT'),
+           ('admin_audit_events_metadata_check','CHECK (admin_audit_metadata_is_safe(metadata))'),
+           ('admin_audit_events_outcome_check',
+             'CHECK (outcome = ANY (ARRAY[''success''::text, ''failure''::text]))'),
+           ('admin_audit_events_pkey','PRIMARY KEY (id)'),
+           ('admin_audit_events_reason_check',
+             'CHECK (reason IS NULL OR reason = btrim(reason) AND char_length(reason) >= 1 AND char_length(reason) <= 1000)'),
+           ('admin_audit_events_role_assignment_id_fkey',
+             'FOREIGN KEY (role_assignment_id) REFERENCES role_assignments(id) ON DELETE RESTRICT'),
+           ('admin_audit_events_target_profile_id_fkey',
+             'FOREIGN KEY (target_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT')
+       )
+       select 1 from expected e
+       left join pg_constraint c on c.conrelid='public.admin_audit_events'::regclass
+         and c.conname=e.constraint_name
+       where c.oid is null or pg_get_constraintdef(c.oid)<>e.constraint_definition
+     )
+     or not exists (
+       select 1 from pg_indexes where schemaname='public'
+         and tablename='admin_audit_events'
+         and indexname='admin_audit_events_actor_occurred_idx'
+         and indexdef='CREATE INDEX admin_audit_events_actor_occurred_idx ON public.admin_audit_events USING btree (actor_profile_id, occurred_at DESC, id DESC)'
+     )
+     or not exists (
+       select 1 from pg_indexes where schemaname='public'
+         and tablename='admin_audit_events'
+         and indexname='admin_audit_events_target_occurred_idx'
+         and indexdef='CREATE INDEX admin_audit_events_target_occurred_idx ON public.admin_audit_events USING btree (target_profile_id, occurred_at DESC, id DESC)'
+     )
+     or (select count(*) from pg_trigger
+         where tgrelid='public.admin_audit_events'::regclass and not tgisinternal)<>2
+     or not exists (
+       select 1 from pg_trigger
+       where tgrelid='public.admin_audit_events'::regclass and not tgisinternal
+         and tgname='prevent_admin_audit_event_mutation'
+         and tgfoid=to_regprocedure('public.prevent_admin_audit_event_mutation()')
+         and tgtype=27 and tgenabled='O'
+     )
+     or not exists (
+       select 1 from pg_trigger
+       where tgrelid='public.admin_audit_events'::regclass and not tgisinternal
+         and tgname='prevent_admin_audit_event_truncate'
+         and tgfoid=to_regprocedure('public.prevent_admin_audit_event_mutation()')
+         and tgtype=34 and tgenabled='O'
+     )
+     or not exists (
+       select 1 from pg_class c
+       where c.oid='public.admin_audit_events'::regclass and c.relrowsecurity
+     )
+     or exists (
+       select 1 from pg_policies
+       where schemaname='public' and tablename='admin_audit_events'
+     )
+     or has_table_privilege('authenticated','public.admin_audit_events','SELECT')
      or has_table_privilege('authenticated','public.admin_audit_events','INSERT')
      or not has_table_privilege('service_role','public.admin_audit_events','SELECT')
      or not has_table_privilege('service_role','public.admin_audit_events','INSERT')
      or has_table_privilege('service_role','public.admin_audit_events','UPDATE')
-     or has_table_privilege('service_role','public.admin_audit_events','DELETE') then
+     or has_table_privilege('service_role','public.admin_audit_events','DELETE')
+     or has_table_privilege('service_role','public.admin_audit_events','TRUNCATE')
+     or has_table_privilege('service_role','public.admin_audit_events','REFERENCES')
+     or has_table_privilege('service_role','public.admin_audit_events','TRIGGER')
+     or has_table_privilege('anon','public.admin_audit_events','SELECT')
+     or has_table_privilege('anon','public.admin_audit_events','INSERT')
+     or not exists (
+       select 1 from pg_class c
+       where c.oid='public.admin_audit_events'::regclass
+         and (
+           select count(*) from aclexplode(c.relacl) acl
+           where acl.grantee=c.relowner
+             and upper(acl.privilege_type) in (
+               'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+             ) and not acl.is_grantable
+         )=8
+         and (
+           select count(*) from aclexplode(c.relacl) acl
+           where acl.grantee=(select oid from pg_roles where rolname='service_role')
+             and upper(acl.privilege_type) in ('SELECT','INSERT')
+             and not acl.is_grantable
+         )=2
+         and not exists (
+           select 1 from aclexplode(c.relacl) acl
+           where acl.grantee not in (
+             c.relowner,(select oid from pg_roles where rolname='service_role')
+           ) or acl.is_grantable
+              or (acl.grantee=c.relowner and upper(acl.privilege_type) not in (
+                'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+              ))
+              or (acl.grantee=(select oid from pg_roles where rolname='service_role')
+                and upper(acl.privilege_type) not in ('SELECT','INSERT'))
+         )
+     )
+     or exists (
+       select 1 from pg_attribute a
+       where a.attrelid='public.admin_audit_events'::regclass
+         and a.attnum>0 and not a.attisdropped and a.attacl is not null
+         and exists(select 1 from aclexplode(a.attacl))
+     ) then
     raise exception '0008_rollback_audit_contract_drift';
   end if;
 end;
 $guard$;
+
+drop trigger enforce_activity_writer_integrity_b2a on public.activities;
+drop function public.enforce_activity_writer_integrity_b2a();
+grant insert,update,delete on table public.activity_participants
+  to authenticated;
 
 revoke all on function public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)
   from public, anon, authenticated, service_role;
@@ -2415,6 +2788,13 @@ begin
   if to_regprocedure('public.is_sitaa_operational_account_active()') is not null
      or to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)') is not null
      or to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)') is not null
+     or to_regprocedure('public.enforce_activity_writer_integrity_b2a()') is not null
+     or exists (
+       select 1 from pg_trigger
+       where tgrelid='public.activities'::regclass
+         and tgname='enforce_activity_writer_integrity_b2a'
+         and not tgisinternal
+     )
      or exists (
        select 1 from pg_policies
        where schemaname='public'
@@ -2524,6 +2904,14 @@ begin
   );
   if mismatch_count<>0 then
     raise exception '0008_rollback_acl_mismatch';
+  end if;
+
+  if not has_table_privilege('authenticated','public.activities','SELECT,INSERT,UPDATE,DELETE')
+     or not has_table_privilege('authenticated','public.activity_participants','SELECT,INSERT,UPDATE,DELETE')
+     or has_table_privilege('authenticated','public.role_assignments','INSERT')
+     or has_table_privilege('authenticated','public.role_assignments','UPDATE')
+     or has_table_privilege('authenticated','public.role_assignments','DELETE') then
+    raise exception '0008_rollback_writer_privilege_restoration_mismatch';
   end if;
 
   if has_table_privilege('authenticated','public.admin_audit_events','SELECT')

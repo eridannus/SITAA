@@ -192,6 +192,13 @@ begin
   if to_regprocedure('public.is_sitaa_operational_account_active()') is not null
      or to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)') is not null
      or to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)') is not null
+     or to_regprocedure('public.enforce_activity_writer_integrity_b2a()') is not null
+     or exists (
+       select 1 from pg_trigger
+       where tgrelid='public.activities'::regclass
+         and tgname='enforce_activity_writer_integrity_b2a'
+         and not tgisinternal
+     )
      or exists (
        select 1 from pg_policies
        where schemaname='public'
@@ -305,6 +312,23 @@ begin
      or not has_table_privilege('authenticated','public.profiles','SELECT')
      or not has_table_privilege('authenticated','public.role_assignments','SELECT') then
     raise exception '0008_preflight_client_grant_drift';
+  end if;
+
+  if exists (
+       select 1
+       from public.activity_participants participant
+       join public.activities activity on activity.id=participant.activity_id
+       join public.profiles profile on profile.id=participant.profile_id
+       left join public.academic_programs program on program.id=profile.primary_program_id
+       where profile.primary_program_id is null
+          or (activity.scope_type='program'
+            and profile.primary_program_id is distinct from activity.program_id)
+          or (activity.scope_type='division'
+            and program.division_id is distinct from activity.division_id)
+          or (participant.participant_role_code='responsible'
+            and profile.person_type is distinct from 'professor')
+     ) then
+    raise exception '0008_preflight_existing_participant_identity_incompatible';
   end if;
 
   if not exists (
@@ -3193,6 +3217,93 @@ begin
 end;
 $function$;
 
+-- Cierra las escrituras directas de actividad que podrían reconstruir una
+-- dependencia incompatible después de una corrección de identidad.
+create function public.enforce_activity_writer_integrity_b2a()
+returns trigger
+language plpgsql
+security definer
+set search_path=pg_catalog,public
+as $function$
+declare
+  participant record;
+begin
+  if auth.uid() is not null then
+    if tg_op='INSERT' then
+      if new.created_by is distinct from auth.uid()
+         or new.responsible_profile_id is distinct from auth.uid() then
+        raise exception 'sitaa_activity_writer_identity_mismatch' using errcode='42501';
+      end if;
+      if not public.can_create_activity(
+        new.scope_type,new.program_id,new.division_id,new.service_type_code
+      ) then
+        raise exception 'sitaa_activity_writer_scope_denied' using errcode='42501';
+      end if;
+    else
+      if new.created_by is distinct from old.created_by
+         or new.responsible_profile_id is distinct from old.responsible_profile_id then
+        raise exception 'sitaa_activity_writer_identity_immutable' using errcode='42501';
+      end if;
+      if (
+        new.scope_type is distinct from old.scope_type
+        or new.program_id is distinct from old.program_id
+        or new.division_id is distinct from old.division_id
+        or new.service_type_code is distinct from old.service_type_code
+      ) and not public.can_create_activity(
+        new.scope_type,new.program_id,new.division_id,new.service_type_code
+      ) then
+        raise exception 'sitaa_activity_writer_scope_denied' using errcode='42501';
+      end if;
+    end if;
+  end if;
+
+  if tg_op='UPDATE' and (
+    new.scope_type is distinct from old.scope_type
+    or new.program_id is distinct from old.program_id
+    or new.division_id is distinct from old.division_id
+  ) then
+    for participant in
+      select
+        activity_participant.participant_role_code,
+        profile.person_type,
+        profile.primary_program_id,
+        program.division_id
+      from public.activity_participants activity_participant
+      join public.profiles profile on profile.id=activity_participant.profile_id
+      left join public.academic_programs program on program.id=profile.primary_program_id
+      where activity_participant.activity_id=new.id
+      for share of profile
+    loop
+      if participant.primary_program_id is null
+         or (new.scope_type='program'
+           and participant.primary_program_id is distinct from new.program_id)
+         or (new.scope_type='division'
+           and participant.division_id is distinct from new.division_id)
+         or (participant.participant_role_code='responsible'
+           and participant.person_type is distinct from 'professor') then
+        raise exception 'sitaa_activity_participant_identity_incompatible'
+          using errcode='23514';
+      end if;
+    end loop;
+  end if;
+
+  return new;
+end;
+$function$;
+
+revoke all on function public.enforce_activity_writer_integrity_b2a()
+  from public,anon,authenticated,service_role;
+
+create trigger enforce_activity_writer_integrity_b2a
+before insert or update on public.activities
+for each row execute function public.enforce_activity_writer_integrity_b2a();
+
+-- La aplicación usa exclusivamente RPC para altas, bajas y asistencia.
+-- SELECT permanece directo y protegido por RLS; las escrituras ya no pueden
+-- omitir las validaciones de add/remove/update.
+revoke insert,update,delete on table public.activity_participants
+  from authenticated;
+
 revoke all on function public.get_admin_identity_correction_context_b2a(uuid)
   from public,anon,authenticated,service_role;
 grant execute on function public.get_admin_identity_correction_context_b2a(uuid)
@@ -3226,7 +3337,7 @@ declare
   mismatch_count integer;
 begin
   if (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public')<>50
+      where n.nspname='public')<>51
      or (select count(*) from pg_policies where schemaname='public')<>25
      or (select count(*) from information_schema.columns where table_schema='public')<>165
      or (select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace
@@ -3234,7 +3345,7 @@ begin
      or (select count(*) from pg_indexes where schemaname='public')<>43
      or (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid
          join pg_namespace n on n.oid=c.relnamespace
-         where n.nspname='public' and not t.tgisinternal)<>10 then
+         where n.nspname='public' and not t.tgisinternal)<>11 then
     raise exception '0008_post_ddl_inventory_mismatch';
   end if;
 
@@ -3255,6 +3366,39 @@ begin
          and with_check='is_sitaa_operational_account_active()'
      ) then
     raise exception '0008_post_ddl_policy_contract_mismatch';
+  end if;
+
+  if not exists (
+       select 1
+       from pg_trigger trigger_definition
+       where trigger_definition.tgrelid='public.activities'::regclass
+         and trigger_definition.tgname='enforce_activity_writer_integrity_b2a'
+         and not trigger_definition.tgisinternal
+         and trigger_definition.tgenabled='O'
+         and trigger_definition.tgfoid=
+           to_regprocedure('public.enforce_activity_writer_integrity_b2a()')
+         and trigger_definition.tgtype=23
+     )
+     or not exists (
+       select 1 from pg_proc function_definition
+       where function_definition.oid=
+         to_regprocedure('public.enforce_activity_writer_integrity_b2a()')
+         and function_definition.prorettype='trigger'::regtype
+         and function_definition.prolang=(
+           select oid from pg_language where lanname='plpgsql'
+         )
+         and function_definition.provolatile='v'
+         and function_definition.prosecdef
+         and function_definition.proconfig=
+           array['search_path=pg_catalog, public']::text[]
+         and function_definition.pronargs=0
+         and coalesce(cardinality(function_definition.proargnames),0)=0
+         and function_definition.proallargtypes is null
+         and pg_get_function_identity_arguments(function_definition.oid)=''
+         and md5(regexp_replace(function_definition.prosrc,'\s+','','g'))=
+           'f3015ca3f14ada575b19a6d39d1622ea'
+     ) then
+    raise exception '0008_post_ddl_writer_trigger_mismatch';
   end if;
 
   select count(*) into mismatch_count
@@ -3447,13 +3591,60 @@ begin
     raise exception '0008_post_ddl_audit_acl_changed';
   end if;
 
+  if not has_table_privilege('authenticated','public.activity_participants','SELECT')
+     or has_table_privilege('authenticated','public.activity_participants','INSERT')
+     or has_table_privilege('authenticated','public.activity_participants','UPDATE')
+     or has_table_privilege('authenticated','public.activity_participants','DELETE')
+     or not has_table_privilege('authenticated','public.activities','SELECT,INSERT,UPDATE,DELETE')
+     or has_function_privilege(
+       'authenticated','public.enforce_activity_writer_integrity_b2a()','EXECUTE'
+     )
+     or has_function_privilege(
+       'anon','public.enforce_activity_writer_integrity_b2a()','EXECUTE'
+     )
+     or has_function_privilege(
+       'service_role','public.enforce_activity_writer_integrity_b2a()','EXECUTE'
+     )
+     or (
+       select count(*)
+       from pg_proc function_definition
+       cross join lateral aclexplode(coalesce(
+         function_definition.proacl,
+         acldefault('f',function_definition.proowner)
+       )) acl
+       where function_definition.oid=
+         to_regprocedure('public.enforce_activity_writer_integrity_b2a()')
+         and acl.grantee=function_definition.proowner
+         and acl.privilege_type='EXECUTE'
+         and not acl.is_grantable
+     )<>1
+     or exists (
+       select 1
+       from pg_proc function_definition
+       cross join lateral aclexplode(coalesce(
+         function_definition.proacl,
+         acldefault('f',function_definition.proowner)
+       )) acl
+       where function_definition.oid=
+         to_regprocedure('public.enforce_activity_writer_integrity_b2a()')
+         and (
+           acl.grantee<>function_definition.proowner
+           or acl.privilege_type<>'EXECUTE'
+           or acl.is_grantable
+         )
+     ) then
+    raise exception '0008_post_ddl_writer_acl_mismatch';
+  end if;
+
   if exists (
     select 1 from information_schema.role_table_grants
     where table_schema='public' and table_name in ('activities','activity_participants','admin_audit_events')
       and grantee in ('anon','authenticated','service_role')
       and (
-        (table_name in ('activities','activity_participants') and grantee='authenticated'
+        (table_name='activities' and grantee='authenticated'
           and privilege_type not in ('SELECT','INSERT','UPDATE','DELETE'))
+        or (table_name='activity_participants' and grantee='authenticated'
+          and privilege_type<>'SELECT')
         or (table_name='admin_audit_events' and grantee='service_role'
           and privilege_type not in ('SELECT','INSERT'))
         or (table_name='admin_audit_events' and grantee in ('anon','authenticated'))

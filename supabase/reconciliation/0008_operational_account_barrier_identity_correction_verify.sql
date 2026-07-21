@@ -9,9 +9,11 @@ declare
   helper_oid oid:=to_regprocedure('public.is_sitaa_operational_account_active()');
   context_oid oid:=to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)');
   correction_oid oid:=to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)');
+  writer_trigger_oid oid:=to_regprocedure('public.enforce_activity_writer_integrity_b2a()');
   mismatch_count integer;
   correction_source text;
   participant_writer_source text;
+  activity_writer_source text;
 begin
   if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='public' and c.relkind='r')<>18
@@ -21,14 +23,15 @@ begin
      or (select count(*) from pg_indexes where schemaname='public')<>43
      or (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid
          join pg_namespace n on n.oid=c.relnamespace
-         where n.nspname='public' and not t.tgisinternal)<>10
+         where n.nspname='public' and not t.tgisinternal)<>11
      or (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-         where n.nspname='public')<>50
+         where n.nspname='public')<>51
      or (select count(*) from pg_policies where schemaname='public')<>25 then
     raise exception '0008_verify_inventory_mismatch';
   end if;
 
-  if helper_oid is null or context_oid is null or correction_oid is null then
+  if helper_oid is null or context_oid is null or correction_oid is null
+     or writer_trigger_oid is null then
     raise exception '0008_verify_new_function_missing';
   end if;
 
@@ -98,6 +101,19 @@ begin
          and lower(p.prosrc) like '%for update%'
          and lower(p.prosrc) like '%account_identity_corrected%'
          and lower(p.prosrc) like '%changed_fields%'
+     )
+     or not exists (
+       select 1 from pg_proc p
+       where p.oid=writer_trigger_oid
+         and p.prorettype='trigger'::regtype
+         and p.prolang=(select oid from pg_language where lanname='plpgsql')
+         and p.provolatile='v' and p.prosecdef
+         and p.proconfig=array['search_path=pg_catalog, public']::text[]
+         and p.pronargs=0 and coalesce(cardinality(p.proargnames),0)=0
+         and p.proallargtypes is null
+         and pg_get_function_identity_arguments(p.oid)=''
+         and md5(regexp_replace(p.prosrc,'\s+','','g'))=
+           'f3015ca3f14ada575b19a6d39d1622ea'
      ) then
     raise exception '0008_verify_new_function_definition_mismatch';
   end if;
@@ -133,9 +149,31 @@ begin
     raise exception '0008_verify_new_function_acl_mismatch';
   end if;
 
+  if has_function_privilege('authenticated',writer_trigger_oid,'EXECUTE')
+     or has_function_privilege('anon',writer_trigger_oid,'EXECUTE')
+     or has_function_privilege('service_role',writer_trigger_oid,'EXECUTE')
+     or (
+       select count(*)
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid=writer_trigger_oid and acl.grantee=p.proowner
+         and acl.privilege_type='EXECUTE' and not acl.is_grantable
+     )<>1
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid=writer_trigger_oid
+         and (acl.grantee<>p.proowner or acl.privilege_type<>'EXECUTE' or acl.is_grantable)
+     ) then
+    raise exception '0008_verify_writer_trigger_acl_mismatch';
+  end if;
+
   select lower(prosrc) into correction_source from pg_proc where oid=correction_oid;
   select lower(prosrc) into participant_writer_source
   from pg_proc where oid=to_regprocedure('public.add_activity_participant(uuid,uuid,text)');
+  select lower(prosrc) into activity_writer_source
+  from pg_proc where oid=writer_trigger_oid;
   if position('lock table public.role_assignments in share mode' in correction_source)=0
      or position('lock table public.activities in share mode' in correction_source)=0
      or position('lock table public.activity_participants in share mode' in correction_source)=0
@@ -148,8 +186,37 @@ begin
      or participant_writer_source not like '%lock table public.activity_participants in row exclusive mode%'
      or participant_writer_source not like '%for share%'
      or position('lock table public.activity_participants in row exclusive mode' in participant_writer_source)
-       >=position('for share' in participant_writer_source) then
+       >=position('for share' in participant_writer_source)
+     or activity_writer_source not like '%new.created_by is distinct from auth.uid()%'
+     or activity_writer_source not like '%new.responsible_profile_id is distinct from auth.uid()%'
+     or activity_writer_source not like '%new.responsible_profile_id is distinct from old.responsible_profile_id%'
+     or activity_writer_source not like '%can_create_activity(%'
+     or activity_writer_source not like '%for share of profile%'
+     or activity_writer_source not like '%sitaa_activity_participant_identity_incompatible%' then
     raise exception '0008_verify_dependency_lock_protocol_mismatch';
+  end if;
+
+  if not exists (
+    select 1 from pg_trigger trigger_definition
+    where trigger_definition.tgrelid='public.activities'::regclass
+      and trigger_definition.tgname='enforce_activity_writer_integrity_b2a'
+      and not trigger_definition.tgisinternal
+      and trigger_definition.tgenabled='O'
+      and trigger_definition.tgfoid=writer_trigger_oid
+      and trigger_definition.tgtype=23
+  ) then
+    raise exception '0008_verify_activity_writer_trigger_mismatch';
+  end if;
+
+  if not has_table_privilege('authenticated','public.activities','SELECT,INSERT,UPDATE,DELETE')
+     or not has_table_privilege('authenticated','public.activity_participants','SELECT')
+     or has_table_privilege('authenticated','public.activity_participants','INSERT')
+     or has_table_privilege('authenticated','public.activity_participants','UPDATE')
+     or has_table_privilege('authenticated','public.activity_participants','DELETE')
+     or has_table_privilege('authenticated','public.role_assignments','INSERT')
+     or has_table_privilege('authenticated','public.role_assignments','UPDATE')
+     or has_table_privilege('authenticated','public.role_assignments','DELETE') then
+    raise exception '0008_verify_supported_writer_privilege_mismatch';
   end if;
 
   if exists (
@@ -361,7 +428,8 @@ begin
       where n.nspname='public' and p.proname not in (
         'is_sitaa_operational_account_active',
         'get_admin_identity_correction_context_b2a',
-        'correct_admin_account_identity_b2a'
+        'correct_admin_account_identity_b2a',
+        'enforce_activity_writer_integrity_b2a'
       )
     )
     select 1 from (
@@ -447,6 +515,7 @@ $static_contract$;
 -- Fixtures sintéticos.
 create temporary table sitaa_0008_context(
   run_marker text not null,
+  google_provider_key text not null,
   institutional_today date not null,
   division_a uuid not null,
   division_b uuid not null,
@@ -460,24 +529,36 @@ create temporary table sitaa_0008_context(
   fixture_activity_date date not null,
   academic_period_sort_order integer not null,
   activity_draft uuid not null,
-  activity_scheduled uuid not null
+  activity_scheduled uuid not null,
+  activity_open_person_dependency uuid not null,
+  activity_open_program_responsibility uuid not null,
+  activity_open_program_participation uuid not null,
+  activity_completed_history uuid not null,
+  activity_inactive_attempt uuid not null,
+  activity_writer_compatible uuid not null,
+  activity_writer_incompatible uuid not null
 ) on commit drop;
 
 insert into sitaa_0008_context(
-  run_marker,institutional_today,division_a,division_b,program_a,program_b,
+  run_marker,google_provider_key,institutional_today,division_a,division_b,program_a,program_b,
   inactive_program,academic_period_id,academic_period_code,
   academic_period_start,academic_period_end,fixture_activity_date,
-  academic_period_sort_order,activity_draft,activity_scheduled
+  academic_period_sort_order,activity_draft,activity_scheduled,
+  activity_open_person_dependency,activity_open_program_responsibility,
+  activity_open_program_participation,activity_completed_history,
+  activity_inactive_attempt,activity_writer_compatible,activity_writer_incompatible
 )
 select
   'v8'||replace(seed::text,'-',''),
+  'google-'||replace(seed::text,'-',''),
   public.sitaa_current_mexico_date(),
   gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
   gen_random_uuid(),period_id,
   'v8s_'||left(replace(seed::text,'-',''),24),
   period_start,period_start+120,period_start+10,
   1000000000+mod(abs(hashtext(seed::text)::bigint),1000000000)::integer,
-  gen_random_uuid(),gen_random_uuid()
+  gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),
+  gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid()
 from (
   select
     seed,
@@ -528,6 +609,57 @@ begin
 end;
 $academic_period_fixture_contract$;
 
+create temporary table sitaa_0008_identifiers(
+  label text primary key,
+  identifier text not null unique,
+  check (identifier ~ '^[0-9]{1,50}$'),
+  check (left(identifier,1)='0')
+) on commit drop;
+
+create function pg_temp.allocate_identifier(target_label text)
+returns text language plpgsql
+set search_path=public,pg_temp,pg_catalog
+as $$
+declare
+  marker text:=(select run_marker from sitaa_0008_context);
+  attempt integer:=0;
+  candidate text;
+  existing_value text;
+begin
+  select identifier into existing_value
+  from sitaa_0008_identifiers where label=target_label;
+  if found then return existing_value; end if;
+
+  loop
+    candidate:='0'||lpad((
+      (hashtextextended(marker||':'||target_label||':'||attempt::text,0)
+        & 9223372036854775807::bigint) % 1000000000000000000::bigint
+    )::text,18,'0');
+    exit when not exists (
+      select 1 from sitaa_0008_identifiers allocated
+      where allocated.identifier=candidate
+    ) and not exists (
+      select 1 from public.profiles profile
+      where profile.institutional_id_type in ('student_account','worker_number')
+        and profile.institutional_id_value=candidate
+    );
+    attempt:=attempt+1;
+    if attempt>10000 then
+      raise exception '0008_verify_identifier_allocator_exhausted';
+    end if;
+  end loop;
+
+  insert into sitaa_0008_identifiers(label,identifier)
+  values(target_label,candidate);
+  return candidate;
+end;
+$$;
+
+create function pg_temp.fixture_identifier(target_label text)
+returns text language sql stable set search_path=pg_temp as $$
+  select identifier from sitaa_0008_identifiers where label=target_label
+$$;
+
 create temporary table sitaa_0008_cases(
   label text primary key,
   id uuid not null unique,
@@ -558,10 +690,15 @@ end;
 $$;
 
 revoke all on function pg_temp.case_id(text),pg_temp.case_email(text),
-  pg_temp.case_identifier(text),pg_temp.set_request_user(text) from public,anon;
-grant select on table pg_temp.sitaa_0008_cases,pg_temp.sitaa_0008_context to authenticated;
+  pg_temp.case_identifier(text),pg_temp.fixture_identifier(text),
+  pg_temp.set_request_user(text) from public,anon;
+revoke all on function pg_temp.allocate_identifier(text)
+  from public,anon,authenticated,service_role;
+grant select on table pg_temp.sitaa_0008_cases,pg_temp.sitaa_0008_context,
+  pg_temp.sitaa_0008_identifiers to authenticated;
 grant execute on function pg_temp.case_id(text),pg_temp.case_email(text),
-  pg_temp.case_identifier(text),pg_temp.set_request_user(text) to authenticated;
+  pg_temp.case_identifier(text),pg_temp.fixture_identifier(text),
+  pg_temp.set_request_user(text) to authenticated;
 
 create function pg_temp.create_case(
   target_label text,
@@ -582,11 +719,12 @@ declare
     when 'a' then (select program_a from sitaa_0008_context)
     when 'b' then (select program_b from sitaa_0008_context)
     else null end;
-  numeric_seed text:=translate(replace(target_id::text,'-',''),'abcdef','012345');
   identifier_value text;
   app_metadata jsonb;
 begin
-  if target_kind='institutional' then identifier_value:=numeric_seed; end if;
+  if target_kind='institutional' then
+    identifier_value:=pg_temp.allocate_identifier('profile:'||target_label);
+  end if;
   app_metadata:=case
     when target_kind='technical' then jsonb_build_object(
       'sitaa_account_kind','technical','sitaa_first_names','Soporte sintético'
@@ -649,9 +787,49 @@ select pg_temp.create_case('target_division_dependency','institutional','profess
 select pg_temp.create_case('target_open_responsible','institutional','professor');
 select pg_temp.create_case('target_program_responsible','institutional','professor');
 select pg_temp.create_case('target_program_participant','institutional','professor');
-select pg_temp.create_case('target_history_only','institutional','student');
+select pg_temp.create_case('target_history_only','institutional','professor');
 select pg_temp.create_case('duplicate_holder','institutional','student');
+select pg_temp.create_case('participant_compatible','institutional','student');
 select pg_temp.create_case('google_pending','institutional',null,'pending_registration',null,true);
+
+select pg_temp.allocate_identifier(identifier_label)
+from unnest(array[
+  'mutation:malformed_admin','mutation:google_completion',
+  'mutation:pending_target','mutation:missing_first_names',
+  'mutation:null_person_type','mutation:whitespace_name',
+  'mutation:inactive_program','mutation:technical_fields',
+  'mutation:missing_paternal','mutation:short_reason',
+  'mutation:null_reason','mutation:blank_reason','mutation:long_reason',
+  'mutation:current_role','mutation:future_role',
+  'mutation:program_dependency','mutation:division_dependency',
+  'mutation:person_responsibility','mutation:program_responsibility',
+  'mutation:program_participation','mutation:missing_target',
+  'mutation:success_institutional','mutation:success_inactive',
+  'mutation:success_historical_role','mutation:success_history_only',
+  'mutation:success_identifier','mutation:ordinary_denied'
+]::text[]) identifier_label;
+
+do $identifier_fixture_contract$
+begin
+  if exists (
+       select 1 from pg_temp.sitaa_0008_identifiers allocated
+       where allocated.identifier !~ '^[0-9]{1,50}$'
+          or left(allocated.identifier,1)<>'0'
+     )
+     or (select count(*) from pg_temp.sitaa_0008_identifiers)
+       <>(select count(distinct identifier) from pg_temp.sitaa_0008_identifiers)
+     or exists (
+       select 1 from pg_temp.sitaa_0008_cases fixture
+       where fixture.identifier is not null
+         and not exists (
+           select 1 from pg_temp.sitaa_0008_identifiers allocated
+           where allocated.identifier=fixture.identifier
+         )
+     ) then
+    raise exception '0008_verify_identifier_fixture_contract_failed';
+  end if;
+end;
+$identifier_fixture_contract$;
 
 insert into public.role_assignments(
   user_id,role_code,scope_type,service_area,division_id,program_id,
@@ -686,7 +864,7 @@ insert into public.activities(
   location_detail,start_date,start_time,end_date,end_time,duration_mode,
   scope_type,division_id,responsible_profile_id,created_by
 )
-select activity_draft,'Actividad sintética borrador',null,
+select activity_draft,'Actividad sintética borrador '||run_marker,null,
   academic_period_id,
   program_a,'group_activity','tutoring',
   'disciplinary','in_person','draft','classroom','Aula sintética',
@@ -694,7 +872,7 @@ select activity_draft,'Actividad sintética borrador',null,
   'program',division_a,pg_temp.case_id('active_professor'),pg_temp.case_id('active_professor')
 from sitaa_0008_context
 union all
-select activity_scheduled,'Actividad sintética programada',null,
+select activity_scheduled,'Actividad sintética programada '||run_marker,null,
   academic_period_id,
   program_a,'group_activity','tutoring',
   'disciplinary','in_person','scheduled','classroom','Aula sintética',
@@ -722,39 +900,47 @@ select activity_scheduled,pg_temp.case_id('active_student'),'student',pg_temp.ca
 from sitaa_0008_context;
 
 insert into public.activities(
-  title,program_id,activity_type_code,service_type_code,attention_category_code,
+  id,title,program_id,activity_type_code,service_type_code,attention_category_code,
   modality_code,status_code,location_type_code,location_detail,start_date,start_time,
   end_date,end_time,duration_mode,scope_type,division_id,responsible_profile_id,created_by
 )
-select 'Responsabilidad abierta para tipo',program_a,'group_activity','tutoring','disciplinary',
+select activity_open_person_dependency,
+  'Responsabilidad abierta para tipo '||run_marker,
+  program_a,'group_activity','tutoring','disciplinary',
   'in_person','draft','classroom','Aula sintética',institutional_today+2,time '10:00',
   institutional_today+2,time '11:00','one_hour','program',division_a,
   pg_temp.case_id('target_open_responsible'),pg_temp.case_id('target_open_responsible')
 from sitaa_0008_context
 union all
-select 'Responsabilidad abierta para programa',program_a,'group_activity','tutoring','disciplinary',
+select activity_open_program_responsibility,
+  'Responsabilidad abierta para programa '||run_marker,
+  program_a,'group_activity','tutoring','disciplinary',
   'in_person','draft','classroom','Aula sintética',institutional_today+2,time '12:00',
   institutional_today+2,time '13:00','one_hour','program',division_a,
   pg_temp.case_id('target_program_responsible'),pg_temp.case_id('target_program_responsible')
 from sitaa_0008_context
 union all
-select 'Participación abierta para programa',program_a,'group_activity','tutoring','disciplinary',
+select activity_open_program_participation,
+  'Participación abierta para programa '||run_marker,
+  program_a,'group_activity','tutoring','disciplinary',
   'in_person','draft','classroom','Aula sintética',institutional_today+2,time '14:00',
   institutional_today+2,time '15:00','one_hour','program',division_a,
   pg_temp.case_id('active_professor'),pg_temp.case_id('active_professor')
 from sitaa_0008_context;
 
 insert into public.activity_participants(activity_id,profile_id,participant_role_code,added_by)
-select a.id,pg_temp.case_id('target_program_participant'),'support',pg_temp.case_id('admin_exact')
-from public.activities a where a.title='Participación abierta para programa';
+select activity_open_program_participation,
+  pg_temp.case_id('target_program_participant'),'support',pg_temp.case_id('admin_exact')
+from pg_temp.sitaa_0008_context;
 
 -- Referencia histórica completada: no debe bloquear una corrección futura.
 insert into public.activities(
-  title,program_id,activity_type_code,service_type_code,attention_category_code,
+  id,title,program_id,activity_type_code,service_type_code,attention_category_code,
   modality_code,status_code,location_type_code,location_detail,start_date,start_time,
   end_date,end_time,duration_mode,scope_type,division_id,responsible_profile_id,created_by
 )
-select 'Actividad histórica sintética',program_a,'group_activity','tutoring','disciplinary',
+select activity_completed_history,'Actividad histórica sintética '||run_marker,
+  program_a,'group_activity','tutoring','disciplinary',
   'in_person','completed','classroom','Aula sintética',institutional_today-10,time '10:00',
   institutional_today-10,time '11:00','one_hour','program',division_a,
   pg_temp.case_id('target_history_only'),pg_temp.case_id('target_history_only')
@@ -826,18 +1012,30 @@ declare
   affected integer;
   rejected boolean;
   state text;
+  actual_message text;
 begin
   select coalesce(jsonb_agg(to_jsonb(ra) order by ra.id),'[]'::jsonb)
   into before_roles from public.role_assignments ra
   where ra.user_id=pg_temp.case_id('active_professor');
 
+  state:=null;
+  actual_message:=null;
+  begin
+    perform public.get_activity_participants(
+      (select activity_scheduled from pg_temp.sitaa_0008_context)
+    );
+  exception when sqlstate '42501' then
+    get stacked diagnostics state=returned_sqlstate,actual_message=message_text;
+  end;
+  if state is distinct from '42501'
+     or actual_message is distinct from 'sitaa_operational_account_inactive' then
+    raise exception '0008_verify_inactive_participant_list_denial_mismatch';
+  end if;
+
   if public.is_sitaa_operational_account_active()
      or exists(select 1 from public.activities)
      or exists(select 1 from public.activity_participants)
      or exists(select 1 from public.get_visible_activity_cards())
-     or exists(select 1 from public.get_activity_participants(
-       (select activity_scheduled from pg_temp.sitaa_0008_context)
-     ))
      or public.activity_attendance_deadline(
        (select activity_scheduled from pg_temp.sitaa_0008_context)
      ) is not null
@@ -855,28 +1053,31 @@ begin
   get diagnostics affected=row_count;
   if affected<>0 then raise exception '0008_verify_inactive_activity_delete_allowed'; end if;
 
-  update public.activity_participants set attendance_notes='No permitido'
-  where activity_id=(select activity_scheduled from pg_temp.sitaa_0008_context);
-  get diagnostics affected=row_count;
-  if affected<>0 then raise exception '0008_verify_inactive_participant_update_allowed'; end if;
+  begin
+    update public.activity_participants set attendance_notes='No permitido'
+    where activity_id=(select activity_scheduled from pg_temp.sitaa_0008_context);
+    raise exception '0008_verify_inactive_participant_update_allowed';
+  exception when sqlstate '42501' then null;
+  end;
 
-  delete from public.activity_participants
-  where activity_id=(select activity_scheduled from pg_temp.sitaa_0008_context);
-  get diagnostics affected=row_count;
-  if affected<>0 then raise exception '0008_verify_inactive_participant_delete_allowed'; end if;
+  begin
+    delete from public.activity_participants
+    where activity_id=(select activity_scheduled from pg_temp.sitaa_0008_context);
+    raise exception '0008_verify_inactive_participant_delete_allowed';
+  exception when sqlstate '42501' then null;
+  end;
 
   rejected:=false;
   begin
     insert into public.activities(
-      title,responsible_profile_id,created_by,status_code,scope_type,
+      id,title,responsible_profile_id,created_by,status_code,scope_type,
       program_id,division_id
-    ) values(
-      'Inserción no permitida',pg_temp.case_id('active_professor'),
-      pg_temp.case_id('active_professor'),'draft','program',
-      (select program_a from pg_temp.sitaa_0008_context),
-      (select division_a from pg_temp.sitaa_0008_context)
-    );
-  exception when others then
+    ) select
+      activity_inactive_attempt,'Inserción no permitida '||run_marker,
+      pg_temp.case_id('active_professor'),pg_temp.case_id('active_professor'),
+      'draft','program',program_a,division_a
+    from pg_temp.sitaa_0008_context;
+  exception when sqlstate '42501' then
     get stacked diagnostics state=returned_sqlstate;
     rejected:=state='42501';
   end;
@@ -891,21 +1092,23 @@ begin
       pg_temp.case_id('active_professor'),'responsible',
       pg_temp.case_id('active_professor')
     );
-  exception when others then
+  exception when sqlstate '42501' then
     get stacked diagnostics state=returned_sqlstate;
     rejected:=state='42501';
   end;
   if not rejected then raise exception '0008_verify_inactive_participant_insert_allowed'; end if;
 
   rejected:=false;
+  state:=null;
+  actual_message:=null;
   begin
     perform public.add_activity_participant(
       (select activity_scheduled from pg_temp.sitaa_0008_context),
       pg_temp.case_id('active_student'),'student'
     );
-  exception when others then
-    get stacked diagnostics state=returned_sqlstate;
-    rejected:=state='42501';
+  exception when sqlstate '42501' then
+    get stacked diagnostics state=returned_sqlstate,actual_message=message_text;
+    rejected:=state='42501' and actual_message='sitaa_operational_account_inactive';
   end;
   if not rejected then raise exception '0008_verify_inactive_rpc_mutation_allowed'; end if;
 
@@ -974,27 +1177,30 @@ reset role;
 select pg_temp.set_request_user('admin_bad_scope');
 set local role authenticated;
 do $malformed_admin$
-declare rejected boolean:=false; state text;
+declare rejected boolean:=false; state text; actual_message text;
 begin
   if public.is_b1_account_admin() then raise exception '0008_verify_malformed_admin_accepted'; end if;
   begin
     perform public.get_admin_identity_correction_context_b2a(pg_temp.case_id('target_institutional'));
-  exception when others then
-    get stacked diagnostics state=returned_sqlstate;
-    rejected:=state='42501';
+  exception when sqlstate '42501' then
+    get stacked diagnostics state=returned_sqlstate,actual_message=message_text;
+    rejected:=state='42501' and actual_message='sitaa_admin_access_denied';
   end;
   if not rejected then raise exception '0008_verify_malformed_admin_context_allowed'; end if;
 
   rejected:=false;
+  state:=null;
+  actual_message:=null;
   begin
     perform public.correct_admin_account_identity_b2a(
       pg_temp.case_id('target_institutional'),'Persona','Prueba',null,
-      'student','0008000024',(select program_a from pg_temp.sitaa_0008_context),
+      'student',pg_temp.fixture_identifier('mutation:malformed_admin'),
+      (select program_a from pg_temp.sitaa_0008_context),
       'Razón administrativa válida'
     );
-  exception when others then
-    get stacked diagnostics state=returned_sqlstate;
-    rejected:=state='42501';
+  exception when sqlstate '42501' then
+    get stacked diagnostics state=returned_sqlstate,actual_message=message_text;
+    rejected:=state='42501' and actual_message='sitaa_admin_access_denied';
   end;
   if not rejected then raise exception '0008_verify_malformed_admin_mutation_allowed'; end if;
 end;
@@ -1005,7 +1211,25 @@ reset role;
 select pg_temp.set_request_user('active_student');
 set local role authenticated;
 do $privacy_regression$
+declare
+  actual_state text;
+  actual_message text;
 begin
+  begin
+    perform public.get_activity_participants(
+      (select activity_scheduled from pg_temp.sitaa_0008_context)
+    );
+  exception when sqlstate '42501' then
+    get stacked diagnostics
+      actual_state=returned_sqlstate,actual_message=message_text;
+  end;
+
+  if actual_state is distinct from '42501'
+     or actual_message is distinct from
+       'No tienes permiso para consultar la lista de participantes de esta actividad.' then
+    raise exception '0008_verify_student_participant_list_denial_mismatch';
+  end if;
+
   if exists(
        select 1 from public.get_visible_activity_cards()
        where id=(select activity_draft from pg_temp.sitaa_0008_context)
@@ -1013,11 +1237,6 @@ begin
      or not exists(
        select 1 from public.get_visible_activity_cards()
        where id=(select activity_scheduled from pg_temp.sitaa_0008_context)
-     )
-     or exists(
-       select 1 from public.get_activity_participants(
-         (select activity_scheduled from pg_temp.sitaa_0008_context)
-       )
      ) then
     raise exception '0008_verify_draft_or_participant_privacy_regression';
   end if;
@@ -1035,7 +1254,7 @@ set search_path=auth,pg_temp,pg_catalog,information_schema
 as $$
 declare
   target_id uuid:=pg_temp.case_id(target_label);
-  provider_key text:='google-'||target_label||'-0008';
+  provider_key text:=(select google_provider_key from pg_temp.sitaa_0008_context);
   payload jsonb:=jsonb_build_object(
     'sub',provider_key,'email',pg_temp.case_email(target_label),'email_verified',true
   );
@@ -1054,7 +1273,8 @@ select pg_temp.insert_google_identity('google_pending');
 select pg_temp.set_request_user('google_pending');
 set local role authenticated;
 select public.complete_own_google_registration(
-  'student','Persona','Pendiente',null,'0008000001',
+  'student','Persona','Pendiente',null,
+  pg_temp.fixture_identifier('mutation:google_completion'),
   (select program_a from pg_temp.sitaa_0008_context)
 );
 reset role;
@@ -1092,6 +1312,18 @@ declare
   audit_after bigint;
   rejected boolean:=false;
   actual_message text;
+  actual_state text;
+  expected_state text:=case
+    when expected_fragment in (
+      'sitaa_identity_self_correction_forbidden','sitaa_admin_access_denied'
+    ) then '42501'
+    when expected_fragment='sitaa_identity_duplicate_identifier' then '23505'
+    when expected_fragment in (
+      'sitaa_identity_pending_target','sitaa_identity_target_unavailable',
+      'sitaa_identity_person_type_dependency','sitaa_identity_program_dependency'
+    ) then 'P0001'
+    else '22023'
+  end;
 begin
   select to_jsonb(detail) into before_detail
   from public.get_admin_account_detail_b1(pg_temp.case_id(target_label)) detail;
@@ -1103,12 +1335,15 @@ begin
       pg_temp.case_id(target_label),requested_first,requested_paternal,requested_maternal,
       requested_person,requested_identifier,requested_program,requested_reason
     );
-  exception when others then
+  exception when sqlstate '42501' or sqlstate '23505'
+    or sqlstate 'P0001' or sqlstate '22023' then
     rejected:=true;
-    get stacked diagnostics actual_message=message_text;
+    get stacked diagnostics actual_state=returned_sqlstate,actual_message=message_text;
   end;
 
-  if not rejected or position(expected_fragment in coalesce(actual_message,''))=0 then
+  if not rejected
+     or actual_state is distinct from expected_state
+     or actual_message is distinct from expected_fragment then
     raise exception '0008_verify_unexpected_rejection_contract';
   end if;
   if actual_message ~* '(check constraint|profiles_[a-z0-9_]*_check)' then
@@ -1124,6 +1359,9 @@ begin
   end if;
 end;
 $$;
+revoke all on function pg_temp.expect_correction_rejection(
+  text,text,text,text,text,text,uuid,text,text
+) from public,anon,service_role;
 grant execute on function pg_temp.expect_correction_rejection(
   text,text,text,text,text,text,uuid,text,text
 ) to authenticated;
@@ -1135,14 +1373,23 @@ do $unauthorized_indistinguishable$
 declare
   state_existing text;
   state_missing text;
+  message_existing text;
+  message_missing text;
 begin
   begin
     perform public.get_admin_identity_correction_context_b2a(pg_temp.case_id('target_institutional'));
-  exception when others then get stacked diagnostics state_existing=returned_sqlstate; end;
+  exception when sqlstate '42501' then
+    get stacked diagnostics state_existing=returned_sqlstate,message_existing=message_text;
+  end;
   begin
     perform public.get_admin_identity_correction_context_b2a(gen_random_uuid());
-  exception when others then get stacked diagnostics state_missing=returned_sqlstate; end;
-  if state_existing<>'42501' or state_missing<>'42501' then
+  exception when sqlstate '42501' then
+    get stacked diagnostics state_missing=returned_sqlstate,message_missing=message_text;
+  end;
+  if state_existing is distinct from '42501'
+     or state_missing is distinct from '42501'
+     or message_existing is distinct from 'sitaa_admin_access_denied'
+     or message_missing is distinct from 'sitaa_admin_access_denied' then
     raise exception '0008_verify_context_target_disclosure';
   end if;
 end;
@@ -1152,12 +1399,17 @@ reset role;
 select pg_temp.set_request_user('admin_inactive');
 set local role authenticated;
 do $inactive_admin_denied$
-declare state text;
+declare state text; actual_message text;
 begin
   begin
     perform public.get_admin_identity_correction_context_b2a(pg_temp.case_id('target_institutional'));
-  exception when others then get stacked diagnostics state=returned_sqlstate; end;
-  if state<>'42501' then raise exception '0008_verify_inactive_admin_allowed'; end if;
+  exception when sqlstate '42501' then
+    get stacked diagnostics state=returned_sqlstate,actual_message=message_text;
+  end;
+  if state is distinct from '42501'
+     or actual_message is distinct from 'sitaa_admin_access_denied' then
+    raise exception '0008_verify_inactive_admin_allowed';
+  end if;
 end;
 $inactive_admin_denied$;
 reset role;
@@ -1215,17 +1467,20 @@ select pg_temp.expect_correction_rejection(
   'Razón administrativa válida','sitaa_identity_self_correction_forbidden'
 );
 select pg_temp.expect_correction_rejection(
-  'target_pending','Persona','Pendiente',null,'student','0008000002',
+  'target_pending','Persona','Pendiente',null,'student',
+  pg_temp.fixture_identifier('mutation:pending_target'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_pending_target'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional',null,'Prueba',null,'student','0008000003',
+  'target_institutional',null,'Prueba',null,'student',
+  pg_temp.fixture_identifier('mutation:missing_first_names'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_invalid_name'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional','Persona','Prueba',null,null,'0008000003',
+  'target_institutional','Persona','Prueba',null,null,
+  pg_temp.fixture_identifier('mutation:null_person_type'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_invalid_person_type'
 );
@@ -1234,7 +1489,8 @@ select pg_temp.expect_correction_rejection(
   'Razón administrativa válida','sitaa_identity_invalid_name'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional',E'\n\t  ',E'\n Prueba\t',null,'student','0008000003',
+  'target_institutional',E'\n\t  ',E'\n Prueba\t',null,'student',
+  pg_temp.fixture_identifier('mutation:whitespace_name'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_invalid_name'
 );
@@ -1250,17 +1506,20 @@ select pg_temp.expect_correction_rejection(
   'Razón administrativa válida','sitaa_identity_duplicate_identifier'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional','Persona','Prueba',null,'student','0008000004',
+  'target_institutional','Persona','Prueba',null,'student',
+  pg_temp.fixture_identifier('mutation:inactive_program'),
   (select inactive_program from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_invalid_program'
 );
 select pg_temp.expect_correction_rejection(
-  'target_technical','Soporte','Prueba',null,'student','0008000005',
+  'target_technical','Soporte','Prueba',null,'student',
+  pg_temp.fixture_identifier('mutation:technical_fields'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_technical_fields_forbidden'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional','Persona',null,null,'student','0008000006',
+  'target_institutional','Persona',null,null,'student',
+  pg_temp.fixture_identifier('mutation:missing_paternal'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_invalid_name'
 );
@@ -1271,72 +1530,87 @@ select pg_temp.expect_correction_rejection(
   'Razón administrativa válida','sitaa_identity_no_changes'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional','Persona','Prueba',null,'student','0008000007',
+  'target_institutional','Persona','Prueba',null,'student',
+  pg_temp.fixture_identifier('mutation:short_reason'),
   (select program_a from pg_temp.sitaa_0008_context),
   'corta','sitaa_identity_invalid_reason'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional','Persona','Prueba',null,'student','0008000020',
+  'target_institutional','Persona','Prueba',null,'student',
+  pg_temp.fixture_identifier('mutation:null_reason'),
   (select program_a from pg_temp.sitaa_0008_context),
   null,'sitaa_identity_invalid_reason'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional','Persona','Prueba',null,'student','0008000021',
+  'target_institutional','Persona','Prueba',null,'student',
+  pg_temp.fixture_identifier('mutation:blank_reason'),
   (select program_a from pg_temp.sitaa_0008_context),
   '   ','sitaa_identity_invalid_reason'
 );
 select pg_temp.expect_correction_rejection(
-  'target_institutional','Persona','Prueba',null,'student','0008000022',
+  'target_institutional','Persona','Prueba',null,'student',
+  pg_temp.fixture_identifier('mutation:long_reason'),
   (select program_a from pg_temp.sitaa_0008_context),
   repeat('x',1001),'sitaa_identity_invalid_reason'
 );
 select pg_temp.expect_correction_rejection(
-  'target_current_role','Persona','Prueba',null,'professor','0008000008',
+  'target_current_role','Persona','Prueba',null,'professor',
+  pg_temp.fixture_identifier('mutation:current_role'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_person_type_dependency'
 );
 select pg_temp.expect_correction_rejection(
-  'target_future_role','Persona','Prueba',null,'professor','0008000009',
+  'target_future_role','Persona','Prueba',null,'professor',
+  pg_temp.fixture_identifier('mutation:future_role'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_person_type_dependency'
 );
 select pg_temp.expect_correction_rejection(
-  'target_program_dependency','Persona','Prueba',null,'professor','0008000010',
+  'target_program_dependency','Persona','Prueba',null,'professor',
+  pg_temp.fixture_identifier('mutation:program_dependency'),
   (select program_b from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_program_dependency'
 );
 select pg_temp.expect_correction_rejection(
-  'target_division_dependency','Persona','Prueba',null,'professor','0008000016',
+  'target_division_dependency','Persona','Prueba',null,'professor',
+  pg_temp.fixture_identifier('mutation:division_dependency'),
   (select program_b from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_program_dependency'
 );
 select pg_temp.expect_correction_rejection(
-  'target_open_responsible','Persona','Prueba',null,'student','0008000017',
+  'target_open_responsible','Persona','Prueba',null,'student',
+  pg_temp.fixture_identifier('mutation:person_responsibility'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_person_type_dependency'
 );
 select pg_temp.expect_correction_rejection(
-  'target_program_responsible','Persona','Prueba',null,'professor','0008000018',
+  'target_program_responsible','Persona','Prueba',null,'professor',
+  pg_temp.fixture_identifier('mutation:program_responsibility'),
   (select program_b from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_program_dependency'
 );
 select pg_temp.expect_correction_rejection(
-  'target_program_participant','Persona','Prueba',null,'professor','0008000019',
+  'target_program_participant','Persona','Prueba',null,'professor',
+  pg_temp.fixture_identifier('mutation:program_participation'),
   (select program_b from pg_temp.sitaa_0008_context),
   'Razón administrativa válida','sitaa_identity_program_dependency'
 );
 
 do $missing_target_mutation$
-declare actual_message text;
+declare actual_message text; actual_state text;
 begin
   begin
     perform public.correct_admin_account_identity_b2a(
-      gen_random_uuid(),'Persona','Inexistente',null,'student','0008000023',
+      gen_random_uuid(),'Persona','Inexistente',null,'student',
+      pg_temp.fixture_identifier('mutation:missing_target'),
       (select program_a from pg_temp.sitaa_0008_context),
       'Razón administrativa válida'
     );
-  exception when others then get stacked diagnostics actual_message=message_text; end;
-  if position('sitaa_identity_target_unavailable' in coalesce(actual_message,''))=0 then
+  exception when sqlstate 'P0001' then
+    get stacked diagnostics actual_state=returned_sqlstate,actual_message=message_text;
+  end;
+  if actual_state is distinct from 'P0001'
+     or actual_message is distinct from 'sitaa_identity_target_unavailable' then
     raise exception '0008_verify_missing_target_contract';
   end if;
 end;
@@ -1345,7 +1619,8 @@ $missing_target_mutation$;
 -- Éxitos: institucional, técnico, inactivo, histórico y cambios no bloqueados.
 select * from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_institutional'),E'\n  María\t  José  \n',E'\tD''Ángelo\n',E' López\t',
-  'student','0008000011',(select program_b from pg_temp.sitaa_0008_context),
+  'student',pg_temp.fixture_identifier('mutation:success_institutional'),
+  (select program_b from pg_temp.sitaa_0008_context),
   E'\n  Corrección\t  verificada   con fuente institucional  \n'
 );
 select * from public.correct_admin_account_identity_b2a(
@@ -1354,17 +1629,20 @@ select * from public.correct_admin_account_identity_b2a(
 );
 select * from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_inactive'),'Cuenta','Inactiva','Corregida',
-  'professor','0008000012',(select program_a from pg_temp.sitaa_0008_context),
+  'professor',pg_temp.fixture_identifier('mutation:success_inactive'),
+  (select program_a from pg_temp.sitaa_0008_context),
   'Corrección de identidad inactiva'
 );
 select * from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_historical_role'),'Histórica','Persona',null,
-  'professor','0008000013',(select program_a from pg_temp.sitaa_0008_context),
+  'professor',pg_temp.fixture_identifier('mutation:success_historical_role'),
+  (select program_a from pg_temp.sitaa_0008_context),
   'Cambio permitido por asignación vencida'
 );
 select * from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_history_only'),'Historial','Conservado',null,
-  'student','0008000014',(select program_b from pg_temp.sitaa_0008_context),
+  'student',pg_temp.fixture_identifier('mutation:success_history_only'),
+  (select program_b from pg_temp.sitaa_0008_context),
   'Cambio permitido por actividad histórica'
 );
 select * from public.correct_admin_account_identity_b2a(
@@ -1375,7 +1653,8 @@ select * from public.correct_admin_account_identity_b2a(
 );
 select * from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_current_role'),'Nombre','Corregido',null,
-  'student','0008000015',(select program_a from pg_temp.sitaa_0008_context),
+  'student',pg_temp.fixture_identifier('mutation:success_identifier'),
+  (select program_a from pg_temp.sitaa_0008_context),
   'Corrección de identificador sin alterar dependencias'
 );
 
@@ -1390,7 +1669,8 @@ begin
          and first_names='María José' and paternal_surname='D''Ángelo'
          and maternal_surname='López' and full_name='María José D''Ángelo López'
          and person_type='student' and institutional_id_type='student_account'
-         and institutional_id_value='0008000011'
+         and institutional_id_value=
+           pg_temp.fixture_identifier('mutation:success_institutional')
          and primary_program_id=(select program_b from pg_temp.sitaa_0008_context)
      ) then
     raise exception '0008_verify_institutional_correction_failed';
@@ -1463,20 +1743,135 @@ end;
 $successful_corrections$;
 reset role;
 
+-- Matriz de escritores soportados: DML directo cerrado para participantes,
+-- RPC compatible vigente y trigger de actividad revalidando tras cualquier espera.
+select pg_temp.set_request_user('active_professor');
+set local role authenticated;
+do $supported_writer_contract$
+declare
+  actual_state text;
+  actual_message text;
+begin
+  begin
+    insert into public.activity_participants(
+      activity_id,profile_id,participant_role_code,added_by
+    ) values(
+      (select activity_scheduled from pg_temp.sitaa_0008_context),
+      pg_temp.case_id('target_institutional'),'student',
+      pg_temp.case_id('active_professor')
+    );
+    raise exception '0008_verify_direct_participant_insert_allowed';
+  exception when sqlstate '42501' then null;
+  end;
+
+  begin
+    perform public.add_activity_participant(
+      (select activity_scheduled from pg_temp.sitaa_0008_context),
+      pg_temp.case_id('target_institutional'),'student'
+    );
+  exception when sqlstate 'P0001' then
+    get stacked diagnostics actual_state=returned_sqlstate,actual_message=message_text;
+  end;
+  if actual_state is distinct from 'P0001'
+     or actual_message is distinct from
+       'La persona seleccionada pertenece a otro programa académico.' then
+    raise exception '0008_verify_rpc_participant_incompatibility_mismatch';
+  end if;
+
+  perform public.add_activity_participant(
+    (select activity_scheduled from pg_temp.sitaa_0008_context),
+    pg_temp.case_id('participant_compatible'),'student'
+  );
+  if not exists (
+    select 1 from public.activity_participants participant
+    where participant.activity_id=(
+      select activity_scheduled from pg_temp.sitaa_0008_context
+    ) and participant.profile_id=pg_temp.case_id('participant_compatible')
+  ) then
+    raise exception '0008_verify_compatible_rpc_participant_insert_failed';
+  end if;
+
+  insert into public.activities(
+    id,title,description,academic_period_id,program_id,activity_type_code,
+    service_type_code,attention_category_code,modality_code,status_code,
+    location_type_code,location_detail,start_date,start_time,end_date,end_time,
+    duration_mode,scope_type,division_id,responsible_profile_id,created_by
+  ) select
+    activity_writer_compatible,'Actividad writer compatible '||run_marker,null,
+    academic_period_id,program_a,'group_activity','tutoring','disciplinary',
+    'in_person','draft','classroom','Aula sintética',fixture_activity_date,
+    time '16:00',fixture_activity_date,time '17:00','one_hour','program',
+    division_a,pg_temp.case_id('active_professor'),pg_temp.case_id('active_professor')
+  from pg_temp.sitaa_0008_context;
+
+  actual_state:=null;
+  actual_message:=null;
+  begin
+    insert into public.activities(
+      id,title,description,academic_period_id,program_id,activity_type_code,
+      service_type_code,attention_category_code,modality_code,status_code,
+      location_type_code,location_detail,start_date,start_time,end_date,end_time,
+      duration_mode,scope_type,division_id,responsible_profile_id,created_by
+    ) select
+      activity_writer_incompatible,'Actividad writer incompatible '||run_marker,null,
+      academic_period_id,program_a,'group_activity','tutoring','disciplinary',
+      'in_person','draft','classroom','Aula sintética',fixture_activity_date,
+      time '18:00',fixture_activity_date,time '19:00','one_hour','program',
+      division_a,pg_temp.case_id('target_institutional'),pg_temp.case_id('active_professor')
+    from pg_temp.sitaa_0008_context;
+  exception when sqlstate '42501' then
+    get stacked diagnostics actual_state=returned_sqlstate,actual_message=message_text;
+  end;
+  if actual_state is distinct from '42501'
+     or actual_message is distinct from 'sitaa_activity_writer_identity_mismatch' then
+    raise exception '0008_verify_direct_activity_responsibility_allowed';
+  end if;
+end;
+$supported_writer_contract$;
+reset role;
+
+select pg_temp.set_request_user('admin_exact');
+set local role authenticated;
+do $activity_scope_dependency_contract$
+declare actual_state text; actual_message text;
+begin
+  begin
+    update public.activities activity
+    set program_id=(select program_b from pg_temp.sitaa_0008_context),
+        division_id=(select division_b from pg_temp.sitaa_0008_context)
+    where activity.id=(select activity_scheduled from pg_temp.sitaa_0008_context);
+  exception when sqlstate '23514' then
+    get stacked diagnostics actual_state=returned_sqlstate,actual_message=message_text;
+  end;
+  if actual_state is distinct from '23514'
+     or actual_message is distinct from
+       'sitaa_activity_participant_identity_incompatible' then
+    raise exception '0008_verify_direct_activity_scope_incompatibility_allowed';
+  end if;
+end;
+$activity_scope_dependency_contract$;
+reset role;
+
 -- El RPC directo sigue denegado para usuarios ordinarios.
 select pg_temp.set_request_user('active_student');
 set local role authenticated;
 do $ordinary_mutation_denied$
-declare state text;
+declare state text; actual_message text;
 begin
   begin
     perform public.correct_admin_account_identity_b2a(
       pg_temp.case_id('target_institutional'),'Otro','Nombre',null,
-      'student','0008000016',(select program_b from pg_temp.sitaa_0008_context),
+      'student',pg_temp.fixture_identifier('mutation:ordinary_denied'),
+      (select program_b from pg_temp.sitaa_0008_context),
       'Razón administrativa válida'
     );
-  exception when others then get stacked diagnostics state=returned_sqlstate; end;
-  if state<>'42501' then raise exception '0008_verify_ordinary_mutation_allowed'; end if;
+  exception when sqlstate '42501' then
+    get stacked diagnostics state=returned_sqlstate,actual_message=message_text;
+  end;
+  if state is distinct from '42501'
+     or actual_message is distinct from 'sitaa_admin_access_denied' then
+    raise exception '0008_verify_ordinary_mutation_allowed';
+  end if;
 end;
 $ordinary_mutation_denied$;
 reset role;
@@ -1488,6 +1883,8 @@ declare
   old_email text;
   old_auth_count bigint;
   rejected boolean:=false;
+  rejection_state text;
+  rejection_message text;
 begin
   select payload into current_payload from sitaa_0008_snapshots where category='roles';
   if current_payload is distinct from (
@@ -1541,8 +1938,16 @@ begin
     update public.admin_audit_events set outcome='failure'
     where action_code='account_identity_corrected'
       and target_profile_id=pg_temp.case_id('target_institutional');
-  exception when others then rejected:=true; end;
-  if not rejected then raise exception '0008_verify_audit_not_append_only'; end if;
+  exception when sqlstate '55000' then
+    rejected:=true;
+    get stacked diagnostics
+      rejection_state=returned_sqlstate,rejection_message=message_text;
+  end;
+  if not rejected
+     or rejection_state is distinct from '55000'
+     or rejection_message is distinct from 'sitaa_admin_audit_is_append_only' then
+    raise exception '0008_verify_audit_not_append_only';
+  end if;
 end;
 $preservation_contract$;
 

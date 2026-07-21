@@ -4,7 +4,7 @@
 
 `0008_operational_account_barrier_identity_correction.sql` está preparada localmente y **no aplicada**. Este plan valida la barrera operativa de cuenta activa y la corrección administrativa de identidad de Fase B.2a. No autoriza conexión ni ejecución contra Supabase.
 
-Inventario esperado después de aplicar 0008: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 10 triggers públicos, 50 funciones, 25 políticas y 51 semillas. El delta de privilegios de rutina esperado es seis entradas ACL: propietario y `authenticated` para cada una de las tres funciones nuevas; no cambia grants de tablas.
+Inventario esperado después de aplicar 0008: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados.
 
 ## Matriz completa de superficie funcional
 
@@ -85,6 +85,8 @@ Todos los bloqueos se repiten dentro de la migración antes del DDL.
 ## Verificador transaccional
 
 El verificador usa UUID aleatorios, correos `.invalid`, tablas/funciones `pg_temp`, grants temporales mínimos y termina con `ROLLBACK`. Los cambios de rol a `authenticated` conservan la evaluación real de RLS y RPC. No usa PII operativa.
+
+Los identificadores válidos se asignan con un allocator `pg_temp`: cada etiqueta obtiene una cadena decimal con cero inicial, se comprueba contra asignaciones previas del arnés y contra ambos tipos de identificador de `profiles`, y cualquier colisión hace avanzar el contador hasta encontrar un valor libre. No quedan literales válidos `0008...`. La identidad Google usa una clave de proveedor derivada del marcador de ejecución. Cada actividad sintética tiene UUID explícito en el contexto temporal y títulos legibles derivados del mismo marcador; ninguna fila se localiza por título.
 
 La actividad programada ya no depende de `hoy + 1`: cada ejecución crea un semestre sintético único, activo y futuro, cuyo inicio queda después del mayor `ends_on` conocido más un margen seguro. La fecha fixture pertenece a ese rango y se resuelve por ID contra `get_academic_period_for_date`. Esto hace al arnés independiente de que la fecha real caiga dentro de un semestre o en un intersemestre; todo desaparece con el `ROLLBACK`.
 
@@ -195,12 +197,30 @@ Cobertura mínima numerada:
 103. La corrección normalizada exitosa registra únicamente los nombres esperados en `changed_fields`.
 104. El ACL y RLS exactos de `admin_audit_events` permanecen inalterados.
 105. El dominio de hash del rollback usa `md5(btrim(regexp_replace(lower(p.prosrc), '\s+', ' ', 'g')))` para las 29 restauraciones.
+106. `get_activity_participants(uuid)` para cuenta inactiva falla exactamente con `42501` y `sitaa_operational_account_inactive` fuera de cualquier expresión booleana.
+107. El mismo RPC para el alumno activo participante falla exactamente con `42501` y el mensaje estable de privacidad del padrón.
+108. Todos los identificadores válidos de registro o mutación provienen del allocator libre de colisiones y preservan cero inicial.
+109. La identidad Google y todas las actividades fixture están namespaced por ejecución; no existe lookup por título fijo.
+110. El `INSERT` directo de participante queda denegado, la adición RPC incompatible se rechaza y la compatible tiene éxito.
+111. Una escritura directa de actividad no puede sustituir creador/responsable y un cambio de alcance no puede dejar participantes incompatibles.
+112. El trigger de escritor relee perfiles participantes con `FOR SHARE`; `add_activity_participant` mantiene su lock/relectura y la corrección conserva el orden fijo de locks.
+113. El guard predestructivo del rollback verifica inventario, políticas, firmas/salidas, hashes y ACL de las 29 rutinas, trigger de escritor, barrera activa y contrato físico/ACL de auditoría antes de cambiar objeto alguno.
 
 El verificador también compara hashes normalizados de `prosrc` para las 29 rutinas reemplazadas, el ACL exacto de esas rutinas, las propiedades/ACL de las tres nuevas funciones, las dos políticas restrictivas y el inventario estructural sin delta no autorizado.
 
 ## Protocolo de locks y prueba manual en dos sesiones
 
 La mutación autoriza primero y adquiere siempre `SHARE` en este orden: `role_assignments`, `activities`, `activity_participants`; después bloquea el perfil, relee el programa, evalúa dependencias, actualiza e inserta auditoría. Las escrituras normales toman `ROW EXCLUSIVE`, incompatible con `SHARE`, por lo que no atraviesan la decisión. `add_activity_participant` adelanta explícitamente su `ROW EXCLUSIVE` y relee el perfil con `FOR SHARE` antes de validar e insertar.
+
+### Matriz completa de escritores de dependencias
+
+| Tabla | Privilegios directos | Políticas DML | Escritores soportados | Invariantes y revalidación |
+|---|---|---|---|---|
+| `role_assignments` | `authenticated`: sólo `SELECT`; `postgres`/`service_role` conservan ACL post-0007 | No hay `INSERT/UPDATE/DELETE` para cliente | Ningún writer de aplicación en B.2a; Fase C queda pendiente | La corrección toma `SHARE`. Todo writer futuro de Fase C deberá tomar el lock incompatible y revalidar perfil, alcance, vigencia y autoridad después de esperar. |
+| `activities` | `authenticated`: `SELECT/INSERT/UPDATE/DELETE` | Políticas permisivas existentes más barrera restrictiva de cuenta activa | Server Actions de crear, editar y eliminar; trigger de publicación; roles privilegiados heredados | El trigger B.2a exige creador/responsable propios al insertar, los hace inmutables, revalida `can_create_activity` si cambia alcance/servicio y relee con `FOR SHARE` los perfiles participantes al cambiar programa/división. Un writer que espere observa la identidad confirmada. |
+| `activity_participants` | `authenticated`: sólo `SELECT`; DML directo revocado | Las políticas heredadas permanecen, pero ya no conceden por sí solas capacidad de escritura | `add_activity_participant`, `remove_activity_participant`, actualización manual/masiva y check-in; triggers de asistencia | `add_activity_participant` bloquea la tabla en `ROW EXCLUSIVE` y relee el perfil `FOR SHARE`; los demás RPC sólo alteran asistencia o eliminan filas. La inserción directa que omitía programa/persona queda cerrada. |
+
+No existe cliente `service_role` en la aplicación. Los privilegios persistentes de `postgres`/`service_role` son superficies confiables fuera del flujo cliente; no se declaran escritores administrativos nuevos. El diseño de Fase C deberá adoptar el mismo protocolo antes de habilitar mutaciones de roles.
 
 Prueba manual futura, no ejecutada en esta preparación:
 
@@ -229,8 +249,9 @@ No se afirmará verificación concurrente en PostgreSQL hasta ejecutar esta matr
 
 El rollback:
 
-- exige que el contrato completo 0008 exista;
-- elimina las dos políticas restrictivas y las dos RPC B.2a;
+- exige el contrato completo 0008 antes de su primera operación destructiva, incluidas definiciones/ACL exactas, los 29 hashes, el trigger de escritores y `admin_audit_events`;
+- elimina las dos políticas restrictivas, las dos RPC B.2a y el trigger/helper de escritores;
+- restaura `INSERT/UPDATE/DELETE` de `authenticated` sobre `activity_participants` exactamente como en post-0007;
 - restaura las 29 definiciones y ACL exactos post-0007;
 - elimina al final el helper de cuenta activa;
 - no usa borrado en cascada;

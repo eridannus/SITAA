@@ -34,7 +34,7 @@ Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al ve
 
 Una asignación sólo produce autorización operativa cuando la cuenta asociada está activa y compatible (`account_status = active`, `is_active = true`). Desde B.2a, RLS y las RPC operativas aplican esta frontera aun si el JWT o la asignación todavía parecen vigentes. Las cuentas no activas conservan únicamente el acceso propio mínimo necesario para explicar su estado.
 
-La corrección administrativa B.2a conserva la autoridad exacta de B.1 y no modifica roles. Cuando cambia tipo de persona o programa, serializa la comprobación contra `role_assignments`, `activities` y `activity_participants` en ese orden; una dependencia concurrente se observa y bloquea la corrección, o espera y revalida contra la identidad ya corregida.
+La corrección administrativa B.2a conserva la autoridad exacta de B.1 y no modifica roles. Cuando cambia tipo de persona o programa, serializa la comprobación contra `role_assignments`, `activities` y `activity_participants` en ese orden; una dependencia concurrente se observa y bloquea la corrección, o espera y revalida contra la identidad ya corregida. Las altas de participantes pasan por RPC, sin DML directo de `authenticated`; las escrituras de actividades conservan el alcance autorizado y no pueden sustituir creador/responsable. Las mutaciones futuras de roles pertenecen a Fase C y deberán adoptar la misma revalidación posterior a la espera.
 
 ## Editores de formularios
 

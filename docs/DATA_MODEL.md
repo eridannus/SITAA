@@ -188,7 +188,7 @@ La Fase A de identidad Google y los nombres estructurados de 0006 están aplicad
 
 ## Delta preparado por 0008
 
-0008 no crea tablas, columnas, índices, restricciones, triggers ni semillas. Añade una frontera de autorización y dos RPC administrativas sobre el modelo post-0007.
+0008 no crea tablas, columnas, índices, restricciones ni semillas. Añade una frontera de autorización, dos RPC administrativas y un trigger de integridad para las escrituras directas soportadas de `activities`; además retira el DML directo de `authenticated` sobre `activity_participants` para obligar a usar sus RPC validados.
 
 Una corrección exitosa conserva UUID de perfil, email, vínculo Auth, clase/estado de cuenta, ciclo de vida, asignaciones y toda la historia operativa. Inserta exactamente un evento append-only en `admin_audit_events` con `action_code = account_identity_corrected`, `outcome = success`, razón normalizada y metadata que contiene sólo el arreglo ordenado `changed_fields`.
 

@@ -190,6 +190,9 @@ checks(category,classification,aggregate_count) as (
     (case when to_regprocedure('public.is_sitaa_operational_account_active()') is not null then 1 else 0 end
      +case when to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)') is not null then 1 else 0 end
      +case when to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)') is not null then 1 else 0 end
+     +case when to_regprocedure('public.enforce_activity_writer_integrity_b2a()') is not null then 1 else 0 end
+     +(select count(*) from pg_trigger where tgrelid='public.activities'::regclass
+       and tgname='enforce_activity_writer_integrity_b2a' and not tgisinternal)
      +(select count(*) from pg_policies where schemaname='public' and policyname in (
        'Active accounts may operate activities','Active accounts may operate activity participants')))
   union all select 'required_rls_disabled','blocking',
@@ -288,8 +291,21 @@ checks(category,classification,aggregate_count) as (
        and (p.first_names is null
          or p.full_name is null or char_length(p.full_name) not between 2 and 200
          or p.full_name<>concat_ws(' ',p.first_names,p.paternal_surname,p.maternal_surname)
-         or p.person_type is not null or p.primary_program_id is not null
-         or p.institutional_id_type is not null or p.institutional_id_value is not null))
+          or p.person_type is not null or p.primary_program_id is not null
+          or p.institutional_id_type is not null or p.institutional_id_value is not null))
+  union all select 'participant_identity_dependency_inconsistency','blocking',
+    (select count(*)
+     from public.activity_participants participant
+     join public.activities activity on activity.id=participant.activity_id
+     join public.profiles profile on profile.id=participant.profile_id
+     left join public.academic_programs program on program.id=profile.primary_program_id
+     where profile.primary_program_id is null
+        or (activity.scope_type='program'
+          and profile.primary_program_id is distinct from activity.program_id)
+        or (activity.scope_type='division'
+          and program.division_id is distinct from activity.division_id)
+        or (participant.participant_role_code='responsible'
+          and profile.person_type is distinct from 'professor'))
   union all select 'profile_identity_constraint_drift','blocking',
     case when (select count(*) from pg_constraint
       where conrelid='public.profiles'::regclass and conname in (

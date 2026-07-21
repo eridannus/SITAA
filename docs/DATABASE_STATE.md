@@ -100,8 +100,8 @@ El detalle probatorio está en `supabase/reconciliation/0007_post_apply_reconcil
 
 `0008_operational_account_barrier_identity_correction.sql` está preparada localmente para Fase B.2a, pero no aplicada. Propone una barrera operativa independiente del JWT y corrección de identidad auditada sin alterar Auth, roles ni historia.
 
-La revisión local de 0008 añade precondiciones exactas de RLS, correspondencia Auth/profile, FK y ACL; serializa dependencias en orden fijo; valida firmas PostgREST nominales; independiza el verificador del calendario real mediante un semestre sintético; y corrige el dominio de hashes del rollback. Todo permanece sin verificación PostgreSQL hasta la secuencia coordinada de aplicación.
+La revisión local de 0008 añade precondiciones exactas de RLS, correspondencia Auth/profile, FK y ACL; serializa dependencias en orden fijo; cierra el DML cliente directo de participantes; protege las escrituras directas de actividades mediante trigger; valida firmas PostgREST nominales; independiza el verificador del calendario real mediante fixtures namespaced; y corrige el dominio de hashes del rollback. Todo permanece sin verificación PostgreSQL hasta la secuencia coordinada de aplicación.
 
-Esta preparación no cambia el inventario vivo post-0007 ni su snapshot autoritativo. Sólo después de aprobar preflight, desplegar la aplicación compatible, aplicar 0008, ejecutar el verificador, completar smoke tests y regenerar el snapshot podrá reconciliarse el nuevo inventario esperado de 50 funciones y 25 políticas.
+Esta preparación no cambia el inventario vivo post-0007 ni su snapshot autoritativo. Sólo después de aprobar preflight, desplegar la aplicación compatible, aplicar 0008, ejecutar el verificador, completar smoke tests y regenerar el snapshot podrá reconciliarse el nuevo inventario esperado de 51 funciones, 11 triggers y 25 políticas.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.
