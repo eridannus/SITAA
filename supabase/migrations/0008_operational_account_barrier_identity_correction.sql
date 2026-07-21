@@ -682,11 +682,24 @@ begin
                  and not attribute_definition.attisdropped
               )=1
               and regexp_replace(
-                lower(pg_get_triggerdef(trigger_definition.oid,false)),
-                '[[:space:]()]',
+                regexp_replace(
+                  split_part(
+                    split_part(
+                      lower(pg_get_triggerdef(trigger_definition.oid,false)),
+                      ' when ',
+                      2
+                    ),
+                    ' execute function ',
+                    1
+                  ),
+                  '[[:space:]()]',
+                  '',
+                  'g'
+                ),
+                '::text',
                 '',
                 'g'
-              ) like '%whenold.emailisdistinctfromnew.emailexecutefunction%'
+              )='old.emailisdistinctfromnew.email'
             )
           )
       )<>1
@@ -4217,11 +4230,24 @@ begin
             and not attribute_definition.attisdropped
          )=1
          and regexp_replace(
-           lower(pg_get_triggerdef(trigger_definition.oid,false)),
-           '[[:space:]()]',
+           regexp_replace(
+             split_part(
+               split_part(
+                 lower(pg_get_triggerdef(trigger_definition.oid,false)),
+                 ' when ',
+                 2
+               ),
+               ' execute function ',
+               1
+             ),
+             '[[:space:]()]',
+             '',
+             'g'
+           ),
+           '::text',
            '',
            'g'
-         ) like '%whenold.emailisdistinctfromnew.emailexecutefunction%'
+         )='old.emailisdistinctfromnew.email'
      )<>1 then
     raise exception '0008_post_ddl_auth_email_trigger_mismatch';
   end if;

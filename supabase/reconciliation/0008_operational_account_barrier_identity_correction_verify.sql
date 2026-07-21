@@ -781,11 +781,24 @@ begin
          -- tgqual referencia OLD y NEW como relaciones distintas; pg_get_expr
          -- no puede decompilar ese contrato. pg_get_triggerdef sí conserva WHEN.
          and regexp_replace(
-           lower(pg_get_triggerdef(trigger_definition.oid,false)),
-           '[[:space:]()]',
+           regexp_replace(
+             split_part(
+               split_part(
+                 lower(pg_get_triggerdef(trigger_definition.oid,false)),
+                 ' when ',
+                 2
+               ),
+               ' execute function ',
+               1
+             ),
+             '[[:space:]()]',
+             '',
+             'g'
+           ),
+           '::text',
            '',
            'g'
-         ) like '%whenold.emailisdistinctfromnew.emailexecutefunction%'
+         )='old.emailisdistinctfromnew.email'
      )<>1 then
     raise exception '0008_verify_auth_email_trigger_mismatch';
   end if;
@@ -819,6 +832,63 @@ begin
   end if;
 end;
 $static_contract$;
+
+-- Regresión pura de normalización: el deparser añade ::text a OLD/NEW.
+-- Se aísla únicamente WHEN y sólo se retira ese cast; no se tocan triggers.
+do $auth_trigger_when_normalization_regression$
+declare
+  mismatch_count integer;
+begin
+  select count(*)
+  into mismatch_count
+  from (values
+    (
+      'CREATE TRIGGER t AFTER UPDATE OF email ON auth.users FOR EACH ROW WHEN (((old.email)::text IS DISTINCT FROM (new.email)::text)) EXECUTE FUNCTION f()',
+      true
+    ),
+    (
+      'CREATE TRIGGER t AFTER UPDATE OF email ON auth.users FOR EACH ROW WHEN (NEW.email IS DISTINCT FROM OLD.email) EXECUTE FUNCTION f()',
+      false
+    ),
+    (
+      'CREATE TRIGGER t AFTER UPDATE OF email ON auth.users FOR EACH ROW WHEN (OLD.email = NEW.email) EXECUTE FUNCTION f()',
+      false
+    ),
+    (
+      'CREATE TRIGGER t AFTER UPDATE OF email ON auth.users FOR EACH ROW WHEN (OLD.email IS DISTINCT FROM NEW.email AND true) EXECUTE FUNCTION f()',
+      false
+    ),
+    (
+      'CREATE TRIGGER t AFTER UPDATE OF phone ON auth.users FOR EACH ROW WHEN (OLD.phone IS DISTINCT FROM NEW.phone) EXECUTE FUNCTION f()',
+      false
+    )
+  ) test_case(trigger_ddl,should_match)
+  cross join lateral (
+    select regexp_replace(
+      regexp_replace(
+        split_part(
+          split_part(lower(test_case.trigger_ddl),' when ',2),
+          ' execute function ',
+          1
+        ),
+        '[[:space:]()]',
+        '',
+        'g'
+      ),
+      '::text',
+      '',
+      'g'
+    ) normalized_when
+  ) normalized
+  where (
+    normalized.normalized_when='old.emailisdistinctfromnew.email'
+  ) is distinct from test_case.should_match;
+
+  if mismatch_count<>0 then
+    raise exception '0008_verify_auth_trigger_when_normalization_regression';
+  end if;
+end;
+$auth_trigger_when_normalization_regression$;
 
 -- Regresión controlada: el contrato estático anterior establece la proyección
 -- legítima post-0008. Una concesión explícita por columna debe aparecer en
