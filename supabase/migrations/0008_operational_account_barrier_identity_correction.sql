@@ -671,6 +671,7 @@ begin
             or (
               expected.uses_email_column
               and cardinality(trigger_definition.tgattr::smallint[])=1
+              and trigger_definition.tgqual is not null
               and (
                 select count(*)
                 from unnest(trigger_definition.tgattr::smallint[]) as update_attribute(attnum)
@@ -681,15 +682,11 @@ begin
                  and not attribute_definition.attisdropped
               )=1
               and regexp_replace(
-                lower(pg_get_expr(
-                  trigger_definition.tgqual,
-                  trigger_definition.tgrelid,
-                  true
-                )),
+                lower(pg_get_triggerdef(trigger_definition.oid,false)),
                 '[[:space:]()]',
                 '',
                 'g'
-              )='old.emailisdistinctfromnew.email'
+              ) like '%whenold.emailisdistinctfromnew.emailexecutefunction%'
             )
           )
       )<>1
@@ -4209,6 +4206,7 @@ begin
            to_regprocedure('public.sync_sitaa_profile_email_from_auth()')
          and trigger_definition.tgtype=17::smallint
          and cardinality(trigger_definition.tgattr::smallint[])=1
+         and trigger_definition.tgqual is not null
          and (
            select count(*)
            from unnest(trigger_definition.tgattr::smallint[]) as update_attribute(attnum)
@@ -4219,15 +4217,11 @@ begin
             and not attribute_definition.attisdropped
          )=1
          and regexp_replace(
-           lower(pg_get_expr(
-             trigger_definition.tgqual,
-             trigger_definition.tgrelid,
-             true
-           )),
+           lower(pg_get_triggerdef(trigger_definition.oid,false)),
            '[[:space:]()]',
            '',
            'g'
-         )='old.emailisdistinctfromnew.email'
+         ) like '%whenold.emailisdistinctfromnew.emailexecutefunction%'
      )<>1 then
     raise exception '0008_post_ddl_auth_email_trigger_mismatch';
   end if;

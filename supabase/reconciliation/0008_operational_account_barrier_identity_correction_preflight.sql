@@ -232,6 +232,7 @@ registration_trigger_contract_drift(aggregate_count) as (
             or (
               expected.uses_email_column
               and cardinality(trigger_definition.tgattr::smallint[])=1
+              and trigger_definition.tgqual is not null
               and (
                 select count(*)
                 from unnest(trigger_definition.tgattr::smallint[]) as update_attribute(attnum)
@@ -242,15 +243,11 @@ registration_trigger_contract_drift(aggregate_count) as (
                  and not attribute_definition.attisdropped
               )=1
               and regexp_replace(
-                lower(pg_get_expr(
-                  trigger_definition.tgqual,
-                  trigger_definition.tgrelid,
-                  true
-                )),
+                lower(pg_get_triggerdef(trigger_definition.oid,false)),
                 '[[:space:]()]',
                 '',
                 'g'
-              )='old.emailisdistinctfromnew.email'
+              ) like '%whenold.emailisdistinctfromnew.emailexecutefunction%'
             )
           )
       )<>1
