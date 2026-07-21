@@ -98,6 +98,8 @@ El detalle probatorio está en `supabase/reconciliation/0007_post_apply_reconcil
 
 `0001`–`0007` forman historia aplicada, verificada y reconciliada y no se reescriben. 0007 es inmutable y Fase B.1 está operativa y cerrada dentro de su alcance de sólo lectura. No existe deriva inexplicada.
 
-`0008` es el siguiente número disponible para un cambio futuro real; no se crea en este cierre.
+`0008_operational_account_barrier_identity_correction.sql` está preparada localmente para Fase B.2a, pero no aplicada. Propone una barrera operativa independiente del JWT y corrección de identidad auditada sin alterar Auth, roles ni historia.
+
+Esta preparación no cambia el inventario vivo post-0007 ni su snapshot autoritativo. Sólo después de aprobar preflight, desplegar la aplicación compatible, aplicar 0008, ejecutar el verificador, completar smoke tests y regenerar el snapshot podrá reconciliarse el nuevo inventario esperado de 50 funciones y 25 políticas.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.

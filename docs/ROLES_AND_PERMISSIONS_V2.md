@@ -124,3 +124,5 @@ Mariana y Alejandra tienen códigos distintos aunque sus permisos iniciales sean
 | `peer_tutor`, leads, `division_head`, `technical_admin` | Conservar, ajustando elegibilidad y autoridad. |
 
 No se debe renombrar ni borrar códigos vivos sin migración, backfill y compatibilidad revisada. Las brechas exactas se documentan en `IMPLEMENTATION_GAPS_0004.md`.
+
+B.2a no introduce semántica V2 ni repara dependencias automáticamente: una corrección incompatible se rechaza y no revoca, mueve ni reescribe asignaciones. La creación, revocación, transferencia y delegación de roles permanece íntegramente en Fase C.

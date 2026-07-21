@@ -165,3 +165,12 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Representación: `MAINTAIN` aparece en ACL expandida, pero no en `information_schema.table_privileges`; por ello el delta publicado de tabla es +9 aunque la ACL confirma diez entradas nuevas de tabla.
 - Diferencias ambientales: timestamp, token aleatorio `\restrict`, omisión textual opcional de `SECURITY INVOKER` y formato de `pg_dump`/`psql`.
 - Resultado: sin deriva inexplicada; políticas, secuencias, catálogos y objetos post-0006 no modificados por 0007 permanecen intactos.
+
+## 0008_operational_account_barrier_identity_correction.sql — creada localmente / no aplicada
+
+- Fase B.2a preparada sobre el snapshot post-0007 `2026-07-21T00:16:03Z`.
+- Añade un helper privado de cuenta operativa activa, dos políticas RLS restrictivas, guardas explícitas en 29 rutinas operativas y dos RPC de corrección administrativa.
+- No añade tablas, columnas, índices, restricciones, triggers, semillas ni grants directos de tabla.
+- Inventario esperado tras aplicación: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 10 triggers, 50 funciones, 25 políticas y 51 semillas.
+- Artefactos locales: migración, preflight de sólo lectura, verificador transaccional, rollback conservador y `docs/TEST_PLAN_0008.md`.
+- 0001–0007 y el snapshot vivo permanecen inmutables. No se ejecutó ni aplicó SQL durante esta preparación.

@@ -48,7 +48,9 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 
 ## Estado actual
 
-La aplicación y las migraciones `0001`–`0007` existen, están aplicadas, verificadas y reconciliadas contra el snapshot `2026-07-21T00:16:03Z`, sin deriva inexplicada. `0006_structured_person_names.sql` mantiene `full_name` como compatibilidad derivada y formaliza los componentes estructurados. `0007_admin_account_directory_audit.sql` es inmutable y Fase B.1 está operativa dentro de su alcance de sólo lectura; B.2, B.3 y Fase C permanecen pendientes. `0008` es el siguiente número disponible para un cambio futuro real. No modificar migraciones aplicadas ni conectarse a Supabase sin autorización expresa.
+La aplicación y las migraciones `0001`–`0007` existen, están aplicadas, verificadas y reconciliadas contra el snapshot `2026-07-21T00:16:03Z`, sin deriva inexplicada. `0006_structured_person_names.sql` mantiene `full_name` como compatibilidad derivada y formaliza los componentes estructurados. `0007_admin_account_directory_audit.sql` es inmutable y Fase B.1 está operativa dentro de su alcance de sólo lectura. `0008_operational_account_barrier_identity_correction.sql` está preparada localmente para Fase B.2a, pero no aplicada ni verificada en Supabase; B.2b, B.3 y Fase C permanecen pendientes. No modificar migraciones aplicadas ni conectarse a Supabase sin autorización expresa.
+
+Todo acceso a datos de otras cuentas y toda mutación administrativa u operativa debe tener autorización explícita en la base de datos. No se debe confiar en controles ocultos, en el estado del JWT ni en una comprobación exclusiva de la aplicación.
 
 La Fase A está implementada y operativa: usa Google OAuth para registro público, sin restricción de dominio ni scopes elevados. El acceso por correo/contraseña es sólo heredado. La identidad institucional se captura únicamente después de autenticar; no introducir signup público por contraseña, PII preautenticación, endpoints anónimos de disponibilidad, secretos OAuth, datos institucionales en URLs o `localStorage`, ni lógica que confíe en email como llave primaria.
 

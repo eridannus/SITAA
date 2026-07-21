@@ -106,3 +106,50 @@ export interface AdminFilterOption {
   value: string;
   label: string;
 }
+
+export interface AdminIdentityCorrectionContext {
+  targetProfileId: string;
+  canCorrect: boolean;
+  denialCode: string | null;
+  accountKind: AccountKind;
+  accountStatus: AccountStatus;
+  isSelf: boolean;
+  currentOrFutureAssignmentCount: number;
+  openResponsibilityCount: number;
+  openParticipationCount: number;
+}
+
+export interface AdminIdentityCorrectionInput {
+  targetProfileId: string;
+  firstNames: string;
+  paternalSurname: string | null;
+  maternalSurname: string | null;
+  personType: PersonType | null;
+  institutionalIdValue: string | null;
+  primaryProgramId: string | null;
+  reason: string;
+}
+
+export interface AdminIdentityCorrectionResult {
+  targetProfileId: string;
+  auditEventId: string;
+  changedFields: string[];
+  updatedAt: string;
+}
+
+export type AdminIdentityCorrectionErrorKind =
+  | "migration_pending"
+  | "forbidden"
+  | "self_forbidden"
+  | "pending_target"
+  | "invalid_name"
+  | "invalid_person_type"
+  | "invalid_identifier"
+  | "duplicate_identifier"
+  | "invalid_program"
+  | "technical_fields_forbidden"
+  | "no_changes"
+  | "invalid_reason"
+  | "person_type_dependency"
+  | "program_dependency"
+  | "unavailable";

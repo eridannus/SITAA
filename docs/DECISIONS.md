@@ -515,3 +515,13 @@ La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM
 **Consecuencias:** 0007 es inmutable. B.2, B.3 y Fase C continúan pendientes; B.1 no incorpora mutaciones de cuentas, Auth o roles. El snapshot post-0007 es la evidencia autoritativa actual y `0008` es el siguiente número disponible para un cambio futuro real.
 
 **Estado:** Aceptada; Fase B.1 operativa y reconciliada sin deriva inexplicada.
+
+## DEC-049 — Barrera operativa de cuenta activa y corrección administrativa de identidad
+
+**Contexto:** una asignación vigente y un JWT emitido antes de una baja temporal no bastan para determinar que una cuenta deba seguir operando. B.1 tampoco permite corregir de manera transaccional errores en la identidad estable de otra cuenta.
+
+**Decisión:** preparar 0008 para exigir perfil único con `account_status = active` e `is_active = true` antes de cualquier acceso operativo. La base aplica esta frontera mediante políticas RLS restrictivas sobre `activities` y `activity_participants` y guardas explícitas en las 29 rutinas operativas `SECURITY DEFINER` ejecutables por `authenticated`. La corrección de identidad usa la autoridad B.1 exacta, prohíbe autocorrección y objetivos pendientes, revalida dependencias bajo locks y escribe un único evento `account_identity_corrected` con razón obligatoria y metadata mínima.
+
+**Consecuencias:** la protección no depende de la expiración del JWT ni de ocultar controles. No se mutan Auth, estado/categoría de cuenta, asignaciones, actividades, participantes o historia. Un conflicto se rechaza sin reparación automática ni evento persistente. No se introduce cliente `service_role`; B.2b conserva activación/reactivación y Fase C conserva roles. A-02 continúa intencionalmente para administradores técnicos activos durante desarrollo.
+
+**Estado:** Aceptada y preparada localmente; 0008 no aplicada.

@@ -8,6 +8,8 @@
 
 RLS, helpers y RPC autorizadas construyen el universo visible. Después se aplican filtros validados en servidor/base. Nunca se descargan registros no autorizados para ocultarlos sólo en el cliente.
 
+El estado de cuenta es una frontera previa a cualquier conjunto operativo. Si el perfil no está activo y compatible, el conjunto visible de actividades y participantes es vacío antes de aplicar rol, alcance o filtros; las RPC `SECURITY DEFINER` aplican la misma barrera para no depender sólo de RLS o de la vigencia del JWT.
+
 ## Secuencia de consulta
 
 1. autenticar la sesión;

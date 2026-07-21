@@ -5,13 +5,20 @@ import { Alert } from "@/components/ui/alert";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { AdminAccountDataError, getAdminAccountRecord } from "@/lib/admin/accounts";
+import {
+  AdminIdentityCorrectionDataError,
+  getAdminIdentityCorrectionContext,
+} from "@/lib/admin/identity-correction";
 import type { AssignmentPresentationStatus } from "@/types/admin";
 import type { AccountStatus, AssignmentScope, InstitutionalIdType, PersonType, ServiceArea } from "@/types/sitaa";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Detalle de cuenta" };
 
-type Props = { params: Promise<{ id: string }> };
+type Props = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ identity?: string | string[] }>;
+};
 
 const accountKindLabels = { institutional: "Institucional", technical: "Técnica" } as const;
 const accountStatusLabels = { pending_registration: "Registro pendiente", active: "Activa", inactive: "Inactiva" } as const;
@@ -25,6 +32,9 @@ const assignmentLabels: Record<AssignmentPresentationStatus, string> = {
   expired: "Vencida",
   inactive: "Inactiva",
   suspended_by_account_status: "Suspendida por estado de cuenta",
+};
+const auditActionLabels: Record<string, string> = {
+  account_identity_corrected: "Identidad corregida",
 };
 
 function accountTone(status: AccountStatus): StatusTone {
@@ -63,8 +73,9 @@ function Definition({ label, value }: { label: string; value: string | null }) {
   return <div className="min-w-0"><dt className="text-sm font-semibold text-slate-500">{label}</dt><dd className="sitaa-wrap-anywhere mt-1 text-[var(--sitaa-text)]">{value || "No aplica"}</dd></div>;
 }
 
-export default async function AdminAccountDetailPage({ params }: Props) {
+export default async function AdminAccountDetailPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const query = await searchParams;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) notFound();
 
   let record;
@@ -85,14 +96,34 @@ export default async function AdminAccountDetailPage({ params }: Props) {
     );
   }
 
+  let correctionContext = null;
+  try {
+    correctionContext = await getAdminIdentityCorrectionContext(id);
+  } catch (error) {
+    if (error instanceof AdminIdentityCorrectionDataError && error.kind === "forbidden") {
+      redirect("/dashboard");
+    }
+    // Antes de aplicar 0008, B.1 permanece plenamente operativo y de sólo lectura.
+  }
+
   const { detail, assignments, auditHistory } = record;
+  const identityCorrected = query.identity === "corrected";
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
       <Link href="/admin/accounts" className="sitaa-text-action">← Volver a cuentas</Link>
       <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <SectionHeading eyebrow="Administración técnica" title={detail.fullName || detail.email} description="Vista administrativa de sólo lectura." />
-        <StatusBadge tone={accountTone(detail.accountStatus)} className="w-fit">{accountStatusLabels[detail.accountStatus]}</StatusBadge>
+        <SectionHeading eyebrow="Administración técnica" title={detail.fullName || detail.email} description="Consulta autorizada de identidad, asignaciones e historial administrativo." />
+        <div className="flex flex-col items-start gap-3 sm:items-end">
+          <StatusBadge tone={accountTone(detail.accountStatus)} className="w-fit">{accountStatusLabels[detail.accountStatus]}</StatusBadge>
+          {correctionContext?.canCorrect ? (
+            <Link href={`/admin/accounts/${id}/identity`} className="sitaa-primary-action">Corregir identidad</Link>
+          ) : null}
+        </div>
       </div>
+
+      {identityCorrected ? (
+        <Alert tone="success" className="mt-6 p-5">La identidad se corrigió correctamente y el evento administrativo quedó registrado.</Alert>
+      ) : null}
 
       <section className="sitaa-card mt-8 p-5 sm:p-7" aria-labelledby="identity-heading">
         <h2 id="identity-heading" className="text-xl font-bold text-[var(--sitaa-blue-dark)]">Identidad y cuenta</h2>
@@ -141,7 +172,7 @@ export default async function AdminAccountDetailPage({ params }: Props) {
           <ol className="mt-4 grid gap-4">
             {auditHistory.map((event) => (
               <li key={event.id} className="sitaa-card min-w-0 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3"><p className="sitaa-wrap-anywhere font-bold">{event.actionCode}</p><StatusBadge tone={event.outcome === "success" ? "success" : "error"}>{event.outcome === "success" ? "Correcto" : "Fallido"}</StatusBadge></div>
+                <div className="flex flex-wrap items-center justify-between gap-3"><p className="sitaa-wrap-anywhere font-bold">{auditActionLabels[event.actionCode] ?? event.actionCode}</p><StatusBadge tone={event.outcome === "success" ? "success" : "error"}>{event.outcome === "success" ? "Correcto" : "Fallido"}</StatusBadge></div>
                 <dl className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Definition label="Fecha" value={formatTimestamp(event.occurredAt)} />
                   <Definition label="Actor" value={event.actorDisplayName || "Cuenta administrativa"} />

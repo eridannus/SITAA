@@ -73,4 +73,6 @@ No se exportan usuarios, perfiles, asignaciones de rol, actividades, participant
 
 Después de generar un snapshot, se valida su integridad y se compara con `0001` y todas las migraciones posteriores. Los archivos de privilegios son evidencia para definir o verificar grants mínimos; no contienen ni ejecutan sentencias `GRANT` o `REVOKE`. Aplicar SQL a Supabase permanece como un paso separado y manual.
 
-La cadena reconciliada actual es `0001`–`0007`. 0007 está aplicada, verificada, probada en producción y reconciliada; Fase B.1 está operativa dentro de su alcance de sólo lectura. Los artefactos de `live/` son la evidencia autoritativa post-0007 y no se editan manualmente. `0008` es el siguiente número disponible para un cambio futuro real.
+La cadena reconciliada actual es `0001`–`0007`. 0007 está aplicada, verificada, probada en producción y reconciliada; Fase B.1 está operativa dentro de su alcance de sólo lectura. Los artefactos de `live/` son la evidencia autoritativa post-0007 y no se editan manualmente.
+
+0008 está preparada localmente para B.2a y permanece pendiente. Sus artefactos son `0008_operational_account_barrier_identity_correction_{preflight,verify,rollback}.sql` y `docs/TEST_PLAN_0008.md`. El preflight es de sólo lectura, el verificador termina con `ROLLBACK` y el rollback preserva toda corrección/auditoría ya confirmada. Ninguno es un snapshot vivo ni debe presentarse como evidencia de aplicación.

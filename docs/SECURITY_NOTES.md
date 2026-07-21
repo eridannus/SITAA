@@ -56,6 +56,15 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - La aplicación no utiliza `service_role` ni escribe auditoría en B.1. Las mutaciones de cuenta quedan en B.2/B.3 y las de rol en Fase C.
 - No incorporar nombres, correos ni identificadores personales a semillas SQL.
 
+#### Fase B.2a preparada localmente mediante 0008
+
+- Una cuenta pendiente, inactiva, sin perfil o con estado incompatible no puede leer ni mutar actividades, participantes, asistencia o check-in, aunque conserve un JWT o asignaciones vigentes.
+- La frontera se aplica en RLS restrictiva y dentro de las RPC operativas `SECURITY DEFINER`; ocultar botones no constituye autorización.
+- Se mantiene el acceso mínimo al perfil propio y a su historial de asignaciones para `/account-status`. La finalización Google pendiente continúa disponible bajo su contrato específico.
+- Sólo un administrador B.1 exacto, activo y vigente puede corregir la identidad de otra cuenta activa o inactiva. El objetivo se bloquea, las dependencias se revalidan y el cambio más su evento se confirman o revierten juntos.
+- El evento guarda actor, objetivo, acción, resultado, motivo normalizado y sólo los nombres de campos modificados; nunca almacena valores anteriores/nuevos, correo, identificadores, Auth, roles ni actividad.
+- No se añade `auth.admin`, clave `service_role` ni cliente privilegiado a la aplicación.
+
 ### Autorización y base de datos
 
 - Habilitar RLS en todas las tablas accesibles desde la API.

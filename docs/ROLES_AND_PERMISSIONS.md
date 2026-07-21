@@ -32,6 +32,8 @@ Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al ve
 - El trabajador se identifica con número de trabajador y puede recibir `professor`, responsabilidades de coordinación, jefatura, secretaría técnica u otras asignaciones autorizadas.
 - El programa principal describe afiliación y no concede permisos por sí mismo.
 
+Una asignación sólo produce autorización operativa cuando la cuenta asociada está activa y compatible (`account_status = active`, `is_active = true`). Desde B.2a, RLS y las RPC operativas aplican esta frontera aun si el JWT o la asignación todavía parecen vigentes. Las cuentas no activas conservan únicamente el acceso propio mínimo necesario para explicar su estado.
+
 ## Editores de formularios
 
 - `program_tutoring_lead` edita formularios de tutorías en su programa.

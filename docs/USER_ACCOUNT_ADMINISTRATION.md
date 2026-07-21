@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 implementada y operativa mediante 0007, verificada, probada en producción y reconciliada. Las fases B.2, B.3 y C no están implementadas.
+**Estado funcional:** Fase B.1 está operativa mediante 0007. Fase B.2a está preparada localmente mediante 0008, todavía no aplicada; B.2b, B.3 y C permanecen pendientes.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -20,9 +20,15 @@ Implementado y operativo:
 
 El acceso exige simultáneamente perfil activo y una asignación actual `technical_admin` con alcance `system`, área `technical` y programa/división nulos. La aplicación y cada RPC verifican el contrato completo. La vigencia compara fechas calendario `YYYY-MM-DD` de `America/Mexico_City`: inicio y término son inclusivos, y la base no depende de la zona horaria de la sesión PostgreSQL.
 
-### B.2 — Ciclo de vida e identidad administrativa
+### B.2a — Barrera operativa y corrección de identidad
 
-Pendiente: activación, desactivación, corrección de identidad o programa y los flujos confiables de recuperación. Estas operaciones requerirán motivo, autorización, auditoría y coordinación con Auth. Los administradores nunca verán ni establecerán contraseñas.
+Preparada localmente mediante 0008, todavía no aplicada. Una cuenta distinta de `active` queda fuera de actividades, participantes, asistencia y check-in mediante políticas RLS restrictivas y guardas explícitas en las RPC `SECURITY DEFINER`, sin depender de que expire su JWT.
+
+Un administrador B.1 exacto podrá corregir nombres estructurados, tipo/identificador/programa institucional según el tipo de cuenta, con motivo obligatorio, bloqueos de dependencias y un único evento append-only `account_identity_corrected`. No puede corregirse a sí mismo ni corregir objetivos pendientes. UUID, email, clase/estado de cuenta, ciclo de vida, Auth, roles y toda la historia operativa permanecen inmutables.
+
+### B.2b — Activación y reactivación coordinadas con Auth
+
+Pendiente: activación, desactivación, reactivación, revocación de sesión y los flujos confiables de recuperación. Requieren una decisión separada y coordinación con Auth. Los administradores nunca verán ni establecerán contraseñas.
 
 ### B.3 — Cuentas técnicas y operaciones Auth
 
@@ -53,6 +59,8 @@ El ACL de las ocho funciones 0007 se define sin depender de privilegios por defe
 El rollback sólo puede retirar `admin_audit_events` mientras no exista historia. Antes de comprobar el vacío adquiere `ACCESS EXCLUSIVE NOWAIT` en una transacción `READ COMMITTED`; por ello un lector o escritor concurrente hace que el intento aborte de forma segura y evita que un `INSERT` de `service_role` confirme entre el control y el `DROP TABLE`. El operador debe aquietar la actividad y reintentar, nunca relajar el lock ni omitir la comprobación.
 
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
+
+La aplicación compatible con B.2a añade `/admin/accounts/[id]/identity`. Antes de aplicar 0008, el detalle B.1 omite la acción y el acceso directo muestra un estado controlado; nunca se expone el error crudo de PostgREST. Tras 0008, la Server Action reautoriza, reconsulta el contexto y llama exclusivamente a la RPC transaccional.
 
 ## Criterios de aceptación
 

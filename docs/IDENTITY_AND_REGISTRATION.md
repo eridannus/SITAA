@@ -86,3 +86,9 @@ La Fase A comprende registro público sólo con Google, rutas separadas para alu
 Durante el cierre se separaron administrativamente una cuenta técnica interna y una cuenta académica de profesor. La cuenta técnica conserva únicamente su identidad técnica y la asignación `technical_admin`; una asignación académica temporal quedó inactiva. La cuenta académica se registró normalmente con Google y no recibió roles. No se transfirieron actividades ni historia. Esta limpieza inicial no constituye fusión de cuentas ni una migración reutilizable.
 
 Las fases B–F permanecen abiertas: administración de cuentas, roles V2, paneles y filtros según permisos, retiro del acceso académico transitorio de `technical_admin` y check-in abierto.
+
+## Corrección administrativa preparada en B.2a
+
+El autoservicio autenticado continúa limitado a `first_names`, `paternal_surname` y `maternal_surname` propios. B.2a prepara una RPC distinta para que un administrador B.1 exacto corrija la identidad estable de otra cuenta activa o inactiva con motivo y auditoría.
+
+En cuentas institucionales puede corregir nombres, `person_type`, identificador y programa activo; en cuentas técnicas, sólo nombres. UUID, email, `account_kind`, `account_status`, `is_active`, fechas de ciclo de vida, vínculo Auth, roles e historia son inmutables. Las cuentas `pending_registration` deben completar su propio flujo y no son objetivos de corrección administrativa.
