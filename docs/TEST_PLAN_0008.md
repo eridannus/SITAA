@@ -89,9 +89,22 @@ Todos los bloqueos se repiten dentro de la migración antes del DDL.
 
 La comparación de la proyección replica la semántica estable de PostgreSQL para `is_grantable`: el propietario aparece con `YES` por su condición de owner aunque su entrada ACL directa no lleve grant option; los demás receptores sólo aparecen con `YES` si el ítem ACL lo concede. La prohibición de grant option se comprueba sobre `relacl`/`attacl`, no confundiendo esa representación del propietario con deriva.
 
+### Contrato canónico de triggers Auth
+
+La primera ejecución remota del preflight fue de sólo lectura, terminó con `ROLLBACK` y código de salida 0, y devolvió cero en todas las categorías bloqueantes salvo `registration_trigger_drift = 1`. El resultado fue un falso positivo local: el SQL buscaba los nombres ajenos al contrato SITAA `on_auth_user_created` y `on_auth_user_updated`. No se aplicó la migración ni se modificó ningún objeto.
+
+La categoría corregida valida de forma independiente y agregada los dos triggers canónicos:
+
+- `on_sitaa_auth_user_created`: exactamente uno, no interno, habilitado normalmente, `AFTER INSERT FOR EACH ROW` sobre `auth.users`, sin lista de columnas ni `WHEN`, conectado por OID exacto a `public.handle_sitaa_auth_user_created()`;
+- `on_sitaa_auth_user_email_changed`: exactamente uno, no interno, habilitado normalmente, `AFTER UPDATE OF email FOR EACH ROW` sobre `auth.users`, con una sola columna `email`, condición semántica `OLD.email IS DISTINCT FROM NEW.email` y OID exacto de `public.sync_sitaa_profile_email_from_auth()`.
+
+El control rechaza ausencia, duplicados, deshabilitación, tabla/evento/timing/función incorrectos y cualquier trigger no interno adicional que invoque alguno de esos handlers. El preflight embebido repite el mismo contrato antes del DDL; la guarda post-DDL y el verificador vuelven a comprobar cada trigger por separado. 0008 no crea, reemplaza, renombra ni elimina triggers de `auth.users`. La reejecución remota del preflight corregido permanece pendiente.
+
 ## Verificador transaccional
 
 El verificador usa UUID aleatorios, correos `.invalid`, tablas/funciones `pg_temp`, grants temporales mínimos y termina con `ROLLBACK`. Los cambios de rol a `authenticated` conservan la evaluación real de RLS y RPC. No usa PII operativa.
+
+Su contrato estático comprueba por separado nombre, unicidad, relación, condición no interna, habilitación ordinaria, función por OID, evento/timing, granularidad por fila, ausencia de columnas/`WHEN` en el alta, lista exacta `email` y predicado semántico en la sincronización. También rechaza triggers adicionales que invoquen cualquiera de los dos handlers. No usa una sola existencia agrupada mediante `IN (...)` para aceptar ambos objetos.
 
 Los identificadores válidos se asignan con un allocator `pg_temp`: cada etiqueta obtiene una cadena decimal con cero inicial, se comprueba contra asignaciones previas del arnés y contra ambos tipos de identificador de `profiles`, y cualquier colisión hace avanzar el contador hasta encontrar un valor libre. No quedan literales válidos `0008...`. La identidad Google usa una clave de proveedor derivada del marcador de ejecución. Cada actividad sintética tiene UUID explícito en el contexto temporal y títulos legibles derivados del mismo marcador; ninguna fila se localiza por título.
 
@@ -301,6 +314,7 @@ La inspección local previa a aplicar 0008 debe confirmar, sin modificar archivo
 El rollback:
 
 - exige el contrato completo 0008 antes de su primera operación destructiva, incluidos el ACL exacto de tabla, `attacl` vacío, la proyección table-derived exacta y el acceso efectivo correspondiente, los 29 hashes operativos, los cuatro hashes nuevos, el protocolo de doble autorización de la corrección, el trigger de escritores, los totales de privilegios y `admin_audit_events`;
+- no crea, elimina, renombra ni reemplaza los triggers Auth `on_sitaa_auth_user_created` y `on_sitaa_auth_user_email_changed`; el rollback de 0008 no tiene lógica destructiva sobre `auth.users`;
 - elimina las dos políticas restrictivas, las dos RPC B.2a y el trigger/helper de escritores;
 - restaura `INSERT/UPDATE/DELETE` de `authenticated` sobre `activity_participants` exactamente como en post-0007 y comprueba que no introdujo ACL de columna;
 - restaura las 29 definiciones y ACL exactos post-0007;

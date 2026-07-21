@@ -188,6 +188,100 @@ post_0007_privilege_inventory(routine_grants,table_grants,sequence_grants,expand
        where n.nspname='public' and c.relkind in ('r','p','v','m','S'))
     )
 ),
+expected_registration_trigger(trigger_name,function_oid,event_type,uses_email_column) as (
+  values
+    (
+      'on_sitaa_auth_user_created',
+      to_regprocedure('public.handle_sitaa_auth_user_created()'),
+      5::smallint,
+      false
+    ),
+    (
+      'on_sitaa_auth_user_email_changed',
+      to_regprocedure('public.sync_sitaa_profile_email_from_auth()'),
+      17::smallint,
+      true
+    )
+),
+registration_trigger_contract_drift(aggregate_count) as (
+  select
+    (
+      select count(*)
+      from expected_registration_trigger expected
+      where (
+        select count(*)
+        from pg_trigger trigger_definition
+        where not trigger_definition.tgisinternal
+          and trigger_definition.tgname=expected.trigger_name
+      )<>1
+      or (
+        select count(*)
+        from pg_trigger trigger_definition
+        where not trigger_definition.tgisinternal
+          and trigger_definition.tgname=expected.trigger_name
+          and trigger_definition.tgrelid=to_regclass('auth.users')
+          and trigger_definition.tgenabled='O'
+          and trigger_definition.tgfoid=expected.function_oid
+          and trigger_definition.tgtype=expected.event_type
+          and (
+            (
+              not expected.uses_email_column
+              and cardinality(trigger_definition.tgattr::smallint[])=0
+              and trigger_definition.tgqual is null
+            )
+            or (
+              expected.uses_email_column
+              and cardinality(trigger_definition.tgattr::smallint[])=1
+              and (
+                select count(*)
+                from unnest(trigger_definition.tgattr::smallint[]) as update_attribute(attnum)
+                join pg_attribute attribute_definition
+                  on attribute_definition.attrelid=trigger_definition.tgrelid
+                 and attribute_definition.attnum=update_attribute.attnum
+                 and attribute_definition.attname='email'
+                 and not attribute_definition.attisdropped
+              )=1
+              and regexp_replace(
+                lower(pg_get_expr(
+                  trigger_definition.tgqual,
+                  trigger_definition.tgrelid,
+                  true
+                )),
+                '[[:space:]()]',
+                '',
+                'g'
+              )='old.emailisdistinctfromnew.email'
+            )
+          )
+      )<>1
+    )
+    +
+    (
+      select count(*)
+      from pg_trigger trigger_definition
+      where not trigger_definition.tgisinternal
+        and (
+          trigger_definition.tgfoid=
+            to_regprocedure('public.handle_sitaa_auth_user_created()')
+          or trigger_definition.tgfoid=
+            to_regprocedure('public.sync_sitaa_profile_email_from_auth()')
+        )
+        and not (
+          (
+            trigger_definition.tgname='on_sitaa_auth_user_created'
+            and trigger_definition.tgrelid=to_regclass('auth.users')
+            and trigger_definition.tgfoid=
+              to_regprocedure('public.handle_sitaa_auth_user_created()')
+          )
+          or (
+            trigger_definition.tgname='on_sitaa_auth_user_email_changed'
+            and trigger_definition.tgrelid=to_regclass('auth.users')
+            and trigger_definition.tgfoid=
+              to_regprocedure('public.sync_sitaa_profile_email_from_auth()')
+          )
+        )
+    )
+),
 checks(category,classification,aggregate_count) as (
   select 'post_0007_inventory','blocking',
     case when
@@ -551,15 +645,7 @@ checks(category,classification,aggregate_count) as (
       and not has_function_privilege('authenticated','public.is_b1_account_admin()','EXECUTE')
       then 0 else 1 end
   union all select 'registration_trigger_drift','blocking',
-    case when exists(select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid
-        join pg_namespace n on n.oid=c.relnamespace
-        where n.nspname='auth' and c.relname='users' and t.tgname='on_auth_user_created'
-          and not t.tgisinternal)
-      and exists(select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid
-        join pg_namespace n on n.oid=c.relnamespace
-        where n.nspname='auth' and c.relname='users' and t.tgname='on_auth_user_updated'
-          and not t.tgisinternal)
-      then 0 else 1 end
+    (select aggregate_count from registration_trigger_contract_drift)
   union all select 'service_role_bypass_missing','blocking',
     case when exists(select 1 from pg_roles where rolname='service_role' and rolbypassrls)
       then 0 else 1 end

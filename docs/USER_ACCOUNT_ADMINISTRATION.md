@@ -30,6 +30,8 @@ La corrección usa un protocolo fijo de concurrencia: captura al actor una vez; 
 
 `activity_participants` deja de aceptar DML directo de `authenticated`; sus altas pasan exclusivamente por RPC con lock/relectura. El ACL explícito por columna (`pg_attribute.attacl`) debe estar vacío, pero `information_schema.column_privileges` conserva las filas legítimas que derivan del ACL de tabla. El preflight bloquea filas no explicadas y acceso efectivo superior al privilegio de tabla en vez de reparar deriva; el verificador demuestra el detector con un grant de columna transaccional que revoca de inmediato. `activities` conserva las escrituras de aplicación, con un trigger que inmoviliza creador/responsable, revalida alcance y participantes después de cualquier espera y rechaza que un cliente reabra una actividad histórica mediante estado u horario. `role_assignments` no incorpora writer B.2a; Fase C deberá adoptar este mismo contrato.
 
+El primer preflight remoto de 0008 revirtió sin cambios y sólo señaló `registration_trigger_drift = 1`, un falso positivo por nombres locales incorrectos. La corrección exige los dos triggers Auth canónicos y su semántica exacta sin modificarlos; la reejecución permanece pendiente, por lo que B.2a sigue sin aplicar.
+
 ### B.2b — Activación y reactivación coordinadas con Auth
 
 Pendiente: activación, desactivación, reactivación, revocación de sesión y los flujos confiables de recuperación. Requieren una decisión separada y coordinación con Auth. Los administradores nunca verán ni establecerán contraseñas.

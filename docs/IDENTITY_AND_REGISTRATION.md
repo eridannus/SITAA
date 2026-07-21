@@ -47,6 +47,8 @@ Google autentica la cuenta. SITAA conserva identidad institucional y autorizaci�
 5. El usuario autenticado captura nombre(s), apellido paterno, apellido materno opcional, identificador y programa en un formulario de tipo fijo.
 6. `complete_own_google_registration` exige una identidad `auth.identities` Google enlazada, correo coincidente y verificación final; después valida perfil pendiente, formato, programa y unicidad, actualiza el mismo perfil transaccionalmente y no crea roles.
 
+Los nombres canónicos instalados son `on_sitaa_auth_user_created` para el alta `AFTER INSERT` y `on_sitaa_auth_user_email_changed` para sincronizar `AFTER UPDATE OF email` únicamente cuando `OLD.email IS DISTINCT FROM NEW.email`. Las migraciones posteriores deben preservarlos y verificar su contrato semántico, no sustituirlos por nombres genéricos ni inferir equivalencia sólo por la existencia de algún trigger.
+
 No existe tabla de intents, escritura anónima de registro, consulta pública de disponibilidad ni PII institucional antes de Google. La duplicidad del identificador sólo se comunica al usuario autenticado que completa su propio perfil.
 
 ### Login Google sin elección previa

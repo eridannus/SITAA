@@ -721,18 +721,102 @@ begin
      or to_regprocedure('public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)') is null
      or to_regprocedure('public.get_admin_account_assignments_b1(uuid)') is null
      or to_regprocedure('public.get_admin_account_audit_history_b1(uuid,integer,integer)') is null
-     or not exists (
-       select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid
-       join pg_namespace n on n.oid=c.relnamespace
-       where n.nspname='auth' and c.relname='users' and not t.tgisinternal
-         and t.tgname in ('on_auth_user_created','on_auth_user_updated')
-     )
      or exists (
        select 1 from information_schema.columns
        where table_schema='public' and table_name='role_assignments'
          and column_name in ('revoked_by','revoked_at','administrative_notes','status')
-     ) then
+  ) then
     raise exception '0008_verify_registration_b1_or_phase_boundary_drift';
+  end if;
+
+  if (
+       select count(*)
+       from pg_trigger trigger_definition
+       where not trigger_definition.tgisinternal
+         and trigger_definition.tgname='on_sitaa_auth_user_created'
+     )<>1
+     or (
+       select count(*)
+       from pg_trigger trigger_definition
+       where not trigger_definition.tgisinternal
+         and trigger_definition.tgname='on_sitaa_auth_user_created'
+         and trigger_definition.tgrelid=to_regclass('auth.users')
+         and trigger_definition.tgenabled='O'
+         and trigger_definition.tgfoid=
+           to_regprocedure('public.handle_sitaa_auth_user_created()')
+         and trigger_definition.tgtype=5::smallint
+         and cardinality(trigger_definition.tgattr::smallint[])=0
+         and trigger_definition.tgqual is null
+     )<>1 then
+    raise exception '0008_verify_auth_user_created_trigger_mismatch';
+  end if;
+
+  if (
+       select count(*)
+       from pg_trigger trigger_definition
+       where not trigger_definition.tgisinternal
+         and trigger_definition.tgname='on_sitaa_auth_user_email_changed'
+     )<>1
+     or (
+       select count(*)
+       from pg_trigger trigger_definition
+       where not trigger_definition.tgisinternal
+         and trigger_definition.tgname='on_sitaa_auth_user_email_changed'
+         and trigger_definition.tgrelid=to_regclass('auth.users')
+         and trigger_definition.tgenabled='O'
+         and trigger_definition.tgfoid=
+           to_regprocedure('public.sync_sitaa_profile_email_from_auth()')
+         and trigger_definition.tgtype=17::smallint
+         and cardinality(trigger_definition.tgattr::smallint[])=1
+         and (
+           select count(*)
+           from unnest(trigger_definition.tgattr::smallint[]) as update_attribute(attnum)
+           join pg_attribute attribute_definition
+             on attribute_definition.attrelid=trigger_definition.tgrelid
+            and attribute_definition.attnum=update_attribute.attnum
+            and attribute_definition.attname='email'
+            and not attribute_definition.attisdropped
+         )=1
+         and regexp_replace(
+           lower(pg_get_expr(
+             trigger_definition.tgqual,
+             trigger_definition.tgrelid,
+             true
+           )),
+           '[[:space:]()]',
+           '',
+           'g'
+         )='old.emailisdistinctfromnew.email'
+     )<>1 then
+    raise exception '0008_verify_auth_email_trigger_mismatch';
+  end if;
+
+  if exists (
+    select 1
+    from pg_trigger trigger_definition
+    where not trigger_definition.tgisinternal
+      and (
+        trigger_definition.tgfoid=
+          to_regprocedure('public.handle_sitaa_auth_user_created()')
+        or trigger_definition.tgfoid=
+          to_regprocedure('public.sync_sitaa_profile_email_from_auth()')
+      )
+      and not (
+        (
+          trigger_definition.tgname='on_sitaa_auth_user_created'
+          and trigger_definition.tgrelid=to_regclass('auth.users')
+          and trigger_definition.tgfoid=
+            to_regprocedure('public.handle_sitaa_auth_user_created()')
+        )
+        or (
+          trigger_definition.tgname='on_sitaa_auth_user_email_changed'
+          and trigger_definition.tgrelid=to_regclass('auth.users')
+          and trigger_definition.tgfoid=
+            to_regprocedure('public.sync_sitaa_profile_email_from_auth()')
+        )
+      )
+  ) then
+    raise exception '0008_verify_unexpected_auth_handler_trigger';
   end if;
 end;
 $static_contract$;

@@ -73,6 +73,7 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - El evento guarda actor, objetivo, acción, resultado, motivo normalizado y sólo los nombres de campos modificados; nunca almacena valores anteriores/nuevos, correo, identificadores, Auth, roles ni actividad.
 - Las tres funciones B.2a invocables tienen sólo owner + `authenticated`; el trigger es owner-only. Junto con la revocación de tres grants de tabla, el estado previsto pasa de 125/270/6/436 a 132/267/6/440 para rutina/tabla/secuencia/ACL expandida.
 - No se añade `auth.admin`, clave `service_role` ni cliente privilegiado a la aplicación.
+- 0008 preserva sin DDL los dos triggers Auth de Fase A. Sus guardas exigen exactamente `on_sitaa_auth_user_created` para `AFTER INSERT` y `on_sitaa_auth_user_email_changed` para `AFTER UPDATE OF email` con `OLD.email IS DISTINCT FROM NEW.email`, ambos por fila, habilitados normalmente y conectados por OID a su handler canónico. También bloquean duplicados o handlers reutilizados por otro trigger no interno. El primer preflight remoto detectó un falso positivo por nombres locales incorrectos; revirtió sin cambios y la corrección aún no se ha reejecutado.
 
 ### Autorización y base de datos
 
