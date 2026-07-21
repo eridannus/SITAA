@@ -1,10 +1,10 @@
 # Estado reconciliado de la base de datos
 
-**Fecha de cierre documental:** 2026-07-20.
+**Fecha de actualización documental:** 2026-07-21.
 
 **Snapshot vivo comparado:** `2026-07-21T00:16:03Z`, estado `SUCCESS`.
 
-La fuente de verdad histórica y evolutiva es la cadena aplicada y verificada:
+La fuente de verdad histórica y evolutiva comprende `0001`–`0007`, aplicadas, verificadas y reconciliadas, más 0008, aplicada pero todavía pendiente de verificación y reconciliación:
 
 1. `0001_baseline_current_schema.sql`: baseline reconciliada.
 2. `0002_database_security_and_integrity.sql`: seguridad, publicación y privilegios mínimos.
@@ -13,6 +13,7 @@ La fuente de verdad histórica y evolutiva es la cadena aplicada y verificada:
 5. `0005_fix_google_oauth_user_creation.sql`: secuencia de alta Google.
 6. `0006_structured_person_names.sql`: nombres personales estructurados y `full_name` derivado.
 7. `0007_admin_account_directory_audit.sql`: directorio administrativo B.1 de sólo lectura y bitácora append-only.
+8. `0008_operational_account_barrier_identity_correction.sql`: barrera operativa y corrección administrativa B.2a; aplicada e inmutable, con reejecución del verificador pendiente.
 
 La comparación fue local contra los artefactos ya generados en `supabase/reconciliation/live/`. No se conectó a Supabase ni se ejecutó SQL durante este cierre.
 
@@ -96,14 +97,16 @@ El detalle probatorio está en `supabase/reconciliation/0007_post_apply_reconcil
 
 ## Inmutabilidad y siguiente migración
 
-`0001`–`0007` forman historia aplicada, verificada y reconciliada y no se reescriben. 0007 es inmutable y Fase B.1 está operativa y cerrada dentro de su alcance de sólo lectura. No existe deriva inexplicada.
+`0001`–`0007` forman historia aplicada, verificada y reconciliada y no se reescriben. 0007 es inmutable y Fase B.1 está operativa y cerrada dentro de su alcance de sólo lectura. El snapshot post-0007 no presenta deriva inexplicada.
 
-`0008_operational_account_barrier_identity_correction.sql` está preparada localmente para Fase B.2a, pero no aplicada. Propone una barrera operativa independiente del JWT y corrección de identidad auditada sin alterar Auth, roles ni historia. Una dependencia es abierta sólo si está en borrador o aún no termina según el cálculo post-0007 en `America/Mexico_City`; una actividad no borrador ya terminada es histórica y no bloquea correcciones posteriores.
+`0008_operational_account_barrier_identity_correction.sql` fue aplicada con `COMMIT` después de aprobar el preflight y publicar la aplicación compatible. Es inmutable. Implementa una barrera operativa independiente del JWT y corrección de identidad auditada sin alterar Auth, roles ni historia. Una dependencia es abierta sólo si está en borrador o aún no termina según el cálculo post-0007 en `America/Mexico_City`; una actividad no borrador ya terminada es histórica y no bloquea correcciones posteriores.
 
-La revisión local de 0008 añade precondiciones exactas de RLS, correspondencia Auth/profile, FK y ACL; distingue el ACL de tabla, `attacl` explícito vacío, la proyección table-derived legítima de `column_privileges` y el acceso efectivo equivalente al privilegio de tabla; serializa dependencias en orden fijo; bloquea actor/objetivo por UUID y reautoriza después de esperar; cierra el DML cliente directo de participantes; protege las escrituras directas de actividades mediante trigger, incluida la prohibición cliente de pasar de histórica a abierta; valida firmas PostgREST y hashes exactos de las cuatro funciones nuevas; e independiza el verificador del calendario real mediante fixtures namespaced. Las pruebas concurrentes de revocación/desactivación permanecen documentadas pero no ejecutadas y requieren un entorno desechable completo. Todo continúa sin verificación PostgreSQL hasta la secuencia coordinada de aplicación.
+0008 añade precondiciones exactas de RLS, correspondencia Auth/profile, FK y ACL; distingue el ACL de tabla, `attacl` explícito vacío, la proyección table-derived legítima de `column_privileges` y el acceso efectivo equivalente al privilegio de tabla; serializa dependencias en orden fijo; bloquea actor/objetivo por UUID y reautoriza después de esperar; cierra el DML cliente directo de participantes; protege las escrituras directas de actividades mediante trigger, incluida la prohibición cliente de pasar de histórica a abierta; y valida firmas PostgREST y hashes exactos de las cuatro funciones nuevas. Las pruebas concurrentes de revocación/desactivación permanecen documentadas pero no ejecutadas y requieren un entorno desechable completo.
 
-El primer preflight remoto de 0008 terminó con un falso positivo por nombres; el segundo abortó porque `pg_get_expr` no puede decompilar `OLD` y `NEW`. El tercer intento devolvió las 40 categorías y revirtió, con todos los bloqueos en cero salvo `registration_trigger_drift = 1`. Un diagnóstico de sólo lectura confirmó que ambos triggers canónicos sobre `auth.users`, sus handlers, eventos, columnas y conteos son exactos. El falso positivo restante fue únicamente el `::text` añadido por `pg_get_triggerdef`; el contrato local aísla ahora `WHEN`, elimina sólo ese cast y compara exactamente. No hubo cambios vivos, una nueva reejecución permanece pendiente y 0008 continúa sin aplicar.
+El primer preflight remoto de 0008 terminó con un falso positivo por nombres; el segundo abortó porque `pg_get_expr` no puede decompilar `OLD` y `NEW`; el tercero expuso el cast `::text` añadido por `pg_get_triggerdef`. La cuarta ejecución, ya corregida, devolvió las 40 categorías, dejó sus 35 bloqueos en cero y terminó con `ROLLBACK`. La aplicación compatible se publicó y 0008 se aplicó después.
 
-Esta preparación no cambia el inventario vivo post-0007 ni su snapshot autoritativo. Sólo después de aprobar preflight, desplegar la aplicación compatible, aplicar 0008, ejecutar el verificador, completar smoke tests y regenerar el snapshot podrá reconciliarse el nuevo inventario esperado de 51 funciones, 11 triggers y 25 políticas. Los totales de privilegios previstos son 132 grants de rutina, 267 de tabla, 6 de secuencia y 440 ACL expandidas; todavía no son evidencia viva.
+La primera ejecución del verificador 0008 aprobó los controles estáticos y comenzó las fixtures, pero abortó al invocar directamente bajo `authenticated` el helper privado owner-only `is_b1_account_admin()`. La denegación `42501` fue el comportamiento correcto del ACL; la transacción se descartó sin persistir fixtures, grants, auditoría ni cambios operativos. La corrección del arnés es local y separa semántica owner, denegación cliente e invocación interna mediante RPC `SECURITY DEFINER`. Su reejecución, los smoke tests, el snapshot post-0008 y la reconciliación `0001`–`0008` permanecen pendientes.
+
+El directorio `supabase/reconciliation/live/` continúa siendo evidencia autoritativa post-0007 y no debe editarse para simular el estado nuevo. Los inventarios de 51 funciones, 11 triggers, 25 políticas, 132 grants de rutina, 267 de tabla, 6 de secuencia y 440 ACL expandidas son contratos esperados, no conteos vivos observados, hasta regenerar el snapshot. 0009 es el siguiente número disponible; este defecto exclusivo del verificador no requiere una migración nueva.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.

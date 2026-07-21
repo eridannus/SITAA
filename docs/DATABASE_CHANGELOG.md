@@ -58,10 +58,10 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0007` están aplicadas, verificadas y reconciliadas. `0008` es el siguiente número disponible. Todo cambio futuro debe:
+`0001`–`0007` están aplicadas, verificadas y reconciliadas. `0008` está aplicada e inmutable, con reejecución del verificador y reconciliación pendientes. `0009` es el siguiente número disponible. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
-2. crear una nueva migración numerada, sin reescribir `0001`–`0007`;
+2. crear una nueva migración numerada, sin reescribir `0001`–`0008`;
 3. incluir verificación y rollback cuando sea apropiado;
 4. aplicarse manualmente a Supabase;
 5. regenerar el snapshot vivo después de cambios significativos;
@@ -166,14 +166,14 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Diferencias ambientales: timestamp, token aleatorio `\restrict`, omisión textual opcional de `SECURITY INVOKER` y formato de `pg_dump`/`psql`.
 - Resultado: sin deriva inexplicada; políticas, secuencias, catálogos y objetos post-0006 no modificados por 0007 permanecen intactos.
 
-## 0008_operational_account_barrier_identity_correction.sql — creada localmente / no aplicada
+## 0008_operational_account_barrier_identity_correction.sql — aplicada; reejecución del verificador pendiente
 
-- Fase B.2a preparada sobre el snapshot post-0007 `2026-07-21T00:16:03Z`.
+- Fase B.2a preparada y aplicada sobre el snapshot post-0007 `2026-07-21T00:16:03Z`; ese snapshot sigue siendo la última evidencia reconciliada y todavía no representa los objetos vivos post-0008.
 - Añade un helper privado de cuenta operativa activa, dos políticas RLS restrictivas, guardas explícitas en 29 rutinas operativas y dos RPC de corrección administrativa.
 - No añade tablas, columnas, índices, restricciones ni semillas. Añade un trigger público y cuatro firmas de función; retira a `authenticated` los grants directos `INSERT`, `UPDATE` y `DELETE` de `activity_participants`.
 - Inventario esperado tras aplicación: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 firmas de función, 25 políticas y 51 semillas.
 - Privilegios esperados: 132 grants de rutina, 267 grants de tabla publicados por `information_schema`, 6 de secuencia y 440 entradas ACL expandidas. El delta post-0007 es +7 de rutina, −3 de tabla y +4 ACL netas: tres RPC/helper nuevas tienen owner + `authenticated`, el trigger nuevo es owner-only y el DML directo de participantes queda cerrado.
-- Artefactos locales: migración, preflight de sólo lectura, verificador transaccional, rollback conservador y `docs/TEST_PLAN_0008.md`.
+- Artefactos coordinados: migración ahora inmutable, preflight de sólo lectura, verificador transaccional, rollback conservador y `docs/TEST_PLAN_0008.md`.
 - Revisión final local: identificadores y actividades fixture libres de colisiones/lookups nominales; denegaciones esperadas verificadas por SQLSTATE y mensaje; DML cliente de participantes retirado; trigger de integridad para writers de actividades y transición histórica; guard predestructivo del rollback ampliado al contrato completo y hashes exactos de las cuatro funciones nuevas.
 - Revisión previa a aplicación: fixture de semestre independiente del calendario, normalización whitespace y límites controlados, locks de dependencias en orden fijo, preflight RLS/Auth/FK/ACL completo, firmas PostgREST y ACL de funciones exactos, y rollback alineado al hash normalizado de `prosrc`.
 - Las dependencias se consideran abiertas sólo si la actividad es borrador o todavía no terminó según fecha/hora de Ciudad de México; las incompatibilidades históricas terminadas no bloquean el preflight y una escritura cliente no puede reabrirlas silenciosamente.
@@ -183,5 +183,9 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Primer preflight remoto: ejecución de sólo lectura con `ROLLBACK` y código 0; todas las categorías bloqueantes fueron cero salvo `registration_trigger_drift = 1`. Fue un falso positivo causado por dos nombres locales incorrectos, no deriva del esquema vivo. Los conteos informativos fueron dos dependencias potenciales y una responsabilidad abierta; no autorizaron aplicación.
 - Primera corrección previa a aplicación: preflight independiente, preflight embebido, guarda post-DDL y verificador pasaron a exigir por catálogo los triggers canónicos `on_sitaa_auth_user_created` y `on_sitaa_auth_user_email_changed`, incluidas unicidad, relación, evento, timing, columnas, predicado, habilitación y función por OID. 0008 no modifica esos triggers; esta versión se evaluó en el segundo intento.
 - Segundo preflight remoto: la transacción de sólo lectura abortó antes de devolver categorías con `expression contains variables of more than one relation`; `ON_ERROR_STOP=1` cerró la ejecución y no persistió cambios. La causa fue `pg_get_expr(tgqual, tgrelid, ...)` sobre un `WHEN` que referencia `OLD` y `NEW`, no deriva viva. Los cuatro sitios del arnés pasaron a usar `pg_get_triggerdef(oid, false)`; esa versión se evaluó en el tercer intento.
-- Tercer preflight remoto: devolvió las 40 categorías y terminó con `ROLLBACK`; todos los bloqueos fueron cero salvo `registration_trigger_drift = 1`. El diagnóstico canónico confirmó conteos 1/1 para ambos nombres y pares handler/trigger, y cero handlers inesperados. El falso positivo restante fue el cast `::text` añadido por el deparser. Los cuatro controles aíslan ahora `WHEN`, eliminan exclusivamente `::text` y comparan por igualdad; el verificador añade cinco casos sintéticos. Otra reejecución permanece pendiente.
-- 0001–0007 y el snapshot vivo permanecen inmutables. 0008 continúa local, no aplicada, no verificada en PostgreSQL, sin smoke tests y no reconciliada. Durante esta corrección local no se conectó a Supabase ni se ejecutó o aplicó SQL.
+- Tercer preflight remoto: devolvió las 40 categorías y terminó con `ROLLBACK`; todos los bloqueos fueron cero salvo `registration_trigger_drift = 1`. El diagnóstico canónico confirmó conteos 1/1 para ambos nombres y pares handler/trigger, y cero handlers inesperados. El falso positivo restante fue el cast `::text` añadido por el deparser. Los cuatro controles aíslan ahora `WHEN`, eliminan exclusivamente `::text` y comparan por igualdad; el verificador añade cinco casos sintéticos.
+- Preflight aprobado: la reejecución corregida devolvió las 40 categorías, con sus 35 bloqueos en cero, y terminó con `ROLLBACK`; los conteos informativos permanecieron no bloqueantes.
+- Aplicación: la versión compatible B.2a fue publicada y 0008 terminó con `COMMIT`. La migración está aplicada y es inmutable.
+- Primera ejecución del verificador: superó los controles estáticos y avanzó hasta las fixtures, pero abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`. El helper es owner-only y PostgreSQL denegó correctamente `EXECUTE` con SQLSTATE `42501`; la transacción abortada se descartó y no persistieron fixtures, grants temporales, eventos de auditoría ni cambios operativos.
+- Corrección local del verificador: separa la semántica privada bajo owner, la denegación ACL directa bajo `authenticated` y la autorización interna mediante RPC B.1/B.2a `SECURITY DEFINER`. La reejecución del verificador, los smoke tests, el snapshot post-0008 y la reconciliación `0001`–`0008` permanecen pendientes.
+- 0001–0008 son migraciones aplicadas e inmutables. 0009 es el siguiente número disponible, pero este defecto exclusivo del arnés no requiere una migración nueva. Durante esta corrección local no se conectó a Supabase ni se ejecutó SQL.

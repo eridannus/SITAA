@@ -2,9 +2,9 @@
 
 ## Estado y alcance
 
-`0008_operational_account_barrier_identity_correction.sql` está preparada localmente y **no aplicada**. Tampoco está verificada en PostgreSQL, probada mediante smoke tests ni reconciliada contra un snapshot post-0008. Este plan valida la barrera operativa de cuenta activa y la corrección administrativa de identidad de Fase B.2a. No autoriza conexión ni ejecución contra Supabase.
+El preflight corregido de `0008_operational_account_barrier_identity_correction.sql` fue aprobado, la aplicación compatible se publicó y la migración terminó con `COMMIT`; 0008 está aplicada y es inmutable. La primera ejecución del verificador aprobó sus controles estáticos, creó fixtures transaccionales y después abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`, cuyo ACL owner-only rechazó correctamente la llamada con SQLSTATE `42501`. La transacción se descartó completa: no persistieron fixtures, grants temporales, eventos de auditoría ni cambios operativos. La corrección del verificador es local; su reejecución, los smoke tests y la reconciliación contra un snapshot post-0008 permanecen pendientes. Este plan no autoriza conexión ni ejecución contra Supabase.
 
-Inventario esperado después de aplicar 0008: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados. La clausura distingue el ACL de tabla, el ACL explícito por columna en `pg_attribute.attacl`, la proyección table-derived de `information_schema.column_privileges` y el acceso efectivo de `has_column_privilege`: no puede sobrevivir ningún `attacl` y ningún acceso de columna puede exceder el ACL exacto de tabla.
+Inventario contractual post-0008, pendiente de confirmación mediante snapshot: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados. La clausura distingue el ACL de tabla, el ACL explícito por columna en `pg_attribute.attacl`, la proyección table-derived de `information_schema.column_privileges` y el acceso efectivo de `has_column_privilege`: no puede sobrevivir ningún `attacl` y ningún acceso de columna puede exceder el ACL exacto de tabla.
 
 Partiendo de los snapshots de privilegios post-0007 (125 grants de rutina, 270 de tabla, 6 de secuencia y 436 ACL expandidas), el contrato exacto post-0008 es 132/267/6/440. Las cuatro funciones añaden siete entradas de rutina —owner + `authenticated` para tres, sólo owner para el trigger— y la tabla de participantes pierde tres grants de `authenticated`; el delta ACL neto es +4.
 
@@ -104,13 +104,17 @@ La segunda ejecución remota inició una transacción de sólo lectura, pero fal
 
 La tercera ejecución remota terminó normalmente, devolvió las 40 categorías y finalizó con `ROLLBACK`. Todos los bloqueos fueron cero salvo `registration_trigger_drift = 1`; los conteos informativos permanecieron no bloqueantes en dos perfiles institucionales potencialmente bloqueados por dependencias y una responsabilidad abierta. Un diagnóstico de catálogos también de sólo lectura confirmó exactamente uno de cada trigger canónico, ambos sobre `auth.users`, habilitados con `O`, `tgtype` 5/17, handlers correctos, lista `email` exacta y cero triggers inesperados. Por tanto, no existe deriva viva.
 
-El tercer falso positivo procedía únicamente de los casts `::text` que `pg_get_triggerdef` añade al reconstruir `WHEN (((old.email)::text IS DISTINCT FROM (new.email)::text))`. La corrección aísla el texto entre ` when ` y ` execute function `, normaliza minúsculas, whitespace y paréntesis, elimina sólo el token literal `::text` y compara por igualdad con `old.emailisdistinctfromnew.email`. No elimina otros casts ni usa `LIKE`. Otra reejecución remota corregida permanece pendiente.
+El tercer falso positivo procedía únicamente de los casts `::text` que `pg_get_triggerdef` añade al reconstruir `WHEN (((old.email)::text IS DISTINCT FROM (new.email)::text))`. La corrección aísla el texto entre ` when ` y ` execute function `, normaliza minúsculas, whitespace y paréntesis, elimina sólo el token literal `::text` y compara por igualdad con `old.emailisdistinctfromnew.email`. No elimina otros casts ni usa `LIKE`.
+
+La cuarta ejecución remota del preflight corregido devolvió las 40 categorías y terminó con `ROLLBACK`: sus 35 categorías bloqueantes fueron cero y los conteos informativos de dependencias permanecieron no bloqueantes. Después se publicó la aplicación compatible y la migración 0008 terminó con `COMMIT`.
 
 ## Verificador transaccional
 
-El verificador usa UUID aleatorios, correos `.invalid`, tablas/funciones `pg_temp`, grants temporales mínimos y termina con `ROLLBACK`. Los cambios de rol a `authenticated` conservan la evaluación real de RLS y RPC. No usa PII operativa.
+El verificador usa UUID aleatorios, correos `.invalid`, tablas/funciones `pg_temp`, grants temporales mínimos y termina con `ROLLBACK`. Los cambios de rol a `authenticated` conservan la evaluación real de RLS y RPC. No usa PII operativa. Su primera ejecución post-aplicación superó los controles estáticos y llegó a las fixtures, pero abortó en la línea 1670 de la versión ejecutada con `permission denied for function is_b1_account_admin`: el bloque evaluaba directamente el helper B.1 privado bajo `authenticated`. PostgreSQL devolvió el `42501` esperado por el ACL; el defecto pertenecía al arnés, no al esquema aplicado.
 
 Su contrato estático comprueba por separado nombre, unicidad, relación, condición no interna, habilitación ordinaria, función por OID, evento/timing, granularidad por fila, ausencia de columnas/`WHEN` en el alta, lista exacta `email` y predicado semántico en la sincronización. Para el `WHEN` con `OLD` y `NEW` usa `pg_get_triggerdef`, no `pg_get_expr`. Una regresión sintética acepta la forma canónica con `::text` y rechaza operandos invertidos, igualdad, un término `AND true` y otra columna, sin tocar triggers persistentes. También rechaza triggers adicionales que invoquen cualquiera de los dos handlers. No usa una sola existencia agrupada mediante `IN (...)` para aceptar ambos objetos.
+
+La autoridad B.1 se prueba en tres planos separados: (1) semántica del helper privado bajo el owner legítimo, donde `admin_exact` debe producir `true` y `admin_bad_scope`, `false`; (2) ACL cliente, donde una invocación directa bajo `authenticated` debe fallar exactamente con SQLSTATE `42501`; y (3) contratos públicos, donde las RPC B.1/B.2a `SECURITY DEFINER` deben autorizar o rechazar según la decisión del helper interno. El contrato estático exige propietario `postgres`, una única entrada `EXECUTE` owner sin grant option y ausencia de privilegio efectivo para `authenticated`, `anon` y `service_role`. La comprobación estática local busca cada bloque entre `SET LOCAL ROLE authenticated` y `RESET ROLE` y permite una sola llamada directa, protegida por la expectativa explícita de `42501`; no concede `EXECUTE` al cliente.
 
 Los identificadores válidos se asignan con un allocator `pg_temp`: cada etiqueta obtiene una cadena decimal con cero inicial, se comprueba contra asignaciones previas del arnés y contra ambos tipos de identificador de `profiles`, y cualquier colisión hace avanzar el contador hasta encontrar un valor libre. No quedan literales válidos `0008...`. La identidad Google usa una clave de proveedor derivada del marcador de ejecución. Cada actividad sintética tiene UUID explícito en el contexto temporal y títulos legibles derivados del mismo marcador; ninguna fila se localiza por título.
 
@@ -137,13 +141,13 @@ Cobertura mínima numerada:
 17. La lectura mínima del perfil propio sigue disponible.
 18. La lectura propia de asignaciones sigue disponible como estado/historia.
 19. La finalización Google pendiente conserva su contrato.
-20. El administrador exacto B.1 mantiene acceso al directorio.
-21. Una asignación técnica mal formada continúa denegada.
+20. El administrador exacto produce `true` en el helper privado como owner, recibe `42501` al invocarlo directamente como cliente y mantiene acceso al directorio mediante la RPC pública B.1.
+21. Una asignación técnica mal formada produce `false` en el helper privado como owner y continúa denegada por los contratos públicos.
 22. La privacidad de borradores continúa limitada al creador.
 23. La privacidad del padrón de participantes continúa vigente.
 24. Los flujos activos de asistencia y check-in conservan sus contratos.
 25. Los catálogos de referencia conservan su lectura documentada.
-26. Administrador exacto obtiene el contexto B.2a.
+26. Administrador exacto obtiene exactamente una fila de contexto B.2a para el objetivo solicitado, con `target_profile_id` correcto y `can_correct = true`.
 27. Alumno/profesor ordinario recibe 42501 en contexto.
 28. Administrador técnico mal formado recibe 42501.
 29. Administrador inactivo recibe 42501.
@@ -294,21 +298,23 @@ Dos administradores que intenten corregirse mutuamente bloquean los mismos dos U
 
 ## Evidencia de aplicación compatible
 
-La inspección local previa a aplicar 0008 debe confirmar, sin modificar archivos correctos:
+La inspección local coordinada con la aplicación de 0008 confirmó, sin modificar archivos correctos:
 
 - `types/admin.ts`: contexto, entrada, resultado y unión completa de errores de corrección;
 - detalle de cuenta: contexto opcional, acción sólo cuando `can_correct` y alerta de éxito;
-- página de identidad: autenticación, autoridad B.1 exacta, estado de migración pendiente, bloqueos de autocorrección/pendiente y valores iniciales;
+- página de identidad: autenticación, autoridad B.1 exacta, bloqueos de autocorrección/pendiente y valores iniciales;
 - Server Action: autenticación y autorización independientes, recarga de contexto, NULL SQL reales para persona/identificador/programa técnico, RPC, revalidación y redirect;
 - formulario: confirmación de fuente, ayuda/límites de razón, conservación de valores rechazados, resumen accesible y foco del primer campo inválido;
 - cliente de corrección: argumentos RPC nominales y mapeo de errores controlados;
 - ausencia de PII en URL y `localStorage`.
 
-## Pruebas de aplicación compatibles antes de aplicar 0008
+## Estado de la aplicación compatible y pruebas pendientes
+
+La aplicación compatible fue publicada antes de aplicar 0008. La aceptación operativa de B.2a todavía requiere reejecutar el verificador corregido y completar los smoke tests siguientes:
 
 1. `/admin/accounts` y el detalle B.1 siguen funcionando.
-2. Si PostgREST reporta que el RPC de contexto no existe, se omite la acción en el detalle.
-3. Acceso directo a `/admin/accounts/[id]/identity` muestra un estado español controlado de migración pendiente.
+2. El detalle carga el contexto B.2a sin exponer errores crudos.
+3. Acceso autorizado a `/admin/accounts/[id]/identity` respeta elegibilidad, autocorrección y estado de cuenta.
 4. No se propaga texto crudo de Supabase/PostgreSQL.
 5. Un administrador no exacto no obtiene controles.
 6. La acción reautoriza, reconsulta contexto y usa sólo el RPC de mutación.
@@ -332,16 +338,16 @@ El rollback:
 - finaliza con `COMMIT` sólo tras verificar el estado exacto post-0007.
 - verifica los 29 cuerpos restaurados en el mismo dominio de hash normalizado de `prosrc` usado por el preflight post-0007, con una regresión explícita sobre `activity_attendance_deadline(uuid)`.
 
-## Secuencia futura coordinada
+## Estado de la secuencia coordinada
 
-1. Aprobar el preflight 0008.
-2. Publicar la aplicación compatible.
-3. Aplicar 0008 manualmente.
-4. Ejecutar este verificador y confirmar `ROLLBACK`.
-5. Ejecutar smoke tests.
-6. Regenerar el snapshot completo.
-7. Reconciliar 0001–0008.
-8. Cerrar B.2a canónicamente.
+1. Preflight 0008: aprobado, con `ROLLBACK` y 35 bloqueos en cero.
+2. Aplicación compatible: publicada.
+3. Migración 0008: aplicada con `COMMIT`; artefacto inmutable.
+4. Primera ejecución del verificador: abortada y descartada por la llamada cliente inválida al helper owner-only.
+5. Reejecutar el verificador corregido y confirmar su `ROLLBACK`: pendiente.
+6. Ejecutar smoke tests: pendiente.
+7. Regenerar el snapshot completo: pendiente.
+8. Reconciliar 0001–0008 y cerrar B.2a canónicamente: pendiente.
 
-Nada de esa secuencia remota se ejecuta en la preparación local.
+Esta corrección local no reejecuta el verificador ni realiza ninguna operación remota.
 

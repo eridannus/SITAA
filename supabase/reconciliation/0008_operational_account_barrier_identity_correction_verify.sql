@@ -7,6 +7,7 @@ set local time zone 'UTC';
 do $static_contract$
 declare
   helper_oid oid:=to_regprocedure('public.is_sitaa_operational_account_active()');
+  b1_admin_helper_oid oid:=to_regprocedure('public.is_b1_account_admin()');
   context_oid oid:=to_regprocedure('public.get_admin_identity_correction_context_b2a(uuid)');
   correction_oid oid:=to_regprocedure('public.correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)');
   writer_trigger_oid oid:=to_regprocedure('public.enforce_activity_writer_integrity_b2a()');
@@ -69,7 +70,8 @@ begin
     raise exception '0008_verify_privilege_inventory_mismatch';
   end if;
 
-  if helper_oid is null or context_oid is null or correction_oid is null
+  if helper_oid is null or b1_admin_helper_oid is null
+     or context_oid is null or correction_oid is null
      or writer_trigger_oid is null then
     raise exception '0008_verify_new_function_missing';
   end if;
@@ -198,6 +200,24 @@ begin
   );
   if mismatch_count<>0 then
     raise exception '0008_verify_new_function_acl_mismatch';
+  end if;
+
+  if (select pg_get_userbyid(p.proowner) from pg_proc p where p.oid=b1_admin_helper_oid)<>'postgres'
+     or has_function_privilege('authenticated',b1_admin_helper_oid,'EXECUTE')
+     or has_function_privilege('anon',b1_admin_helper_oid,'EXECUTE')
+     or has_function_privilege('service_role',b1_admin_helper_oid,'EXECUTE')
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid=b1_admin_helper_oid
+         and (
+           acl.grantee<>p.proowner
+           or acl.privilege_type<>'EXECUTE'
+           or acl.is_grantable
+         )
+     ) then
+    raise exception '0008_verify_private_b1_helper_acl_mismatch';
   end if;
 
   if has_function_privilege('authenticated',writer_trigger_oid,'EXECUTE')
@@ -1657,25 +1677,75 @@ $pending_barrier$;
 reset role;
 
 select pg_temp.set_request_user('admin_exact');
+do $admin_exact_private_helper_semantics$
+begin
+  if not public.is_b1_account_admin() then
+    raise exception '0008_verify_exact_admin_private_helper_semantics_failed';
+  end if;
+end;
+$admin_exact_private_helper_semantics$;
+
 set local role authenticated;
+do $private_b1_helper_client_acl$
+declare
+  denied boolean:=false;
+begin
+  begin
+    perform public.is_b1_account_admin();
+  exception
+    when sqlstate '42501' then
+      denied:=true;
+    when others then
+      raise exception '0008_verify_private_b1_helper_wrong_denial';
+  end;
+
+  if not denied then
+    raise exception '0008_verify_private_b1_helper_client_execute_allowed';
+  end if;
+end;
+$private_b1_helper_client_acl$;
+
 do $admin_a02_and_b1$
+declare
+  context_row_count integer;
+  eligible_context_row_count integer;
 begin
   if not public.is_sitaa_operational_account_active()
-     or not public.is_b1_account_admin()
      or not exists(select 1 from public.get_visible_activity_cards())
      or not exists(select 1 from public.get_admin_account_detail_b1(pg_temp.case_id('target_institutional'))) then
     raise exception '0008_verify_active_admin_regression';
+  end if;
+
+  select count(*),
+         count(*) filter (
+           where target_profile_id=pg_temp.case_id('target_institutional')
+             and can_correct
+         )
+  into context_row_count,eligible_context_row_count
+  from public.get_admin_identity_correction_context_b2a(
+    pg_temp.case_id('target_institutional')
+  );
+
+  if context_row_count<>1 or eligible_context_row_count<>1 then
+    raise exception '0008_verify_exact_admin_public_b2a_context_failed';
   end if;
 end;
 $admin_a02_and_b1$;
 reset role;
 
 select pg_temp.set_request_user('admin_bad_scope');
+do $malformed_admin_private_helper_semantics$
+begin
+  if public.is_b1_account_admin() then
+    raise exception '0008_verify_malformed_admin_private_helper_semantics_failed';
+  end if;
+end;
+$malformed_admin_private_helper_semantics$;
+
 set local role authenticated;
 do $malformed_admin$
 declare rejected boolean:=false; state text; actual_message text;
 begin
-  if public.is_b1_account_admin() then raise exception '0008_verify_malformed_admin_accepted'; end if;
   begin
     perform public.get_admin_identity_correction_context_b2a(pg_temp.case_id('target_institutional'));
   exception when sqlstate '42501' then

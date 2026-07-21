@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 está operativa mediante 0007. Fase B.2a está preparada localmente mediante 0008, todavía no aplicada, no verificada en PostgreSQL, sin smoke tests y no reconciliada; B.2b, B.3 y C permanecen pendientes.
+**Estado funcional:** Fase B.1 está operativa mediante 0007. La capacidad de base de datos B.2a fue aplicada mediante 0008 y la aplicación compatible está publicada; la reejecución del verificador corregido, los smoke tests y la reconciliación post-0008 permanecen pendientes. B.2b, B.3 y C también siguen pendientes.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -22,15 +22,17 @@ El acceso exige simultáneamente perfil activo y una asignación actual `technic
 
 ### B.2a — Barrera operativa y corrección de identidad
 
-Preparada localmente mediante 0008, todavía no aplicada ni verificada en PostgreSQL. Una cuenta distinta de `active` queda fuera de actividades, participantes, asistencia y check-in mediante políticas RLS restrictivas y guardas explícitas en las RPC `SECURITY DEFINER`, sin depender de que expire su JWT.
+Aplicada mediante 0008, todavía pendiente de cerrar su verificación y aceptación operativa. Una cuenta distinta de `active` queda fuera de actividades, participantes, asistencia y check-in mediante políticas RLS restrictivas y guardas explícitas en las RPC `SECURITY DEFINER`, sin depender de que expire su JWT.
 
-Un administrador B.1 exacto podrá corregir nombres estructurados, tipo/identificador/programa institucional según el tipo de cuenta, con motivo obligatorio, bloqueos de dependencias y un único evento append-only `account_identity_corrected`. No puede corregirse a sí mismo ni corregir objetivos pendientes. UUID, email, clase/estado de cuenta, ciclo de vida, Auth, roles y toda la historia operativa permanecen inmutables.
+Un administrador B.1 exacto puede corregir nombres estructurados, tipo/identificador/programa institucional según el tipo de cuenta, con motivo obligatorio, bloqueos de dependencias y un único evento append-only `account_identity_corrected`. No puede corregirse a sí mismo ni corregir objetivos pendientes. UUID, email, clase/estado de cuenta, ciclo de vida, Auth, roles y toda la historia operativa permanecen inmutables.
 
 La corrección usa un protocolo fijo de concurrencia: captura al actor una vez; autoriza de forma optimista; rechaza autocorrección; bloquea `role_assignments`, `activities` y `activity_participants` en `SHARE`; bloquea actor y objetivo en orden UUID; vuelve a exigir autoridad B.1; y sólo entonces carga, valida, actualiza y audita el objetivo. Las revocaciones de rol y desactivaciones del actor se serializan con este segundo control. Sólo bloquean las dependencias abiertas: borradores o actividades que todavía no terminan según la fecha y hora de Ciudad de México. Las cuatro pruebas manuales de dos sesiones siguen pendientes y requieren un entorno desechable completo; no se ejecutarán en producción ni se limpiarán borrando historia append-only.
 
 `activity_participants` deja de aceptar DML directo de `authenticated`; sus altas pasan exclusivamente por RPC con lock/relectura. El ACL explícito por columna (`pg_attribute.attacl`) debe estar vacío, pero `information_schema.column_privileges` conserva las filas legítimas que derivan del ACL de tabla. El preflight bloquea filas no explicadas y acceso efectivo superior al privilegio de tabla en vez de reparar deriva; el verificador demuestra el detector con un grant de columna transaccional que revoca de inmediato. `activities` conserva las escrituras de aplicación, con un trigger que inmoviliza creador/responsable, revalida alcance y participantes después de cualquier espera y rechaza que un cliente reabra una actividad histórica mediante estado u horario. `role_assignments` no incorpora writer B.2a; Fase C deberá adoptar este mismo contrato.
 
-El primer preflight remoto de 0008 revirtió con un falso positivo por nombres y el segundo abortó por la decompilación conjunta de `OLD`/`NEW`. El tercero produjo las 40 categorías y revirtió; sólo `registration_trigger_drift` siguió en uno. Un diagnóstico de sólo lectura confirmó ambos triggers y handlers exactos, sin extras: el arnés rechazaba únicamente los casts `::text` añadidos por el deparser. La corrección aísla `WHEN`, elimina sólo ese cast y mantiene una comparación exacta. Otra reejecución permanece pendiente, por lo que B.2a sigue sin aplicar.
+El primer preflight remoto de 0008 revirtió con un falso positivo por nombres y el segundo abortó por la decompilación conjunta de `OLD`/`NEW`. El tercero produjo las 40 categorías y expuso que el arnés rechazaba únicamente los casts `::text` añadidos por el deparser. La reejecución corregida aprobó las 35 categorías bloqueantes y terminó con `ROLLBACK`; después se publicó la aplicación compatible y 0008 se aplicó con `COMMIT`.
+
+La primera ejecución del verificador pasó los controles estáticos y comenzó las fixtures, pero abortó al invocar directamente como `authenticated` el helper owner-only `is_b1_account_admin()`. El ACL actuó correctamente y la transacción completa fue descartada sin persistencia. La corrección local prueba la semántica privada como owner, la denegación cliente `42501` y el acceso autorizado a través de las RPC B.1/B.2a `SECURITY DEFINER`. La capacidad no se considera aceptada hasta reejecutar el verificador y completar los smoke tests.
 
 ### B.2b — Activación y reactivación coordinadas con Auth
 
@@ -66,7 +68,7 @@ El rollback sólo puede retirar `admin_audit_events` mientras no exista historia
 
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 
-La aplicación compatible con B.2a añade `/admin/accounts/[id]/identity`. Antes de aplicar 0008, el detalle B.1 omite la acción y el acceso directo muestra un estado controlado; nunca se expone el error crudo de PostgREST. Tras 0008, la Server Action autentica de forma independiente, verifica la autoridad B.1 exacta, reconsulta el contexto y llama exclusivamente a la RPC transaccional.
+La aplicación compatible con B.2a expone `/admin/accounts/[id]/identity`. Con 0008 aplicada, la Server Action autentica de forma independiente, verifica la autoridad B.1 exacta, reconsulta el contexto y llama exclusivamente a la RPC transaccional; nunca expone el error crudo de PostgREST. La aceptación de este flujo permanece pendiente de la reejecución del verificador y de los smoke tests.
 
 ## Criterios de aceptación
 
