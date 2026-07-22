@@ -62,3 +62,7 @@ La reconciliación cerrada el 2026-07-18 comparó el snapshot `2026-07-18T04:05:
 - No ejecutar la baseline contra la base viva actual.
 - No crear cambios destructivos sin revisión explícita y respaldo adecuado.
 - No reparar historial remoto ni aplicar migraciones automáticamente desde el flujo de snapshots.
+
+## Migración 0009 preparada
+
+`0009_admin_account_lifecycle_transitions.sql` incluye preflight embebido, tres funciones y guarda post-DDL. Sus artefactos externos de preflight, verificación y rollback están en `reconciliation/`. No debe aplicarse hasta revisar `docs/TEST_PLAN_0009.md`, desplegar primero la aplicación compatible y confirmar manualmente el preflight. El snapshot vivo sigue representando post-0008.

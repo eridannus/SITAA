@@ -73,3 +73,5 @@ El sistema visual canónico está en `docs/DESIGN_SYSTEM.md`. Toda interfaz usa 
 ## Alcance actual
 
 Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes, asistencia manual o por QR/enlace/código, el directorio B.1 y la barrera operativa con corrección auditada de identidad de B.2a. B.2a está cerrada dentro de su alcance aprobado; B.2b/B.3 para ciclo de cuenta y Auth, Fase C para roles, paneles especializados, formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.
+
+La implementación local de B.2b está preparada como migración 0009: añade desactivación/reactivación auditada sin borrar asignaciones ni historia. Aún no se ha aplicado, verificado ni reconciliado contra Supabase; no revoca físicamente sesiones Auth y no sustituye la futura administración B.3.

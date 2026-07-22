@@ -192,6 +192,10 @@ La Fase A de identidad Google y los nombres estructurados de 0006 están aplicad
 
 Una corrección exitosa conserva UUID de perfil, email, vínculo Auth, clase/estado de cuenta, ciclo de vida, asignaciones y toda la historia operativa. Inserta exactamente un evento append-only en `admin_audit_events` con `action_code = account_identity_corrected`, `outcome = success`, razón normalizada y metadata que contiene sólo el arreglo ordenado `changed_fields`.
 
+## Ciclo de vida administrativo previsto por 0009
+
+0009 no añade columnas. Reutiliza `profiles.account_status`, `is_active`, `activated_at` y `deactivated_at`: desactivar pasa de `active` a `inactive`, conserva `activated_at` y fija `deactivated_at`; reactivar realiza la transición inversa y limpia `deactivated_at`. Asignaciones, actividades, participantes, Auth e historia permanecen sin cambios. Cada éxito añade un único evento `account_deactivated` o `account_reactivated` con motivo normalizado y metadata limitada a `changed_fields`.
+
 La normalización administrativa colapsa whitespace antes de recortar; el nombre derivado mide 2–200 caracteres en ambos tipos de cuenta y `person_type` institucional nunca puede ser nulo. Las decisiones sobre cambios de tipo/programa se serializan contra asignaciones, actividades y participantes mediante locks de tabla en orden documentado.
 
 Para estas dependencias, “abierta” significa `status_code = draft` o no terminada mediante el cálculo post-0007 de fecha/hora en `America/Mexico_City`; “histórica” significa no borrador y terminada por ese mismo cálculo. La historia puede quedar incompatible después de una corrección válida sin ser reescrita. El trigger de `activities` impide que DML autenticado convierta esa historia en actividad abierta; una ruta confiable que lo hiciera tendría que revalidar participantes y responsabilidad primaria antes del commit.

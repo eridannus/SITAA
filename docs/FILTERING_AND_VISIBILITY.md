@@ -137,3 +137,7 @@ Secuencia específica:
 9. devolver sólo la proyección minimizada y el identificador enmascarado.
 
 Los valores desconocidos se rechazan explícitamente. La paginación conserva los filtros en la URL. Una cuenta inactiva puede tener una fila de asignación actual para clasificación histórica, pero esa fila no se describe como autorización efectiva.
+
+## Visibilidad del ciclo de vida B.2b
+
+Los controles de desactivación/reactivación sólo aparecen después de consultar el contexto autorizado de 0009. La interfaz no infiere elegibilidad a partir de filtros, estado local, `created_by` o una asignación mostrada en pantalla. Antes de aplicar la migración, el directorio y la corrección B.2a continúan disponibles y no se muestra una capacidad inexistente.

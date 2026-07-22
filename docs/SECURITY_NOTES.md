@@ -138,6 +138,14 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - En el verificador 0008, las RPC, denegaciones y DML cliente se ejecutan bajo `authenticated`; las postcondiciones crudas de perfil, Auth y auditoría se inspeccionan sólo como owner después de `RESET ROLE`.
 - Las dos ejecuciones fallidas del verificador fueron transacciones descartadas y no justifican ampliar RLS ni ACL: la primera llamó un helper owner-only como cliente y la segunda intentó leer postcondiciones owner-only bajo el rol cliente.
 
+### Transiciones administrativas B.2b previstas
+
+- Sólo un administrador B.1 exacto activo puede consultar elegibilidad o solicitar una transición; el helper de autoridad permanece owner-only.
+- La mutación captura el actor, bloquea autoridad y perfiles en orden determinista y repite la autorización antes de leer o cambiar el objetivo.
+- Nunca se permite una transición propia ni desactivar la última autoridad B.1 exacta.
+- La reactivación exige identidad consistente, programa activo cuando aplica, correspondencia Auth/profile y correo confirmado.
+- El evento auditado no contiene Auth, tokens, cookies ni PII adicional. La desactivación no equivale a revocar físicamente sesiones ya emitidas.
+
 ## Validaciones previas al piloto
 
 - Revisión de privacidad y aviso correspondiente.

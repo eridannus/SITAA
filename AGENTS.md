@@ -55,3 +55,5 @@ Todo acceso a datos de otras cuentas y toda mutación administrativa u operativa
 La Fase A está implementada y operativa: usa Google OAuth para registro público, sin restricción de dominio ni scopes elevados. El acceso por correo/contraseña es sólo heredado. La identidad institucional se captura únicamente después de autenticar; no introducir signup público por contraseña, PII preautenticación, endpoints anónimos de disponibilidad, secretos OAuth, datos institucionales en URLs o `localStorage`, ni lógica que confíe en email como llave primaria.
 
 - Usar "sólo" con tilde cuando significa "solamente"; usar "solo" sin tilde únicamente cuando significa "sin compañía".
+
+La migración `0009_admin_account_lifecycle_transitions.sql` y su aplicación compatible están preparadas localmente, pero no aplicadas ni verificadas contra Supabase. Implementan exclusivamente desactivación/reactivación administrativa B.2b con motivo, auditoría y protección del último administrador exacto. Hasta reconciliar un snapshot posterior, `0001`–`0008` siguen siendo la cadena viva canónica y 0009 no debe describirse como operativa.

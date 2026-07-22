@@ -115,3 +115,7 @@ La tercera ejecución del verificador aprobó y terminó con `ROLLBACK`. El smok
 El directorio `supabase/reconciliation/live/` es evidencia autoritativa post-0008 y no debe editarse manualmente. Los inventarios de 51 funciones, 11 triggers, 25 políticas, 132 grants de rutina, 267 de tabla, 6 de secuencia y 440 ACL expandidas son conteos vivos observados. `0009` es el siguiente número disponible.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.
+
+## Estado previsto por 0009 (no aplicado)
+
+0009 conserva intacto el modelo físico y añade tres funciones B.2b. El estado esperado posterior sería 54 funciones, 137 grants de rutina y 445 ACL expandidas; los demás inventarios permanecerían en 18/165/80/43/11/25/51 para tablas/columnas/restricciones/índices/triggers/políticas/semillas. Estos conteos son un contrato previsto, no evidencia viva, hasta regenerar el snapshot.

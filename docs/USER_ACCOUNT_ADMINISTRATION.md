@@ -34,13 +34,13 @@ El primer preflight remoto de 0008 revirtió con un falso positivo por nombres y
 
 La primera ejecución del verificador pasó los controles estáticos y comenzó las fixtures, pero abortó al invocar directamente como `authenticated` el helper owner-only `is_b1_account_admin()`. El ACL actuó correctamente y la transacción completa fue descartada sin persistencia. Una segunda ejecución descartada dejó postcondiciones crudas bajo el rol cliente. La versión final separó semántica owner, denegación cliente `42501` y acceso autorizado por las RPC B.1/B.2a `SECURITY DEFINER`; aprobó y terminó con `ROLLBACK`. Los smoke tests finales, incluido el responsable histórico entre programas, aprobaron.
 
-### B.2b — Activación y reactivación coordinadas con Auth
+### B.2b — Ciclo de vida operativo
 
-Pendiente: activación, desactivación, reactivación, revocación de sesión y los flujos confiables de recuperación. Requieren una decisión separada y coordinación con Auth. Los administradores nunca verán ni establecerán contraseñas.
+Preparada localmente mediante 0009: desactivación y reactivación del estado operativo en `profiles`, con auditoría y sin mutar Auth, roles ni historia. `pending_registration` no puede activarse administrativamente y continúa en el flujo propio de registro.
 
 ### B.3 — Cuentas técnicas y operaciones Auth
 
-Pendiente: alta e invitación de cuentas técnicas, reenvío de confirmaciones, revocación coordinada de sesiones y otras operaciones `auth.admin`. Sólo podrán ejecutarse en backend confiable; nunca habrá `service_role` en el navegador.
+Pendiente: alta e invitación de cuentas técnicas, reenvío de confirmaciones, recuperación, revocación coordinada de sesiones y otras operaciones `auth.admin`. Sólo podrán ejecutarse en backend confiable; nunca habrá `service_role` en el navegador. Los administradores nunca verán ni establecerán contraseñas.
 
 ### Fase C — Roles y delegación
 
@@ -79,3 +79,11 @@ La aplicación compatible con B.2a expone `/admin/accounts/[id]/identity`. Con 0
 - No se amplían las políticas propias de `profiles` ni `role_assignments`.
 - La aplicación compatible publicada consulta exclusivamente las RPC B.1 autorizadas por 0007.
 - No se introduce PII real en SQL, verificadores o documentación.
+
+## Fase B.2b preparada: ciclo de vida operativo
+
+La ruta protegida `/admin/accounts/[id]/lifecycle` permite a una autoridad B.1 exacta desactivar una cuenta activa elegible o reactivar una inactiva válida. El detalle muestra estado, marcas temporales y conteos de dependencias; las dependencias se conservan y no bloquean. La acción requiere motivo de 10–1000 caracteres y confirmación explícita, y llama exclusivamente a la RPC 0009.
+
+La cuenta propia, los registros pendientes y la última autoridad B.1 exacta no son objetivos válidos. La reactivación también exige identidad coherente y Auth confirmado. La desactivación aplica la barrera operativa existente, sin borrar historia ni afirmar revocación física de sesiones. Esta fase está preparada localmente y no es operativa hasta aplicar y verificar 0009.
+
+La precedencia de denegación del contexto es determinista: cuenta propia, registro pendiente, ciclo de vida inválido, último administrador, identidad inválida y finalmente Auth no confirmado. La mutación vuelve a validar todo bajo locks y es la autoridad final.

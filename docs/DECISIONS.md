@@ -539,3 +539,13 @@ La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM
 **Consecuencias:** la barrera de cuenta activa y la corrección auditada de identidad son contratos operativos vigentes. Las pruebas manuales de concurrencia en dos sesiones siguen reservadas a un entorno desechable y no se afirma que se hayan observado en producción; no bloquean este cierre porque el contrato transaccional y el verificador estático/funcional sí aprobaron. B.2b, B.3 y Fase C continúan pendientes. `0009` es el siguiente número disponible y cualquier cambio vivo posterior requiere una migración nueva.
 
 **Estado:** Aceptada; Fase B.2a cerrada y reconciliada sin deriva inexplicada.
+
+## DEC-051 — Transiciones administrativas de ciclo de vida B.2b
+
+**Contexto:** una cuenta activa debe poder suspenderse operativamente y una cuenta inactiva válida debe poder reactivarse sin borrar identidad, asignaciones o historia. La operación exige autoridad B.1 exacta y debe resistir concurrencia con cambios de autoridad.
+
+**Decisión:** preparar 0009 con contexto sin PII y una única RPC de transición auditada. Se prohíbe actuar sobre la cuenta propia, sobre registros pendientes o sobre la última autoridad B.1 exacta. La mutación serializa la decisión, reautoriza al actor después de los locks, valida identidad/Auth al reactivar y registra sólo éxitos. Las dependencias operativas se muestran como advertencias y se conservan. Las asignaciones no se reescriben: al reactivar, sólo recuperan efecto las que además continúen activas, vigentes por la fecha inclusiva de Ciudad de México y estructuralmente válidas; las vencidas, futuras, inactivas o malformadas no se reparan ni activan automáticamente.
+
+**Consecuencias:** desactivar suspende el acceso por la barrera operativa existente aun si un JWT sigue técnicamente vigente, pero conserva identidad e historia y no revoca físicamente sesiones Supabase ni administra Auth. Las operaciones `auth.admin`, recuperación y bloqueo pertenecen a B.3; los roles V2 pertenecen a Fase C. Cada éxito genera evidencia administrativa append-only. 0009 permanece preparada, no aplicada ni reconciliada.
+
+**Estado:** Aceptada para preparación local; pendiente de aplicación controlada.

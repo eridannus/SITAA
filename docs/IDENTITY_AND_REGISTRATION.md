@@ -96,3 +96,7 @@ El autoservicio autenticado continúa limitado a `first_names`, `paternal_surnam
 En cuentas institucionales puede corregir nombres, `person_type`, identificador y programa activo; en cuentas técnicas, sólo nombres. UUID, email, `account_kind`, `account_status`, `is_active`, fechas de ciclo de vida, vínculo Auth, roles e historia son inmutables. Las cuentas `pending_registration` deben completar su propio flujo y no son objetivos de corrección administrativa.
 
 La entrada administrativa colapsa tabs, saltos de línea y espacios repetidos, recorta el resultado y convierte vacío en `NULL`. El nombre completo derivado debe medir 2–200 caracteres para cuentas institucionales y técnicas; el tipo institucional debe ser explícitamente `student` o `professor`. Las dependencias de tipo y programa se deciden bajo un orden fijo de locks para impedir cambios concurrentes que crucen la validación.
+
+## Ciclo de vida administrativo B.2b previsto
+
+Desactivar o reactivar no cambia la identidad canónica, el correo, el UUID, `account_kind`, los identificadores, el programa ni las asignaciones. Una cuenta `pending_registration` continúa exclusivamente en su flujo propio. Para reactivar, el estado inactivo debe conservar el `activated_at` original y tener `deactivated_at`; la identidad debe seguir completa y coherente con su clase, el programa institucional debe estar activo, debe existir exactamente la correspondencia Auth/profile esperada y el correo de acceso debe estar confirmado.

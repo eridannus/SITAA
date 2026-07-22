@@ -153,3 +153,49 @@ export type AdminIdentityCorrectionErrorKind =
   | "person_type_dependency"
   | "program_dependency"
   | "unavailable";
+
+export type AdminAccountLifecycleTransition = "deactivate" | "reactivate";
+
+export interface AdminAccountLifecycleContext {
+  targetProfileId: string;
+  accountKind: AccountKind;
+  accountStatus: AccountStatus;
+  isSelf: boolean;
+  canDeactivate: boolean;
+  canReactivate: boolean;
+  denialCode: string | null;
+  hasExactB1Assignment: boolean;
+  activeExactB1AdminCount: number;
+  currentOrFutureAssignmentCount: number;
+  openResponsibilityCount: number;
+  openParticipationCount: number;
+}
+
+export interface AdminAccountLifecycleInput {
+  targetProfileId: string;
+  transition: AdminAccountLifecycleTransition;
+  reason: string;
+}
+
+export interface AdminAccountLifecycleResult {
+  targetProfileId: string;
+  auditEventId: string;
+  previousStatus: AccountStatus;
+  newStatus: AccountStatus;
+  changedFields: string[];
+  updatedAt: string;
+}
+
+export type AdminAccountLifecycleErrorKind =
+  | "migration_pending"
+  | "forbidden"
+  | "self_forbidden"
+  | "target_unavailable"
+  | "pending_target"
+  | "invalid_transition"
+  | "state_conflict"
+  | "invalid_identity"
+  | "auth_unconfirmed"
+  | "last_admin"
+  | "invalid_reason"
+  | "unavailable";

@@ -9,6 +9,11 @@ import {
   AdminIdentityCorrectionDataError,
   getAdminIdentityCorrectionContext,
 } from "@/lib/admin/identity-correction";
+import {
+  AdminAccountLifecycleDataError,
+  getAdminAccountLifecycleContext,
+} from "@/lib/admin/account-lifecycle";
+import { getAdminAccountLifecyclePresentation } from "@/lib/admin/account-lifecycle-permissions";
 import type { AssignmentPresentationStatus } from "@/types/admin";
 import type { AccountStatus, AssignmentScope, InstitutionalIdType, PersonType, ServiceArea } from "@/types/sitaa";
 
@@ -17,7 +22,10 @@ export const metadata: Metadata = { title: "Detalle de cuenta" };
 
 type Props = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ identity?: string | string[] }>;
+  searchParams: Promise<{
+    identity?: string | string[];
+    lifecycle?: string | string[];
+  }>;
 };
 
 const accountKindLabels = { institutional: "Institucional", technical: "Técnica" } as const;
@@ -35,6 +43,14 @@ const assignmentLabels: Record<AssignmentPresentationStatus, string> = {
 };
 const auditActionLabels: Record<string, string> = {
   account_identity_corrected: "Identidad corregida",
+  account_deactivated: "Cuenta desactivada",
+  account_reactivated: "Cuenta reactivada",
+};
+const lifecycleDenialLabels: Record<string, string> = {
+  pending_target: "La cuenta debe completar su registro antes de administrar su estado.",
+  invalid_lifecycle: "El estado actual de la cuenta requiere revisión técnica antes de una transición.",
+  invalid_identity: "La identidad debe corregirse mediante B.2a antes de reactivar la cuenta.",
+  auth_unconfirmed: "La cuenta de acceso debe estar confirmada antes de reactivarse.",
 };
 
 function accountTone(status: AccountStatus): StatusTone {
@@ -106,8 +122,24 @@ export default async function AdminAccountDetailPage({ params, searchParams }: P
     // Antes de aplicar 0008, B.1 permanece plenamente operativo y de sólo lectura.
   }
 
+  let lifecycleContext = null;
+  try {
+    lifecycleContext = await getAdminAccountLifecycleContext(id);
+  } catch (error) {
+    if (error instanceof AdminAccountLifecycleDataError && error.kind === "forbidden") {
+      redirect("/dashboard");
+    }
+    // Antes de aplicar 0009, B.1 y B.2a permanecen operativos sin transiciones.
+  }
+
   const { detail, assignments, auditHistory } = record;
   const identityCorrected = query.identity === "corrected";
+  const lifecycleChanged = Array.isArray(query.lifecycle)
+    ? query.lifecycle[0]
+    : query.lifecycle;
+  const lifecyclePresentation = getAdminAccountLifecyclePresentation(
+    lifecycleContext,
+  );
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
       <Link href="/admin/accounts" className="sitaa-text-action">← Volver a cuentas</Link>
@@ -118,11 +150,23 @@ export default async function AdminAccountDetailPage({ params, searchParams }: P
           {correctionContext?.canCorrect ? (
             <Link href={`/admin/accounts/${id}/identity`} className="sitaa-primary-action">Corregir identidad</Link>
           ) : null}
+          {lifecyclePresentation.action === "deactivate" ? (
+            <Link href={`/admin/accounts/${id}/lifecycle?transition=deactivate`} className="sitaa-secondary-action">Desactivar cuenta</Link>
+          ) : null}
+          {lifecyclePresentation.action === "reactivate" ? (
+            <Link href={`/admin/accounts/${id}/lifecycle?transition=reactivate`} className="sitaa-primary-action">Reactivar cuenta</Link>
+          ) : null}
         </div>
       </div>
 
       {identityCorrected ? (
         <Alert tone="success" className="mt-6 p-5">La identidad se corrigió correctamente y el evento administrativo quedó registrado.</Alert>
+      ) : null}
+      {lifecycleChanged === "deactivated" ? (
+        <Alert tone="success" className="mt-6 p-5">La cuenta se desactivó correctamente y el evento administrativo quedó registrado.</Alert>
+      ) : null}
+      {lifecycleChanged === "reactivated" ? (
+        <Alert tone="success" className="mt-6 p-5">La cuenta se reactivó correctamente y el evento administrativo quedó registrado.</Alert>
       ) : null}
 
       <section className="sitaa-card mt-8 p-5 sm:p-7" aria-labelledby="identity-heading">
@@ -142,6 +186,37 @@ export default async function AdminAccountDetailPage({ params, searchParams }: P
           <Definition label="Desactivación" value={formatTimestamp(detail.deactivatedAt)} />
         </dl>
       </section>
+
+      {lifecycleContext ? (
+        <section className="sitaa-card mt-8 p-5 sm:p-7" aria-labelledby="lifecycle-heading">
+          <h2 id="lifecycle-heading" className="text-xl font-bold text-[var(--sitaa-blue-dark)]">Estado de la cuenta</h2>
+          <p className="mt-2 text-[var(--sitaa-text-secondary)]">
+            La desactivación suspende el acceso operativo, pero conserva asignaciones, actividades, participaciones e historial.
+          </p>
+          <dl className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <Definition label="Estado actual" value={accountStatusLabels[lifecycleContext.accountStatus]} />
+            <Definition label="Activación" value={formatTimestamp(detail.activatedAt)} />
+            <Definition label="Desactivación" value={formatTimestamp(detail.deactivatedAt)} />
+            <Definition label="Asignaciones actuales o futuras" value={String(lifecycleContext.currentOrFutureAssignmentCount)} />
+            <Definition label="Responsabilidades abiertas" value={String(lifecycleContext.openResponsibilityCount)} />
+            <Definition label="Participaciones abiertas" value={String(lifecycleContext.openParticipationCount)} />
+          </dl>
+          {lifecycleContext.denialCode === "last_admin" ? (
+            <Alert tone="warning" className="mt-6 p-4">Esta cuenta conserva la última autoridad administrativa B.1 y no puede desactivarse.</Alert>
+          ) : null}
+          {lifecycleContext.hasExactB1Assignment && lifecycleContext.denialCode !== "last_admin" ? (
+            <Alert tone="info" className="mt-6 p-4">Esta cuenta tiene una asignación administrativa B.1 exacta vigente. La transición conserva la asignación y su historial.</Alert>
+          ) : null}
+          {lifecycleContext.isSelf ? (
+            <Alert tone="info" className="mt-6 p-4">No puedes cambiar el estado de tu propia cuenta administrativa.</Alert>
+          ) : null}
+          {!lifecyclePresentation.action && lifecycleContext.denialCode && !lifecycleContext.isSelf && lifecycleContext.denialCode !== "last_admin" ? (
+            <Alert tone="warning" className="mt-6 p-4">
+              {lifecycleDenialLabels[lifecycleContext.denialCode] ?? "Esta cuenta no tiene una transición administrativa disponible."}
+            </Alert>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="mt-8" aria-labelledby="assignments-heading">
         <h2 id="assignments-heading" className="text-xl font-bold text-[var(--sitaa-blue-dark)]">Historial de asignaciones V1</h2>

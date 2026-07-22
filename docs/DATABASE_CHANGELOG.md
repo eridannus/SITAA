@@ -202,3 +202,10 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Delta post-0007: 0 tablas, 0 columnas, 0 restricciones, 0 índices, +1 trigger, +4 firmas, +2 políticas, 0 semillas, +7 grants de rutina, −3 de tabla, 0 de secuencia y +4 entradas ACL.
 - Resultado: sin deriva inexplicada; informe en `supabase/reconciliation/0008_post_apply_reconciliation.md`.
 - Cierre: 0008 queda aplicada, verificada, probada, reconciliada e inmutable; Fase B.2a queda cerrada dentro de su alcance aprobado y 0009 es el siguiente número disponible.
+
+## 0009 preparada localmente — ciclo de vida administrativo B.2b
+
+- Se preparó `0009_admin_account_lifecycle_transitions.sql` con tres funciones: autoridad B.1 exacta por perfil, contexto de elegibilidad sin PII y transición auditada de desactivación/reactivación.
+- El delta previsto es 0 tablas, 0 columnas, 0 restricciones, 0 índices, 0 triggers, +3 funciones, 0 políticas, 0 semillas, +5 grants de rutina, 0 grants de tabla/secuencia y +5 ACL expandidas.
+- Se añadieron preflight de sólo lectura, verificador transaccional, rollback protegido y `TEST_PLAN_0009.md`. Las pruebas reales de dos sesiones quedan reservadas a un entorno desechable.
+- Estado: preparada localmente; no aplicada, no verificada en PostgreSQL y no reconciliada. No hubo conexión a Supabase ni ejecución SQL durante esta preparación.
