@@ -145,6 +145,34 @@ function assertLexicallyBalanced(source, label) {
   assert.equal(dollar, null, `${label}: cuerpo dollar-quoted sin cerrar`);
 }
 
+function normalizeSqlFragment(source) {
+  return source.replace(/\s+/g, "").toLowerCase();
+}
+
+function assertDefaultAclObjectTypeCast(source, label) {
+  const normalized = normalizeSqlFragment(source);
+  assert.match(
+    normalized,
+    /defaclobjtype::text/,
+    `${label}: defaclobjtype debe convertirse explícitamente a text`,
+  );
+  assert.doesNotMatch(
+    normalized,
+    /\|\|defaclobjtype\|\|/,
+    `${label}: defaclobjtype no puede concatenarse como pg_catalog."char"`,
+  );
+}
+
+function extractDefaultAclHashCalculations(source) {
+  const pattern = /\(\s*select\s+md5\s*\(\s*coalesce\s*\(\s*string_agg\s*\(\s*(defaclrole[^,\r\n]*?)\s*,\s*'\|'\s+order\s+by\s+(defaclrole\s*,\s*defaclnamespace\s*,\s*defaclobjtype)\s*\)\s*,\s*''\s*\)\s*\)\s+from\s+pg_default_acl\s*\)/gi;
+  return [...source.matchAll(pattern)].map((match) => ({
+    full: match[0],
+    serialization: normalizeSqlFragment(match[1]),
+    ordering: normalizeSqlFragment(match[2]),
+    offset: match.index,
+  }));
+}
+
 for (const [label, source] of Object.entries(sql)) assertLexicallyBalanced(source, label);
 
 const dollarBodyAudit = {};
@@ -192,6 +220,76 @@ $preflight$;`;
 const correctedRegressionBody = extractDollarQuotedBodies(correctedDollarRegression, "regresión positiva")[0];
 assert.doesNotThrow(
   () => assertLexicallyBalanced(correctedRegressionBody.body, "regresión positiva:$preflight$"),
+);
+
+const unsafeDefaultAclRegression = "text_value || defaclobjtype || ':'";
+assert.throws(
+  () => assertDefaultAclObjectTypeCast(unsafeDefaultAclRegression, "regresión negativa default ACL"),
+  /defaclobjtype debe convertirse explícitamente a text/,
+);
+const safeDefaultAclRegression = "text_value || defaclobjtype::text || ':'";
+assert.doesNotThrow(
+  () => assertDefaultAclObjectTypeCast(safeDefaultAclRegression, "regresión positiva default ACL"),
+);
+
+const defaultAclCalculations = extractDefaultAclHashCalculations(sql.migration);
+assert.equal(
+  (sql.migration.match(/from\s+pg_default_acl/gi) ?? []).length,
+  2,
+  "La migración debe contener exactamente dos cálculos de hash sobre pg_default_acl",
+);
+assert.equal(defaultAclCalculations.length, 2, "No se extrajeron los dos cálculos default ACL esperados");
+for (const [index, calculation] of defaultAclCalculations.entries()) {
+  assertDefaultAclObjectTypeCast(calculation.serialization, `default ACL ${index + 1}`);
+  assert.equal(
+    calculation.serialization,
+    "defaclrole::text||':'||defaclnamespace::text||':'||defaclobjtype::text||':'||defaclacl::text",
+    `Serialización inesperada en default ACL ${index + 1}`,
+  );
+  assert.equal(
+    calculation.ordering,
+    "defaclrole,defaclnamespace,defaclobjtype",
+    `Orden inesperado en default ACL ${index + 1}`,
+  );
+}
+assert.equal(
+  defaultAclCalculations[0].serialization,
+  defaultAclCalculations[1].serialization,
+  "Las serializaciones pre-DDL y post-DDL de default ACL deben ser equivalentes",
+);
+assert.equal(
+  defaultAclCalculations[0].ordering,
+  defaultAclCalculations[1].ordering,
+  "Los órdenes pre-DDL y post-DDL de default ACL deben ser equivalentes",
+);
+assert.equal(
+  (sql.migration.match(/defaclobjtype::text/gi) ?? []).length,
+  2,
+  "Los dos cálculos default ACL deben convertir defaclobjtype a text",
+);
+assert.doesNotMatch(
+  normalizeSqlFragment(sql.migration),
+  /\|\|defaclobjtype\|\|/,
+  "No puede quedar una concatenación directa de defaclobjtype sin cast",
+);
+
+const defaultAclCaptureAt = sql.migration.search(/set_config\s*\(\s*'sitaa_0009\.default_acl_hash'/i);
+const firstPersistentDdlAt = sql.migration.search(/^create\s+function\s+public\./im);
+const postDdlGuardAt = sql.migration.search(/do\s+\$post_ddl\$/i);
+const defaultAclComparisonAt = sql.migration.search(/current_setting\s*\(\s*'sitaa_0009\.default_acl_hash'\s*,\s*true\s*\)\s+is\s+distinct\s+from/i);
+const commitAt = sql.migration.search(/^commit;/im);
+assert.ok(
+  defaultAclCaptureAt >= 0
+    && defaultAclCaptureAt < defaultAclCalculations[0].offset
+    && defaultAclCalculations[0].offset < firstPersistentDdlAt,
+  "La línea base default ACL debe capturarse antes del primer DDL persistente",
+);
+assert.ok(
+  postDdlGuardAt >= 0
+    && postDdlGuardAt < defaultAclComparisonAt
+    && defaultAclComparisonAt < defaultAclCalculations[1].offset
+    && defaultAclCalculations[1].offset < commitAt,
+  "La comparación default ACL debe permanecer en la guarda post-DDL antes de COMMIT",
 );
 assert.match(sql.migration.trim(), /^--[\s\S]*\bbegin;[\s\S]*commit;$/i);
 assert.match(sql.preflight.trim(), /begin transaction read only;[\s\S]*rollback;$/i);
@@ -499,4 +597,6 @@ for (const source of Object.values(sql)) {
 
 console.log(`Cuerpos dollar-quoted validados: migration=${dollarBodyAudit.migration.length}, verify=${dollarBodyAudit.verify.length}, rollback=${dollarBodyAudit.rollback.length}`);
 console.log("Regresiones dollar-quoted: negativa rechazada; positiva aceptada");
+console.log(`Default ACL hash typing: ${defaultAclCalculations.length}/2 explicitly cast and equivalent`);
+console.log("Regresiones default ACL: negativa rechazada; positiva aceptada");
 console.log("Contrato SQL estático de 0009: OK");
