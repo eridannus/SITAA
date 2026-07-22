@@ -10,6 +10,14 @@ La revisión previa a aplicación corrigió el handler canónico del trigger de 
 
 Los cuatro artefactos abren su transacción y fijan localmente `TimeZone = UTC` y `DateStyle = ISO, MDY` antes de calcular evidencia textual. Estos valores desaparecen al terminar la transacción y sirven exclusivamente para hacer reproducibles los JSON y hashes de catálogos: no alteran la fecha institucional B.1, las fronteras de actividad en `America/Mexico_City` ni la semántica de los `timestamptz` de ciclo de vida.
 
+### Evidencia del primer preflight remoto
+
+La primera ejecución remota del preflight 0009 fue estrictamente de sólo lectura: devolvió sus 26 filas, terminó con `ROLLBACK` y código de salida 0, pero no fue aprobada porque `audit_action_code_incompatible`, `post_0001_0008_object_contract_drift`, `post_0008_inventory_drift` y `post_0008_privilege_drift` resultaron distintas de cero. Una transacción diagnóstica posterior también fue de sólo lectura y terminó con `ROLLBACK`; no aplicó la migración ni modificó objetos o datos.
+
+El diagnóstico confirmó los inventarios post-0008 de 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas, 18 tablas con RLS, 132 grants de rutina, 267 de tabla, 440 ACL expandidas y 51 semillas controladas, además de los hashes canónicos de columnas, índices, firmas/cuerpos de función, políticas y semillas. Los bloqueos fueron falsos positivos del arnés: restricciones y mapa público de triggers se comparaban con el modo no pretty; los privilegios de secuencia se contaban mediante una vista que sólo reflejaba `USAGE`; el mapa de grants de `authenticated` conservaba el hash anterior a 0008; y el constraint de acciones se comparaba contra la representación no pretty.
+
+La corrección alinea restricciones con `pg_get_constraintdef(oid, true)`, el mapa agregado de triggers con `pg_get_triggerdef(oid, true)`, las seis ACL de `system_health_id_seq` con `pg_class`/`aclexplode` y los diecinueve grants de tabla de `authenticated` con `information_schema.table_privileges`. El parser especializado del `WHEN` del trigger Auth conserva `pg_get_triggerdef(oid, false)`. El preflight corregido aún no se ha reejecutado ni aprobado.
+
 ## Contrato automatizado y transaccional
 
 1. Preflight termina en `ROLLBACK`.
@@ -111,6 +119,12 @@ Los cuatro artefactos abren su transacción y fijan localmente `TimeZone = UTC` 
 97. Ninguna entrada ACL de las tres funciones puede usar grant option, incluida la entrada del owner.
 98. El helper privado tiene exactamente una entrada `EXECUTE` para su owner; contexto y mutación tienen exactamente dos, para owner y `authenticated`.
 99. La guarda post-DDL, el verificador y la guarda predestructiva del rollback aplican el mismo contrato exacto de owner, grantees, cardinalidad y ausencia de grant option.
+100. Los seis mapas completos de restricciones usan la representación pretty canónica y conservan el hash `64f099164063d0cf500478dda3b5d25c`.
+101. Los seis mapas agregados de triggers públicos usan representación pretty y conservan `67ee47bcd43c0594129facf3d7729bad`; los seis parsers especializados Auth siguen usando el modo no pretty controlado.
+102. Las ACL de secuencia coinciden bidireccionalmente con las seis filas canónicas de `system_health_id_seq`, sin otra secuencia, rol, privilegio, concedente ni grant option.
+103. Los grants de tabla de `authenticated` coinciden con diecinueve filas y el hash `edbb0931514cafe989d3d345c4ea61d6`; `activity_participants` conserva sólo `SELECT` y `profiles` no tiene `UPDATE` de tabla.
+104. Los tres `UPDATE` de nombres estructurados permanecen exclusivamente en ACL de columna.
+105. `admin_audit_events_action_code_check` existe una sola vez, está validada, pertenece a `action_code`, usa la definición pretty canónica y acepta los dos códigos B.2b.
 
 El verificador automatiza los contratos estructurales, ACL, autorizaciones, fixtures principales, transiciones, auditoría, preservación y rechazos deterministas. Alterna fases cliente bajo `authenticated` con fases owner después de `RESET ROLE`: la primera sólo invoca RPC/proyecciones públicas o denegaciones expresas y la segunda inspecciona estado crudo. Prueba el helper privado como owner para autoridad exacta, asignación malformada y cuenta inactiva, y confirma `42501` en su única invocación directa como `authenticated`. Captura y conserva byte por byte los administradores exactos preexistentes, mientras las expectativas de A/B se calculan desde esa línea base. También exige cardinalidad de contexto 0/1, objetivo inexistente sin filas, `auth_unconfirmed`, timestamps persistidos y monótonos, UUID exactos, actor/objetivo/acción/motivo/metadata exactos de auditoría y la presentación vigente/futura/vencida/inactiva/suspendida de asignaciones. Como `set_updated_at()` usa `now()`, que es estable dentro de una transacción PostgreSQL, el verificador transaccional prueba igualdad exacta entre la marca devuelta y la persistida, pero no exige valores de reloj distintos entre dos transiciones de la misma transacción; esa diferencia se comprueba en transacciones separadas durante la verificación manual posterior a la aplicación.
 
@@ -140,4 +154,4 @@ Cada escenario debe ejecutarse en una rama Supabase, base local o clon desechabl
 
 ## Criterio de cierre
 
-B.2b no se considera aplicada, verificada ni reconciliada hasta completar ejecución remota controlada, smoke tests, snapshot post-0009 e informe de reconciliación. A la fecha, 0009 permanece local y no aplicada; no se afirma ejecución PostgreSQL, smoke tests, snapshot ni reconciliación de B.2b. B.3 y Fase C continúan pendientes.
+B.2b no se considera aplicada, verificada ni reconciliada hasta completar la reejecución aprobada del preflight, la aplicación remota controlada, el verificador, smoke tests, snapshot post-0009 e informe de reconciliación. A la fecha, 0009 permanece local y no aplicada; sólo constan el primer preflight rechazado y el diagnóstico, ambos de lectura y terminados con `ROLLBACK`. No se afirma aplicación, ejecución del verificador/rollback, smoke tests, snapshot ni reconciliación de B.2b. B.3 y Fase C continúan pendientes.

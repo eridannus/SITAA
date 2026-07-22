@@ -1,6 +1,6 @@
 # Estado reconciliado de la base de datos
 
-**Fecha de actualización documental:** 2026-07-21.
+**Fecha de actualización documental:** 2026-07-22.
 
 **Snapshot vivo comparado:** `2026-07-22T01:46:13Z`, estado `SUCCESS`.
 
@@ -119,3 +119,5 @@ Todo cambio futuro de base de datos debe crear una migración nueva, incluir ver
 ## Estado previsto por 0009 (no aplicado)
 
 0009 conserva intacto el modelo físico y añade tres funciones B.2b. El estado esperado posterior sería 54 funciones, 137 grants de rutina y 445 ACL expandidas; los demás inventarios permanecerían en 18/165/80/43/11/25/51 para tablas/columnas/restricciones/índices/triggers/políticas/semillas. Estos conteos son un contrato previsto, no evidencia viva, hasta regenerar el snapshot.
+
+El primer preflight remoto de 0009 devolvió las 26 categorías y terminó con `ROLLBACK`, pero no fue aprobado por cuatro falsos positivos del arnés. Un diagnóstico adicional de sólo lectura también terminó con `ROLLBACK` y confirmó que el estado vivo post-0008 conserva sus conteos y contratos sustantivos: las diferencias provenían del modo de decompilación de restricciones/triggers, del conteo incompleto de ACL de secuencia, del hash de grants `authenticated` anterior a 0008 y de la comparación no pretty de `action_code`. Los artefactos locales quedaron alineados con las fuentes canónicas del snapshot; el preflight corregido aún no se ha reejecutado. 0009 continúa local y no aplicada; B.2b no está cerrada y B.3/Fase C siguen pendientes.

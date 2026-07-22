@@ -25,7 +25,20 @@ begin
      or (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p') and c.relrowsecurity)<>18
      or (select count(*) from information_schema.routine_privileges where routine_schema='public')<>137
      or (select count(*) from information_schema.table_privileges where table_schema='public')<>267
-     or (select count(*) from information_schema.usage_privileges where object_schema='public' and object_type='SEQUENCE')<>6
+     or not (
+       with actual(sequence_schema,sequence_name,grantor,grantee,privilege_type,is_grantable) as (
+         select namespace_definition.nspname::text,sequence_definition.relname::text,pg_get_userbyid(acl.grantor)::text,
+           case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end::text,
+           upper(acl.privilege_type)::text,acl.is_grantable
+         from pg_class sequence_definition join pg_namespace namespace_definition on namespace_definition.oid=sequence_definition.relnamespace
+         cross join lateral aclexplode(coalesce(sequence_definition.relacl,acldefault('S',sequence_definition.relowner))) acl
+         where namespace_definition.nspname='public' and sequence_definition.relkind='S'
+       ), expected(sequence_schema,sequence_name,grantor,grantee,privilege_type,is_grantable) as (values
+         ('public','system_health_id_seq','postgres','postgres','SELECT',false),('public','system_health_id_seq','postgres','postgres','UPDATE',false),('public','system_health_id_seq','postgres','postgres','USAGE',false),
+         ('public','system_health_id_seq','postgres','service_role','SELECT',false),('public','system_health_id_seq','postgres','service_role','UPDATE',false),('public','system_health_id_seq','postgres','service_role','USAGE',false)
+       )
+       select (select count(*) from actual)=6 and not exists(select 1 from ((select * from expected except select * from actual) union all (select * from actual except select * from expected)) differences)
+     )
      or (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where n.nspname='public')+(select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral aclexplode(coalesce(c.relacl,acldefault(case when c.relkind='S' then 's'::"char" else 'r'::"char" end,c.relowner))) a where n.nspname='public' and c.relkind in ('r','p','v','m','S'))<>445 then
     raise exception '0009_verify_inventory_mismatch';
   end if;
@@ -63,11 +76,24 @@ begin
   if (select md5(coalesce(string_agg(p.oid::regprocedure::text,'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'89d8e1d260ccc0af72ee42c394f79f90'
      or (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'71f9763d702e95e4eede51a4a4611694'
      or (select md5(coalesce(string_agg(table_name||':'||ordinal_position::text||':'||column_name||':'||data_type||':'||udt_name||':'||is_nullable||':'||coalesce(column_default,'')||':'||coalesce(character_maximum_length::text,'')||':'||coalesce(numeric_precision::text,'')||':'||coalesce(numeric_scale::text,'')||':'||coalesce(datetime_precision::text,''),'|' order by table_name,ordinal_position),'')) from information_schema.columns where table_schema='public')<>'847b9f5c4ec9d428c522f714de59fd1f'
-     or (select md5(coalesce(string_agg(table_definition.relname||':'||constraint_definition.conname||':'||case constraint_definition.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(constraint_definition.oid),'|' order by table_definition.relname,constraint_definition.conname),'')) from pg_constraint constraint_definition join pg_class table_definition on table_definition.oid=constraint_definition.conrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and constraint_definition.contype in ('p','f','u','c'))<>'64f099164063d0cf500478dda3b5d25c'
+     or (select md5(coalesce(string_agg(table_definition.relname||':'||constraint_definition.conname||':'||case constraint_definition.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(constraint_definition.oid,true),'|' order by table_definition.relname,constraint_definition.conname),'')) from pg_constraint constraint_definition join pg_class table_definition on table_definition.oid=constraint_definition.conrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and constraint_definition.contype in ('p','f','u','c'))<>'64f099164063d0cf500478dda3b5d25c'
      or (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')<>'653875a8435cf43bda4fe55950f65802'
      or (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||policyname||':'||permissive||':'||roles::text||':'||cmd||':'||coalesce(qual,'')||':'||coalesce(with_check,''),'|' order by schemaname,tablename,policyname),'')) from pg_policies where schemaname='public')<>'a72df97fbb8e73d8445f7fe8765da4ba'
-     or (select md5(coalesce(string_agg(table_definition.relname||':'||trigger_definition.tgname||':'||pg_get_triggerdef(trigger_definition.oid,false),'|' order by table_definition.relname,trigger_definition.tgname),'')) from pg_trigger trigger_definition join pg_class table_definition on table_definition.oid=trigger_definition.tgrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and not trigger_definition.tgisinternal)<>'67ee47bcd43c0594129facf3d7729bad'
-     or (select md5(coalesce(string_agg(table_name||':'||privilege_type,'|' order by table_name,privilege_type),'')) from information_schema.role_table_grants where table_schema='public' and grantee='authenticated')<>'017b6a7c8048ffdfdc0b7d7319b59a92'
+     or (select md5(coalesce(string_agg(table_definition.relname||':'||trigger_definition.tgname||':'||pg_get_triggerdef(trigger_definition.oid,true),'|' order by table_definition.relname,trigger_definition.tgname),'')) from pg_trigger trigger_definition join pg_class table_definition on table_definition.oid=trigger_definition.tgrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and not trigger_definition.tgisinternal)<>'67ee47bcd43c0594129facf3d7729bad'
+     or (select md5(coalesce(string_agg(table_name||':'||privilege_type,'|' order by table_name,privilege_type),'')) from information_schema.table_privileges where table_schema='public' and grantee='authenticated')<>'edbb0931514cafe989d3d345c4ea61d6'
+     or not (
+       with actual(table_name,privilege_type,grantor,grantee,is_grantable,with_hierarchy) as (
+         select table_name::text,upper(privilege_type)::text,grantor::text,grantee::text,is_grantable::text,with_hierarchy::text
+         from information_schema.table_privileges where table_schema='public' and grantee='authenticated'
+       ), expected(table_name,privilege_type,grantor,grantee,is_grantable,with_hierarchy) as (values
+         ('academic_periods','SELECT','postgres','authenticated','NO','YES'),('academic_programs','SELECT','postgres','authenticated','NO','YES'),
+         ('activities','DELETE','postgres','authenticated','NO','NO'),('activities','INSERT','postgres','authenticated','NO','NO'),('activities','SELECT','postgres','authenticated','NO','YES'),('activities','UPDATE','postgres','authenticated','NO','NO'),
+         ('activity_modalities','SELECT','postgres','authenticated','NO','YES'),('activity_participants','SELECT','postgres','authenticated','NO','YES'),('activity_statuses','SELECT','postgres','authenticated','NO','YES'),('activity_types','SELECT','postgres','authenticated','NO','YES'),
+         ('attention_categories','SELECT','postgres','authenticated','NO','YES'),('divisions','SELECT','postgres','authenticated','NO','YES'),('location_types','SELECT','postgres','authenticated','NO','YES'),('participant_roles','SELECT','postgres','authenticated','NO','YES'),
+         ('profiles','SELECT','postgres','authenticated','NO','YES'),('role_assignments','SELECT','postgres','authenticated','NO','YES'),('roles','SELECT','postgres','authenticated','NO','YES'),('service_types','SELECT','postgres','authenticated','NO','YES'),('system_health','SELECT','postgres','authenticated','NO','YES')
+       )
+       select (select count(*) from actual)=19 and not exists(select 1 from ((select * from expected except select * from actual) union all (select * from actual except select * from expected)) differences)
+     )
      or not exists (select 1 from pg_class table_definition where table_definition.oid='public.activity_participants'::regclass and (select count(*) from aclexplode(table_definition.relacl) acl where acl.grantee=table_definition.relowner and upper(acl.privilege_type) in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN') and not acl.is_grantable)=8 and (select count(*) from aclexplode(table_definition.relacl) acl where acl.grantee='service_role'::regrole and upper(acl.privilege_type) in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN') and not acl.is_grantable)=8 and (select count(*) from aclexplode(table_definition.relacl) acl where acl.grantee='authenticated'::regrole and upper(acl.privilege_type)='SELECT' and not acl.is_grantable)=1 and (select count(*) from aclexplode(table_definition.relacl))=17 and not exists(select 1 from pg_attribute attribute_definition where attribute_definition.attrelid=table_definition.oid and attribute_definition.attnum>0 and not attribute_definition.attisdropped and attribute_definition.attacl is not null and exists(select 1 from aclexplode(attribute_definition.attacl)))) then
     raise exception '0009_verify_exact_post_0009_map_mismatch';
   end if;
@@ -236,12 +262,14 @@ begin
     raise exception '0009_verify_auth_trigger_mismatch';
   end if;
 
-  if not exists (
-    select 1 from pg_constraint constraint_definition
+  if (select count(*) from pg_constraint constraint_definition
     where constraint_definition.conrelid='public.admin_audit_events'::regclass
       and constraint_definition.conname='admin_audit_events_action_code_check'
-      and pg_get_constraintdef(constraint_definition.oid)='CHECK (char_length(action_code) >= 1 AND char_length(action_code) <= 100 AND action_code ~ ''^[a-z][a-z0-9]*(_[a-z0-9]+)*$''::text)'
-  ) or not ('account_deactivated'~'^[a-z][a-z0-9]*(_[a-z0-9]+)*$'
+      and constraint_definition.contype='c' and constraint_definition.convalidated
+      and pg_get_constraintdef(constraint_definition.oid,true)='CHECK (char_length(action_code) >= 1 AND char_length(action_code) <= 100 AND action_code ~ ''^[a-z][a-z0-9]*(_[a-z0-9]+)*$''::text)'
+      and cardinality(constraint_definition.conkey)=1
+      and exists(select 1 from unnest(constraint_definition.conkey) key_column(attnum) join pg_attribute attribute_definition on attribute_definition.attrelid=constraint_definition.conrelid and attribute_definition.attnum=key_column.attnum where attribute_definition.attname='action_code' and not attribute_definition.attisdropped)
+  )<>1 or not ('account_deactivated'~'^[a-z][a-z0-9]*(_[a-z0-9]+)*$'
     and 'account_reactivated'~'^[a-z][a-z0-9]*(_[a-z0-9]+)*$') then
     raise exception '0009_verify_audit_action_code_contract_mismatch';
   end if;

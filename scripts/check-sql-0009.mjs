@@ -15,6 +15,31 @@ const sql = Object.fromEntries(Object.entries(paths).map(([key, value]) => [
   key,
   fs.readFileSync(path.join(root, value), "utf8"),
 ]));
+const snapshotPaths = {
+  constraints: "supabase/reconciliation/live/live_constraints.sql",
+  triggers: "supabase/reconciliation/live/live_triggers.sql",
+  tablePrivileges: "supabase/reconciliation/live/live_table_privileges.sql",
+  sequencePrivileges: "supabase/reconciliation/live/live_sequence_privileges.sql",
+};
+const snapshots = Object.fromEntries(Object.entries(snapshotPaths).map(([key, value]) => [
+  key,
+  fs.readFileSync(path.join(root, value), "utf8"),
+]));
+
+function md5(value) {
+  return crypto.createHash("md5").update(value, "utf8").digest("hex");
+}
+
+function snapshotRows(source, fixedColumns) {
+  return source.split(/\r?\n/)
+    .filter((line) => line.length > 0 && !line.startsWith("--"))
+    .map((line) => {
+      const columns = line.split("\t");
+      assert.ok(columns.length >= fixedColumns, `Fila de snapshot incompleta: ${line}`);
+      if (columns.length === fixedColumns) return columns;
+      return [...columns.slice(0, fixedColumns - 1), columns.slice(fixedColumns - 1).join("\t")];
+    });
+}
 
 function assertLexicallyBalanced(source, label) {
   const dollarTags = [...source.matchAll(/\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/g)].map((match) => match[0]);
@@ -90,6 +115,73 @@ for (const [label, source] of Object.entries(sql)) {
   assert.doesNotMatch(source, /alter\s+(?:database|role)\b[\s\S]{0,160}\bset\s+(?:time\s+zone|timezone|datestyle)\b/i);
   assert.doesNotMatch(source, /alter\s+system\b/i);
 }
+
+const allSql = Object.values(sql).join("\n");
+const constraintMapPretty = /string_agg\([^\r\n]*pg_get_constraintdef\(constraint_definition\.oid\s*,\s*true\)[^\r\n]*64f099164063d0cf500478dda3b5d25c/gi;
+const constraintMapDefault = /string_agg\([^\r\n]*pg_get_constraintdef\(constraint_definition\.oid\s*\)(?!\s*,\s*true)/gi;
+const triggerMapPretty = /string_agg\([^\r\n]*pg_get_triggerdef\(trigger_definition\.oid\s*,\s*true\)[^\r\n]*67ee47bcd43c0594129facf3d7729bad/gi;
+const triggerMapFalse = /string_agg\([^\r\n]*pg_get_triggerdef\(trigger_definition\.oid\s*,\s*false\)/gi;
+const authWhenFalse = /split_part\(split_part\(lower\(pg_get_triggerdef\(trigger_definition\.oid\s*,\s*false\)\)/gi;
+assert.equal((allSql.match(constraintMapPretty) ?? []).length, 6, "Los seis mapas de restricciones deben usar pretty=true");
+assert.equal((allSql.match(constraintMapDefault) ?? []).length, 0, "Ningún mapa completo de restricciones puede usar el deparser por defecto");
+assert.equal((allSql.match(triggerMapPretty) ?? []).length, 6, "Los seis mapas públicos de triggers deben usar pretty=true");
+assert.equal((allSql.match(triggerMapFalse) ?? []).length, 0, "El mapa agregado de triggers no puede usar pretty=false");
+assert.equal((allSql.match(authWhenFalse) ?? []).length, 6, "Los seis parsers especializados Auth WHEN deben conservar pretty=false");
+assert.doesNotMatch(allSql, /information_schema\.usage_privileges/i);
+assert.doesNotMatch(allSql, /information_schema\.role_table_grants/i);
+assert.doesNotMatch(allSql, /017b6a7c8048ffdfdc0b7d7319b59a92/i);
+assert.equal((allSql.match(/edbb0931514cafe989d3d345c4ea61d6/gi) ?? []).length, 6, "El hash post-0008 debe estar en las seis superficies");
+assert.equal((allSql.match(/(?:select )?\(select count\(\*\) from (?:sequence_acl_actual|actual)\)=6 and not exists/gi) ?? []).length, 6, "Falta el contrato bidireccional de seis ACL de secuencia");
+assert.equal((allSql.match(/\('public','system_health_id_seq','postgres','(?:postgres|service_role)','(?:SELECT|UPDATE|USAGE)',false\)/g) ?? []).length, 36, "Cada superficie debe declarar exactamente las seis ACL de secuencia");
+assert.equal((allSql.match(/(?:select )?\(select count\(\*\) from (?:authenticated_table_grant_actual|actual)\)=19 and not exists/gi) ?? []).length, 6, "Falta el contrato bidireccional de diecinueve grants authenticated");
+assert.equal((allSql.match(/\('activity_participants','SELECT','postgres','authenticated','NO','YES'\)/g) ?? []).length, 6, "activity_participants debe conservar sólo SELECT en cada superficie");
+assert.doesNotMatch(allSql, /\('activity_participants','(?:INSERT|UPDATE|DELETE)'/i);
+assert.equal((allSql.match(/admin_audit_events_action_code_check[\s\S]{0,600}?pg_get_constraintdef\(constraint_definition\.oid\s*,\s*true\)/gi) ?? []).length, 6, "La restricción action_code debe compararse en pretty=true seis veces");
+assert.equal((allSql.match(/constraint_definition\.contype='c' and constraint_definition\.convalidated/gi) ?? []).length, 6, "La restricción action_code debe ser CHECK validada en cada superficie");
+assert.equal((allSql.match(/attribute_definition\.attname='action_code'/gi) ?? []).length, 6, "La restricción action_code debe estar ligada sólo a action_code");
+assert.equal((allSql.match(/'account_deactivated'~'\^\[a-z\]/g) ?? []).length, 6, "Falta la regresión account_deactivated en alguna superficie");
+assert.equal((allSql.match(/'account_reactivated'~'\^\[a-z\]/g) ?? []).length, 6, "Falta la regresión account_reactivated en alguna superficie");
+
+const constraintRows = snapshotRows(snapshots.constraints, 4).sort((left, right) =>
+  left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]));
+assert.equal(constraintRows.length, 80);
+assert.equal(md5(constraintRows.map((row) => row.join(":")).join("|")), "64f099164063d0cf500478dda3b5d25c");
+const actionConstraint = constraintRows.filter((row) => row[0] === "admin_audit_events" && row[1] === "admin_audit_events_action_code_check");
+assert.deepEqual(actionConstraint, [[
+  "admin_audit_events",
+  "admin_audit_events_action_code_check",
+  "check",
+  "CHECK (char_length(action_code) >= 1 AND char_length(action_code) <= 100 AND action_code ~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'::text)",
+]]);
+
+const triggerRows = snapshotRows(snapshots.triggers, 3).sort((left, right) =>
+  left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]));
+assert.equal(triggerRows.length, 11);
+assert.equal(md5(triggerRows.map((row) => row.join(":")).join("|")), "67ee47bcd43c0594129facf3d7729bad");
+
+const authenticatedTableRows = snapshotRows(snapshots.tablePrivileges, 7)
+  .filter((row) => row[3] === "authenticated")
+  .sort((left, right) => left[1].localeCompare(right[1]) || left[4].localeCompare(right[4]));
+assert.equal(authenticatedTableRows.length, 19);
+assert.equal(md5(authenticatedTableRows.map((row) => `${row[1]}:${row[4]}`).join("|")), "edbb0931514cafe989d3d345c4ea61d6");
+assert.deepEqual(
+  authenticatedTableRows.filter((row) => row[1] === "activity_participants").map((row) => row[4]),
+  ["SELECT"],
+);
+assert.deepEqual(
+  authenticatedTableRows.filter((row) => row[1] === "profiles").map((row) => row[4]),
+  ["SELECT"],
+);
+
+const sequenceRows = snapshotRows(snapshots.sequencePrivileges, 6);
+assert.deepEqual(sequenceRows, [
+  ["public", "system_health_id_seq", "postgres", "postgres", "SELECT", "false"],
+  ["public", "system_health_id_seq", "postgres", "postgres", "UPDATE", "false"],
+  ["public", "system_health_id_seq", "postgres", "postgres", "USAGE", "false"],
+  ["public", "system_health_id_seq", "postgres", "service_role", "SELECT", "false"],
+  ["public", "system_health_id_seq", "postgres", "service_role", "UPDATE", "false"],
+  ["public", "system_health_id_seq", "postgres", "service_role", "USAGE", "false"],
+]);
 
 assert.equal((sql.migration.match(/create function public\./gi) ?? []).length, 3);
 assert.doesNotMatch(sql.migration, /\b(create|alter|drop)\s+(table|policy|index|trigger|type|extension)\b/i);

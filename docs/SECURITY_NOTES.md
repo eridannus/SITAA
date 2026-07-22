@@ -149,6 +149,8 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - 0009 preserva exactamente los tres permisos de columna de `authenticated` para nombres estructurados (`first_names`, `paternal_surname`, `maternal_surname`). No concede `UPDATE` de tabla ni acceso de escritura a `full_name`, correo, identidad, programa o campos del ciclo de vida.
 - Los dos triggers Auth continúan conectados por OID a `handle_sitaa_auth_user_created()` y `sync_sitaa_profile_email_from_auth()`; 0009 sólo verifica su contrato y no los altera.
 - El verificador 0009 ejecuta RPC y denegaciones cliente bajo `authenticated`, restablece el rol antes de inspeccionar perfiles, Auth, asignaciones o auditoría y conserva como owner la línea base de administradores exactos vivos. El allocator temporal de identificadores comprueba colisiones sin registrar identificadores existentes.
+- El primer preflight remoto 0009 no fue aprobado: cuatro falsos positivos de representación/privilegios quedaron confirmados por un diagnóstico de sólo lectura, ambos finalizados con `ROLLBACK`. La corrección local verifica bidireccionalmente las seis ACL de `system_health_id_seq` y los diecinueve grants de tabla de `authenticated`; `activity_participants` conserva sólo `SELECT`, no se restaura DML directo y `profiles` conserva sus tres `UPDATE` exclusivamente por columna.
+- El preflight corregido todavía no se ha reejecutado. 0009 permanece no aplicada; no existe evidencia post-0009, verificación transaccional ni cierre B.2b.
 
 ## Validaciones previas al piloto
 
