@@ -41,15 +41,65 @@ function snapshotRows(source, fixedColumns) {
     });
 }
 
-function assertLexicallyBalanced(source, label) {
-  const dollarTags = [...source.matchAll(/\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/g)].map((match) => match[0]);
-  const counts = new Map();
-  for (const tag of dollarTags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-  for (const [tag, count] of counts) {
-    assert.equal(count % 2, 0, `${label}: delimitador impar ${tag}`);
+function lineAtOffset(source, offset) {
+  return source.slice(0, offset).split("\n").length;
+}
+
+function extractDollarQuotedBodies(source, label) {
+  const bodies = [];
+  let single = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const current = source[index];
+    const next = source[index + 1];
+    if (lineComment) {
+      if (current === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (current === "*" && next === "/") { blockComment = false; index += 1; }
+      continue;
+    }
+    if (single) {
+      if (current === "'" && next === "'") { index += 1; continue; }
+      if (current === "'") single = false;
+      continue;
+    }
+    if (current === "-" && next === "-") { lineComment = true; index += 1; continue; }
+    if (current === "/" && next === "*") { blockComment = true; index += 1; continue; }
+    if (current === "'") { single = true; continue; }
+    if (current !== "$") continue;
+
+    const match = source.slice(index).match(/^(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/);
+    if (!match) continue;
+    const delimiter = match[1];
+    const openingOffset = index;
+    const bodyOffset = openingOffset + delimiter.length;
+    const closingOffset = source.indexOf(delimiter, bodyOffset);
+    assert.notEqual(
+      closingOffset,
+      -1,
+      `${label}: delimitador ${delimiter} abierto en línea ${lineAtOffset(source, openingOffset)} sin cierre`,
+    );
+    bodies.push({
+      delimiter,
+      body: source.slice(bodyOffset, closingOffset),
+      openingOffset,
+      closingOffset,
+      openingLine: lineAtOffset(source, openingOffset),
+      closingLine: lineAtOffset(source, closingOffset),
+    });
+    index = closingOffset + delimiter.length - 1;
   }
+  return bodies;
+}
+
+function assertLexicallyBalanced(source, label) {
+  extractDollarQuotedBodies(source, label);
 
   let depth = 0;
+  let squareDepth = 0;
   let single = false;
   let lineComment = false;
   let blockComment = false;
@@ -84,14 +134,65 @@ function assertLexicallyBalanced(source, label) {
     if (current === "(") depth += 1;
     if (current === ")") depth -= 1;
     assert.ok(depth >= 0, `${label}: paréntesis de cierre inesperado`);
+    if (current === "[") squareDepth += 1;
+    if (current === "]") squareDepth -= 1;
+    assert.ok(squareDepth >= 0, `${label}: corchete de cierre inesperado`);
   }
   assert.equal(depth, 0, `${label}: paréntesis sin cerrar`);
+  assert.equal(squareDepth, 0, `${label}: corchete sin cerrar`);
   assert.equal(single, false, `${label}: literal sin cerrar`);
   assert.equal(blockComment, false, `${label}: comentario sin cerrar`);
   assert.equal(dollar, null, `${label}: cuerpo dollar-quoted sin cerrar`);
 }
 
 for (const [label, source] of Object.entries(sql)) assertLexicallyBalanced(source, label);
+
+const dollarBodyAudit = {};
+for (const label of ["migration", "verify", "rollback"]) {
+  const bodies = extractDollarQuotedBodies(sql[label], label);
+  for (const body of bodies) {
+    assertLexicallyBalanced(
+      body.body,
+      `${label}:${body.delimiter} líneas ${body.openingLine}-${body.closingLine}`,
+    );
+  }
+  dollarBodyAudit[label] = bodies;
+}
+assert.equal(dollarBodyAudit.migration.length, 5, "Cantidad inesperada de cuerpos dollar-quoted en migration");
+assert.equal(dollarBodyAudit.verify.length, 35, "Cantidad inesperada de cuerpos dollar-quoted en verify");
+assert.equal(dollarBodyAudit.rollback.length, 2, "Cantidad inesperada de cuerpos dollar-quoted en rollback");
+
+const brokenDollarRegression = `do $preflight$
+begin
+  perform exists (
+    select 1
+    where (
+      true
+      or exists (select 1)
+    );
+end;
+$preflight$;`;
+const brokenRegressionBody = extractDollarQuotedBodies(brokenDollarRegression, "regresión negativa")[0];
+assert.throws(
+  () => assertLexicallyBalanced(brokenRegressionBody.body, "regresión negativa:$preflight$"),
+  /paréntesis sin cerrar/,
+);
+
+const correctedDollarRegression = `do $preflight$
+begin
+  perform exists (
+    select 1
+    where (
+      true
+      or exists (select 1)
+    )
+  );
+end;
+$preflight$;`;
+const correctedRegressionBody = extractDollarQuotedBodies(correctedDollarRegression, "regresión positiva")[0];
+assert.doesNotThrow(
+  () => assertLexicallyBalanced(correctedRegressionBody.body, "regresión positiva:$preflight$"),
+);
 assert.match(sql.migration.trim(), /^--[\s\S]*\bbegin;[\s\S]*commit;$/i);
 assert.match(sql.preflight.trim(), /begin transaction read only;[\s\S]*rollback;$/i);
 assert.match(sql.verify.trim(), /\bbegin;[\s\S]*rollback;$/i);
@@ -396,4 +497,6 @@ for (const source of Object.values(sql)) {
   assert.doesNotMatch(source, /postgres(?:ql)?:\/\/|supabase_db_url|service_role_key/i);
 }
 
+console.log(`Cuerpos dollar-quoted validados: migration=${dollarBodyAudit.migration.length}, verify=${dollarBodyAudit.verify.length}, rollback=${dollarBodyAudit.rollback.length}`);
+console.log("Regresiones dollar-quoted: negativa rechazada; positiva aceptada");
 console.log("Contrato SQL estático de 0009: OK");

@@ -162,9 +162,37 @@ begin
     union all select 1 where exists(select 1 from public.profiles profile left join auth.users auth_user on auth_user.id=profile.id where auth_user.id is null)
       or exists(select 1 from auth.users auth_user left join public.profiles profile on profile.id=auth_user.id where profile.id is null)
       or exists(select 1 from public.profiles profile join auth.users auth_user on auth_user.id=profile.id where profile.email<>lower(btrim(profile.email)) or lower(btrim(auth_user.email))<>profile.email)
-    union all select 1 where exists(
-      select 1 from pg_proc p where p.oid=to_regprocedure('public.is_b1_account_admin()')
-        and (pg_get_userbyid(p.proowner)<>'postgres' or not p.prosecdef or p.provolatile<>'s' or p.proconfig<>array['search_path=pg_catalog, public']::text[] or md5(regexp_replace(p.prosrc,'\s+','','g'))<>'0486f72652abc79ed3d1334704d55fbe' or has_function_privilege('authenticated',p.oid,'EXECUTE') or has_function_privilege('anon',p.oid,'EXECUTE') or has_function_privilege('service_role',p.oid,'EXECUTE') or (select count(*) from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where acl.privilege_type='EXECUTE' and acl.grantee=p.proowner and not acl.is_grantable)<>1 or exists(select 1 from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where acl.privilege_type<>'EXECUTE' or acl.grantee<>p.proowner or acl.is_grantable))
+    union all
+    select 1
+    where exists (
+      select 1
+      from pg_proc p
+      where p.oid=to_regprocedure('public.is_b1_account_admin()')
+        and (
+          pg_get_userbyid(p.proowner)<>'postgres'
+          or not p.prosecdef
+          or p.provolatile<>'s'
+          or p.proconfig<>array['search_path=pg_catalog, public']::text[]
+          or md5(regexp_replace(p.prosrc,'\s+','','g'))<>'0486f72652abc79ed3d1334704d55fbe'
+          or has_function_privilege('authenticated',p.oid,'EXECUTE')
+          or has_function_privilege('anon',p.oid,'EXECUTE')
+          or has_function_privilege('service_role',p.oid,'EXECUTE')
+          or (
+            select count(*)
+            from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+            where acl.privilege_type='EXECUTE'
+              and acl.grantee=p.proowner
+              and not acl.is_grantable
+          )<>1
+          or exists (
+            select 1
+            from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+            where acl.privilege_type<>'EXECUTE'
+               or acl.grantee<>p.proowner
+               or acl.is_grantable
+          )
+        )
+    )
     union all select 1 where exists(
       select 1 from (values
         ('public.search_admin_accounts_b1(text,uuid,text,text,text,text,text,text,integer,integer)',array['search_path=pg_catalog, public, extensions']::text[]),
