@@ -85,6 +85,40 @@ assert.match(
   sql.migration,
   /sitaa_account_lifecycle_last_admin_forbidden[\s\S]*?errcode='55000'/i,
 );
+assert.doesNotMatch(
+  Object.values(sql).join("\n"),
+  /handle_sitaa_auth_user_email_changed/i,
+);
+for (const [label, source] of Object.entries(sql)) {
+  assert.match(
+    source,
+    /sync_sitaa_profile_email_from_auth/i,
+    `${label}: falta el handler canónico de sincronización de correo`,
+  );
+  assert.match(source, /on_sitaa_auth_user_created/);
+  assert.match(source, /on_sitaa_auth_user_email_changed/);
+  assert.doesNotMatch(source, /pg_get_expr\s*\([^)]*tgqual/i);
+  for (const column of ["first_names", "paternal_surname", "maternal_surname"]) {
+    assert.match(source, new RegExp(column));
+  }
+}
+assert.doesNotMatch(sql.preflight, /where\s+aggregate_count\s*<>\s*0/i);
+assert.equal(
+  (sql.preflight.match(/^  \('[a-z][a-z0-9_]*',?/gm) ?? []).length,
+  26,
+  "El preflight debe declarar 19 categorías bloqueantes y 7 informativas",
+);
+assert.match(sql.preflight, /order by classification,category;/i);
+assert.match(sql.verify, /\$owner_helper_contract\$/);
+assert.match(sql.verify, /0009_verify_expected_helper_acl_denial/);
+assert.match(sql.verify, /missing_target_context_cardinality/);
+assert.match(sql.verify, /deactivation_timestamp_contract/);
+assert.match(sql.verify, /reactivation_timestamp_contract/);
+assert.match(sql.verify, /deactivation_audit_contract/);
+assert.match(sql.verify, /reactivation_audit_contract/);
+assert.match(sql.verify, /\$two_admin_safety_contract\$/);
+assert.match(sql.verify, /sitaa_admin_access_denied/);
+assert.match(sql.verify, /sitaa_account_lifecycle_self_forbidden/);
 assert.match(
   sql.verify,
   /grant select on table pg_temp\.sitaa_0009_context to authenticated;/i,

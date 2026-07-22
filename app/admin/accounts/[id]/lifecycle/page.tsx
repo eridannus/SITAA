@@ -51,10 +51,11 @@ export default async function AccountLifecyclePage({ params, searchParams }: Pro
   }
   if (!context) notFound();
 
-  const requested = Array.isArray(query.transition) ? query.transition[0] : query.transition;
-  const transition: AdminAccountLifecycleTransition = requested === "reactivate"
-    ? "reactivate"
-    : "deactivate";
+  const requested = query.transition;
+  if (requested !== "deactivate" && requested !== "reactivate") {
+    redirect(`/admin/accounts/${id}`);
+  }
+  const transition: AdminAccountLifecycleTransition = requested;
   const allowed = transition === "deactivate" ? context.canDeactivate : context.canReactivate;
   if (!allowed) redirect(`/admin/accounts/${id}`);
 

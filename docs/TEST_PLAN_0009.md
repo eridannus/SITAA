@@ -4,7 +4,9 @@
 
 `0009_admin_account_lifecycle_transitions.sql` está preparada localmente y no aplicada. Este plan valida la desactivación/reactivación auditada por administradores B.1 exactos. No administra Auth, no revoca sesiones físicas, no modifica asignaciones y no implementa roles V2.
 
-Orden manual obligatorio: ejecutar el preflight de sólo lectura, revisar sus 19 categorías bloqueantes y 7 informativas, desplegar la aplicación compatible, aplicar la migración, ejecutar el verificador transaccional, realizar smoke tests y finalmente regenerar/reconciliar el snapshot.
+Orden manual obligatorio: ejecutar el preflight de sólo lectura, revisar sus 19 categorías bloqueantes y 7 informativas (26 filas siempre presentes, incluso cuando un bloqueo vale cero), desplegar la aplicación compatible, aplicar la migración, ejecutar el verificador transaccional, realizar smoke tests y finalmente regenerar/reconciliar el snapshot.
+
+La revisión previa a aplicación corrigió el handler canónico del trigger de correo a `sync_sitaa_profile_email_from_auth()`, preservó exactamente los `UPDATE` de columna de `authenticated` sobre `first_names`, `paternal_surname` y `maternal_surname`, y mantuvo denegados los campos de identidad y ciclo de vida protegidos. Los contratos usan mapas/hashes exactos post-0008 para impedir sustituciones que conserven sólo los conteos.
 
 ## Contrato automatizado y transaccional
 
@@ -61,7 +63,7 @@ Orden manual obligatorio: ejecutar el preflight de sólo lectura, revisar sus 19
 51. Una identidad inactiva inválida recibe `invalid_identity`.
 52. Un Auth no confirmado recibe `auth_unconfirmed`.
 53. Los duplicados de asignación B.1 cuentan un solo perfil.
-54. El último administrador exacto no puede desactivarse.
+54. La guarda de conteo del último administrador se conserva como defensa en profundidad; bajo autoridad canónica, una cuenta distinta autorizada implica al menos dos administradores exactos activos y el caso de una sola cuenta se intercepta antes como transición propia.
 55. El conteo de asignaciones incluye vigentes y futuras no vencidas.
 56. El conteo de responsabilidades usa la frontera 0008.
 57. El conteo de participaciones usa la frontera 0008.
@@ -76,10 +78,10 @@ Orden manual obligatorio: ejecutar el preflight de sólo lectura, revisar sus 19
 66. La fila `auth.users` objetivo se bloquea antes de perfiles.
 67. Actor, objetivo y candidatos B.1 se bloquean juntos por UUID.
 68. La autoridad B.1 se revalida después de todos los locks.
-69. Desactivar cambia exactamente estado, bandera y `deactivated_at`.
-70. Desactivar conserva `activated_at`.
-71. Reactivar cambia exactamente estado, bandera y `deactivated_at`.
-72. Reactivar conserva `activated_at`.
+69. Desactivar cambia exactamente estado, bandera y `deactivated_at`; devuelve el UUID exacto y el `updated_at` persistido.
+70. Desactivar conserva `activated_at` byte por byte y establece `deactivated_at`.
+71. Reactivar cambia exactamente estado, bandera y `deactivated_at`; devuelve el UUID exacto y el `updated_at` persistido.
+72. Reactivar conserva `activated_at` byte por byte y limpia `deactivated_at`.
 73. Reactivar exige identidad coherente y programa institucional activo.
 74. Reactivar exige correspondencia Auth/profile y correo confirmado.
 75. Una transición exitosa conserva asignaciones y datos operativos.
@@ -92,7 +94,9 @@ Orden manual obligatorio: ejecutar el preflight de sólo lectura, revisar sus 19
 82. El rollback elimina sólo las tres funciones y conserva datos/eventos.
 83. El rollback recupera exactamente el contrato post-0008.
 
-El verificador automatiza los contratos estructurales, ACL, autorizaciones, fixtures principales, transiciones, auditoría, preservación y rechazos deterministas. Incluye una cuenta inactiva malformada sin `activated_at`, que debe recibir `invalid_lifecycle` y no ofrecer reactivación. Los casos de bloqueo entre sesiones se ejecutan aparte porque una sola transacción no puede probar esperas reales.
+El verificador automatiza los contratos estructurales, ACL, autorizaciones, fixtures principales, transiciones, auditoría, preservación y rechazos deterministas. Prueba el helper privado como owner para autoridad exacta, asignación malformada y cuenta inactiva, y confirma `42501` al invocarlo como `authenticated`. También exige cardinalidad de contexto 0/1, objetivo inexistente sin filas, `auth_unconfirmed`, timestamps persistidos y monótonos, UUID exactos, actor/objetivo/acción/motivo/metadata exactos de auditoría y la presentación vigente/futura/vencida/inactiva/suspendida de asignaciones. Como `set_updated_at()` usa `now()`, que es estable dentro de una transacción PostgreSQL, el verificador transaccional prueba igualdad exacta entre la marca devuelta y la persistida, pero no exige valores de reloj distintos entre dos transiciones de la misma transacción; esa diferencia se comprueba en transacciones separadas durante la verificación manual posterior a la aplicación.
+
+La seguridad de última autoridad usa una secuencia real con dos administradores: A desactiva a B; B pierde autoridad y su intento recíproco contra A falla con `42501/sitaa_admin_access_denied`; A no puede actuar sobre sí mismo; finalmente A restaura a B por la RPC pública. No se fabrica un estado imposible para forzar `last_admin`. Los casos de bloqueo entre sesiones se ejecutan aparte porque una sola transacción no puede probar esperas reales.
 
 ## Matriz manual de concurrencia (entorno desechable)
 
@@ -117,4 +121,4 @@ Cada escenario debe ejecutarse en una rama Supabase, base local o clon desechabl
 
 ## Criterio de cierre
 
-B.2b no se considera aplicada, verificada ni reconciliada hasta completar ejecución remota controlada, smoke tests, snapshot post-0009 e informe de reconciliación. La preparación local por sí sola no cierra la fase.
+B.2b no se considera aplicada, verificada ni reconciliada hasta completar ejecución remota controlada, smoke tests, snapshot post-0009 e informe de reconciliación. A la fecha, 0009 permanece local y no aplicada; no se afirma ejecución PostgreSQL, smoke tests, snapshot ni reconciliación de B.2b. B.3 y Fase C continúan pendientes.

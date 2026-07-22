@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   AdminAccountLifecycleContext,
+  AdminAccountLifecycleDenialCode,
   AdminAccountLifecycleErrorKind,
   AdminAccountLifecycleInput,
   AdminAccountLifecycleResult,
@@ -64,8 +65,8 @@ function mappedError(error: RpcError): AdminAccountLifecycleDataError {
   return new AdminAccountLifecycleDataError("unavailable");
 }
 
-function firstRow(data: unknown): unknown | null {
-  return Array.isArray(data) && data.length ? data[0] : null;
+function rows(data: unknown): unknown[] | null {
+  return Array.isArray(data) ? data : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,6 +82,34 @@ function countValue(value: unknown): number | null {
   return Number.isSafeInteger(count) && count >= 0 ? count : null;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const LIFECYCLE_DENIAL_CODES = new Set<AdminAccountLifecycleDenialCode>([
+  "self_forbidden",
+  "pending_target",
+  "last_admin",
+  "invalid_lifecycle",
+  "invalid_identity",
+  "auth_unconfirmed",
+]);
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+function isLifecycleDenialCode(
+  value: unknown,
+): value is AdminAccountLifecycleDenialCode {
+  return typeof value === "string" &&
+    LIFECYCLE_DENIAL_CODES.has(value as AdminAccountLifecycleDenialCode);
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "" &&
+    Number.isFinite(Date.parse(value));
+}
+
 function parseContextRow(value: unknown): AdminAccountLifecycleContext | null {
   if (!isRecord(value)) return null;
   const accountKind = value.account_kind;
@@ -93,7 +122,7 @@ function parseContextRow(value: unknown): AdminAccountLifecycleContext | null {
   const openResponsibilityCount = countValue(value.open_responsibility_count);
   const openParticipationCount = countValue(value.open_participation_count);
   if (
-    typeof value.target_profile_id !== "string" ||
+    !isUuid(value.target_profile_id) ||
     (accountKind !== "institutional" && accountKind !== "technical") ||
     !["pending_registration", "active", "inactive"].includes(
       String(accountStatus),
@@ -102,7 +131,7 @@ function parseContextRow(value: unknown): AdminAccountLifecycleContext | null {
     typeof value.can_deactivate !== "boolean" ||
     typeof value.can_reactivate !== "boolean" ||
     typeof value.has_exact_b1_assignment !== "boolean" ||
-    (denialCode !== null && typeof denialCode !== "string") ||
+    (denialCode !== null && !isLifecycleDenialCode(denialCode)) ||
     activeExactB1AdminCount === null ||
     currentOrFutureAssignmentCount === null ||
     openResponsibilityCount === null ||
@@ -142,9 +171,12 @@ export async function getAdminAccountLifecycleContext(
   );
   if (error) throw mappedError(error);
 
-  const rawRow = firstRow(data);
-  if (!rawRow) return null;
-  const row = parseContextRow(rawRow);
+  const resultRows = rows(data);
+  if (!resultRows || resultRows.length > 1) {
+    throw new AdminAccountLifecycleDataError("unavailable");
+  }
+  if (resultRows.length === 0) return null;
+  const row = parseContextRow(resultRows[0]);
   if (!row || row.targetProfileId !== profileId) {
     throw new AdminAccountLifecycleDataError("unavailable");
   }
@@ -173,8 +205,9 @@ function parseMutationRow(
     "is_active",
   ];
   if (
+    !isUuid(value.target_profile_id) ||
     value.target_profile_id !== input.targetProfileId ||
-    typeof value.audit_event_id !== "string" ||
+    !isUuid(value.audit_event_id) ||
     value.previous_status !== expectedPrevious ||
     value.new_status !== expectedNew ||
     !Array.isArray(value.changed_fields) ||
@@ -182,7 +215,7 @@ function parseMutationRow(
     !value.changed_fields.every(
       (field, index) => field === expectedChangedFields[index],
     ) ||
-    typeof value.updated_at !== "string"
+    !isTimestamp(value.updated_at)
   ) return null;
   return value as MutationRow;
 }
@@ -201,7 +234,11 @@ export async function transitionAdminAccountLifecycle(
   );
   if (error) throw mappedError(error);
 
-  const row = parseMutationRow(firstRow(data), input);
+  const resultRows = rows(data);
+  if (!resultRows || resultRows.length !== 1) {
+    throw new AdminAccountLifecycleDataError("unavailable");
+  }
+  const row = parseMutationRow(resultRows[0], input);
   if (!row) throw new AdminAccountLifecycleDataError("unavailable");
   return {
     targetProfileId: row.target_profile_id,

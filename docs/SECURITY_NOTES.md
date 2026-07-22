@@ -145,6 +145,8 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - Nunca se permite una transición propia ni desactivar la última autoridad B.1 exacta.
 - La reactivación exige identidad consistente, programa activo cuando aplica, correspondencia Auth/profile y correo confirmado.
 - El evento auditado no contiene Auth, tokens, cookies ni PII adicional. La desactivación no equivale a revocar físicamente sesiones ya emitidas.
+- 0009 preserva exactamente los tres permisos de columna de `authenticated` para nombres estructurados (`first_names`, `paternal_surname`, `maternal_surname`). No concede `UPDATE` de tabla ni acceso de escritura a `full_name`, correo, identidad, programa o campos del ciclo de vida.
+- Los dos triggers Auth continúan conectados por OID a `handle_sitaa_auth_user_created()` y `sync_sitaa_profile_email_from_auth()`; 0009 sólo verifica su contrato y no los altera.
 
 ## Validaciones previas al piloto
 

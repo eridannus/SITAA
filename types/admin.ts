@@ -156,6 +156,14 @@ export type AdminIdentityCorrectionErrorKind =
 
 export type AdminAccountLifecycleTransition = "deactivate" | "reactivate";
 
+export type AdminAccountLifecycleDenialCode =
+  | "self_forbidden"
+  | "pending_target"
+  | "last_admin"
+  | "invalid_lifecycle"
+  | "invalid_identity"
+  | "auth_unconfirmed";
+
 export interface AdminAccountLifecycleContext {
   targetProfileId: string;
   accountKind: AccountKind;
@@ -163,7 +171,7 @@ export interface AdminAccountLifecycleContext {
   isSelf: boolean;
   canDeactivate: boolean;
   canReactivate: boolean;
-  denialCode: string | null;
+  denialCode: AdminAccountLifecycleDenialCode | null;
   hasExactB1Assignment: boolean;
   activeExactB1AdminCount: number;
   currentOrFutureAssignmentCount: number;
