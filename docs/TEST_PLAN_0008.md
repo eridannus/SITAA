@@ -2,7 +2,7 @@
 
 ## Estado y alcance
 
-El preflight corregido de `0008_operational_account_barrier_identity_correction.sql` fue aprobado, la aplicación compatible se publicó y la migración terminó con `COMMIT`; 0008 está aplicada y es inmutable. La primera ejecución del verificador abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`, cuyo ACL owner-only rechazó correctamente la llamada con SQLSTATE `42501`. La segunda aprobó esa regresión corregida, los controles estructurales, las fixtures, los rechazos controlados y las siete correcciones RPC exitosas, pero abortó porque las postcondiciones crudas de perfiles y auditoría seguían ejecutándose bajo RLS/ACL de `authenticated`. Ambas transacciones se descartaron completas: no persistieron fixtures, grants temporales, correcciones, eventos de auditoría ni cambios operativos. La corrección de límites de rol del verificador es local; su reejecución, los smoke tests y la reconciliación contra un snapshot post-0008 permanecen pendientes. Este plan no autoriza conexión ni ejecución contra Supabase.
+El preflight corregido de `0008_operational_account_barrier_identity_correction.sql` fue aprobado, la aplicación compatible se publicó y la migración terminó con `COMMIT`; 0008 está aplicada y es inmutable. La primera ejecución del verificador abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`. La segunda alcanzó siete correcciones RPC exitosas, pero dejó postcondiciones crudas bajo el rol cliente. Ambas transacciones se descartaron completas. La tercera ejecución, con límites owner/cliente corregidos, aprobó y terminó con `ROLLBACK`; no persistieron fixtures, grants temporales, correcciones ni eventos. La corrección de identidad aprobó en producción y creó el evento append-only sanitizado esperado. El smoke test posterior detectó sólo una composición de permisos incorrecta en la aplicación para responsables históricos cuyo programa actual ya no coincide con la actividad. La corrección y su smoke-test de confirmación permanecen pendientes; el snapshot y la reconciliación post-0008 también. Este plan no autoriza nuevas conexiones ni ejecución contra Supabase.
 
 Inventario contractual post-0008, pendiente de confirmación mediante snapshot: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados. La clausura distingue el ACL de tabla, el ACL explícito por columna en `pg_attribute.attacl`, la proyección table-derived de `information_schema.column_privileges` y el acceso efectivo de `has_column_privilege`: no puede sobrevivir ningún `attacl` y ningún acceso de columna puede exceder el ACL exacto de tabla.
 
@@ -258,7 +258,7 @@ Cobertura mínima numerada:
 
 El verificador también compara hashes normalizados de `prosrc` para las 29 rutinas reemplazadas y, en un dominio exacto independiente y uniforme, para las cuatro funciones nuevas; conserva el ACL exacto de esas rutinas, las dos políticas restrictivas y el inventario estructural y de privilegios sin delta no autorizado.
 
-La revisión estática local de fuente delimita cada intervalo `SET LOCAL ROLE authenticated`/`RESET ROLE`: exige cierre de todos los intervalos, conserva dentro de ellos las RPC públicas, DML cliente, regresiones de perfil propio y denegaciones esperadas, y rechaza lecturas directas de `admin_audit_events`, Auth o postcondiciones crudas de perfiles ajenos. Además comprueba que la proyección B.1 sanitizada y el intento histórico de reapertura permanecen como pruebas cliente, mientras las fotografías antes/después y la auditoría cruda quedan fuera. Esta revisión no ejecuta SQL ni sustituye la reejecución transaccional pendiente.
+La revisión estática local de fuente delimita cada intervalo `SET LOCAL ROLE authenticated`/`RESET ROLE`: exige cierre de todos los intervalos, conserva dentro de ellos las RPC públicas, DML cliente, regresiones de perfil propio y denegaciones esperadas, y rechaza lecturas directas de `admin_audit_events`, Auth o postcondiciones crudas de perfiles ajenos. Además comprueba que la proyección B.1 sanitizada y el intento histórico de reapertura permanecen como pruebas cliente, mientras las fotografías antes/después y la auditoría cruda quedan fuera. La ejecución final confirmó este contrato y terminó con `ROLLBACK`.
 
 ## Protocolo de locks y prueba manual en dos sesiones
 
@@ -316,7 +316,7 @@ La inspección local coordinada con la aplicación de 0008 confirmó, sin modifi
 
 ## Estado de la aplicación compatible y pruebas pendientes
 
-La aplicación compatible fue publicada antes de aplicar 0008. La aceptación operativa de B.2a todavía requiere reejecutar el verificador corregido y completar los smoke tests siguientes:
+La aplicación compatible fue publicada antes de aplicar 0008 y el verificador final ya aprobó. Los smoke tests confirmaron la corrección de identidad y la auditoría sanitizada. Queda pendiente repetir el escenario que expuso el defecto exclusivo de interfaz:
 
 1. `/admin/accounts` y el detalle B.1 siguen funcionando.
 2. El detalle carga el contexto B.2a sin exponer errores crudos.
@@ -326,6 +326,15 @@ La aplicación compatible fue publicada antes de aplicar 0008. La aceptación op
 6. La acción reautoriza, reconsulta contexto y usa sólo el RPC de mutación.
 7. Error de campo conserva valores, muestra resumen y enfoca el primer campo inválido.
 8. Éxito redirige al detalle, refresca datos y muestra `Identidad corregida`.
+
+### Regresión de responsable histórico entre programas
+
+- Una actividad histórica publicada conserva como responsable el mismo UUID de perfil después de corregir su programa principal.
+- `can_edit_activity(uuid) = true` permite a ese responsable consultar participantes, corregir asistencia y reabrir el check-in por 15 minutos.
+- `can_update_activity_base(uuid) = false` mantiene oculto el formulario base y `can_delete_activity(uuid) = false` mantiene oculta la eliminación.
+- Un actor ajeno, un borrador y un alumno participante conservan sus negativas actuales.
+- Corregir sólo `institutional_id_value` no altera ninguna decisión de actividad.
+- La regresión local ejecutable valida la composición booleana y la integración de la página/acciones; el smoke test corregido en producción sigue pendiente.
 
 ## Contrato de rollback
 
@@ -351,10 +360,11 @@ El rollback:
 3. Migración 0008: aplicada con `COMMIT`; artefacto inmutable.
 4. Primera ejecución del verificador: abortada y descartada por la llamada cliente inválida al helper owner-only.
 5. Segunda ejecución del verificador: aprobó la corrección anterior y las siete mutaciones RPC, pero abortó y se descartó porque las postcondiciones crudas permanecían bajo `authenticated`.
-6. Reejecutar el verificador con los límites de rol corregidos y confirmar su `ROLLBACK`: pendiente.
-7. Ejecutar smoke tests: pendiente.
-8. Regenerar el snapshot completo: pendiente.
-9. Reconciliar 0001–0008 y cerrar B.2a canónicamente: pendiente.
+6. Tercera ejecución del verificador con límites owner/cliente corregidos: aprobada, con `ROLLBACK`.
+7. Corrección de identidad y auditoría sanitizada en producción: aprobadas.
+8. Smoke test de permisos de responsable histórico: detectó un defecto exclusivo de aplicación; reejecución corregida pendiente.
+9. Regenerar el snapshot completo: pendiente.
+10. Reconciliar 0001–0008 y cerrar B.2a canónicamente: pendiente.
 
-Esta corrección local no reejecuta el verificador ni realiza ninguna operación remota.
+Esta corrección local no modifica ni reejecuta SQL y no realiza ninguna operación remota.
 

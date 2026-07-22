@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run check:text && npm run check:ui && next build",
+    "build": "npm run check:text && npm run check:ui && npm run check:permissions && next build",
     "start": "next start",
     "lint": "eslint .",
     "check:text": "node scripts/check-text-integrity.mjs",
-    "check:ui": "node scripts/check-ui-consistency.mjs"
+    "check:ui": "node scripts/check-ui-consistency.mjs",
+    "check:permissions": "node scripts/check-activity-permissions.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

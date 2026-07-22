@@ -56,9 +56,9 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - La aplicación no utiliza `service_role` ni escribe auditoría en B.1. Las mutaciones de cuenta quedan en B.2/B.3 y las de rol en Fase C.
 - No incorporar nombres, correos ni identificadores personales a semillas SQL.
 
-#### Fase B.2a aplicada mediante 0008; verificación pendiente
+#### Fase B.2a aplicada y verificada mediante 0008; smoke tests en curso
 
-El preflight 0008 fue aprobado, la aplicación compatible se publicó y la migración terminó con `COMMIT`. 0008 está aplicada y es inmutable, pero la reejecución del verificador corregido, los smoke tests y la reconciliación post-0008 siguen pendientes.
+El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migración terminó con `COMMIT` y el verificador final aprobó con `ROLLBACK`. 0008 está aplicada, verificada e inmutable; los smoke tests continúan y la reconciliación post-0008 sigue pendiente.
 
 - Una cuenta pendiente, inactiva, sin perfil o con estado incompatible no puede leer ni mutar actividades, participantes, asistencia o check-in, aunque conserve un JWT o asignaciones vigentes.
 - La frontera se aplica en RLS restrictiva y dentro de las RPC operativas `SECURITY DEFINER`; ocultar botones no constituye autorización.
@@ -74,8 +74,10 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó y la migra
 - Las tres funciones B.2a invocables tienen sólo owner + `authenticated`; el trigger es owner-only. Junto con la revocación de tres grants de tabla, el estado previsto pasa de 125/270/6/436 a 132/267/6/440 para rutina/tabla/secuencia/ACL expandida.
 - `public.is_b1_account_admin()` sigue siendo un helper privado owner-only: `PUBLIC`, `anon`, `authenticated` y `service_role` no tienen `EXECUTE`. Las RPC públicas B.1/B.2a son `SECURITY DEFINER` y lo invocan internamente bajo la autoridad de su propietario después de que el cliente entra por la firma autorizada. La invocación directa como `authenticated` debe fallar con SQLSTATE `42501`; no se concede privilegio adicional para probar su semántica.
 - No se añade `auth.admin`, clave `service_role` ni cliente privilegiado a la aplicación.
+- La página de actividad y las acciones de participantes consumen `can_edit_activity(uuid)` como decisión autoritativa para participantes y asistencia. No recalculan esa autorización con el programa actual; `can_update_activity_base(uuid)` y `can_delete_activity(uuid)` permanecen decisiones independientes y más estrechas. Cada mutación continúa protegida por su RPC `SECURITY DEFINER` y no se amplía RLS ni ACL.
 - 0008 preserva sin DDL los dos triggers Auth de Fase A. Sus guardas exigen exactamente `on_sitaa_auth_user_created` para `AFTER INSERT` y `on_sitaa_auth_user_email_changed` para `AFTER UPDATE OF email` con `OLD.email IS DISTINCT FROM NEW.email`, ambos por fila, habilitados normalmente y conectados por OID a su handler canónico. También bloquean duplicados o handlers reutilizados por otro trigger no interno. Tras falsos positivos del arnés por nombres, decompilación `OLD`/`NEW` y el cast `::text` del deparser, el preflight corregido aprobó sus 35 bloqueos y terminó con `ROLLBACK`.
 - La primera ejecución del verificador post-aplicación abortó dentro de su propia transacción porque intentó evaluar directamente el helper owner-only bajo `authenticated`. La denegación fue correcta; no persistieron fixtures, grants temporales, eventos de auditoría ni cambios operativos. El verificador corregido prueba por separado semántica owner, denegación ACL cliente y autorización mediante las RPC públicas, sin cambiar ningún privilegio persistente.
+- Una segunda ejecución llegó a las mutaciones y falló por inspeccionar postcondiciones owner-only con el rol cliente; también se descartó. La tercera, con los límites corregidos, aprobó y terminó con `ROLLBACK`.
 
 ### Autorización y base de datos
 

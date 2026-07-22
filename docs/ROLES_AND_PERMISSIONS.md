@@ -32,7 +32,7 @@ Un usuario puede conservar `student` y recibir temporalmente `peer_tutor`. Al ve
 - El trabajador se identifica con número de trabajador y puede recibir `professor`, responsabilidades de coordinación, jefatura, secretaría técnica u otras asignaciones autorizadas.
 - El programa principal describe afiliación y no concede permisos por sí mismo.
 
-Una asignación sólo produce autorización operativa cuando la cuenta asociada está activa y compatible (`account_status = active`, `is_active = true`). La 0008 local propuesta para B.2a —todavía no aplicada ni verificada en PostgreSQL— hace que RLS y las RPC operativas apliquen esta frontera aun si el JWT o la asignación todavía parecen vigentes. Las cuentas no activas conservarían únicamente el acceso propio mínimo necesario para explicar su estado.
+Una asignación sólo produce autorización operativa cuando la cuenta asociada está activa y compatible (`account_status = active`, `is_active = true`). La migración 0008 aplicada y verificada para B.2a hace que RLS y las RPC operativas apliquen esta frontera aun si el JWT o la asignación todavía parecen vigentes. Las cuentas no activas conservan únicamente el acceso propio mínimo necesario para explicar su estado.
 
 La corrección administrativa B.2a conserva la autoridad exacta de B.1 y no modifica roles. Cuando cambia tipo de persona o programa, serializa la comprobación contra `role_assignments`, `activities` y `activity_participants` en ese orden; sólo una dependencia abierta —borrador o actividad aún no terminada en tiempo de Ciudad de México— bloquea. La responsabilidad o participación histórica no borrador ya terminada no bloquea. Las altas de participantes pasan por RPC, sin DML directo de `authenticated`; las escrituras de actividades conservan el alcance autorizado, no pueden sustituir creador/responsable ni reabrir historia mediante DML cliente. Las mutaciones futuras de roles pertenecen a Fase C y deberán adoptar la misma revalidación posterior a la espera.
 
@@ -94,6 +94,7 @@ La selección de campos obligatorios corresponde a acuerdos colegiados o institu
 - Las actividades nuevas no pueden crearse con fecha pasada.
 - Una actividad ya ocurrida también bloquea sus datos base para responsables regulares.
 - Participantes, asistencia y notas de asistencia permanecen editables después de ocurrida la actividad para usuarios autorizados.
+- En actividades publicadas, `can_edit_activity(uuid)` conserva la administración de participantes y asistencia para el creador o `responsible_profile_id` registrado, aunque el programa principal actual de ese perfil haya cambiado. La responsabilidad histórica se vincula al UUID del perfil; el identificador institucional no interviene en la autorización.
 - Las correcciones administrativas de datos base dependen de `can_update_activity_base`; la eliminación depende de `can_delete_activity`.
 - Ocultar controles en la interfaz no sustituye RLS ni las funciones autorizadas de Supabase.
 

@@ -58,7 +58,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0007` están aplicadas, verificadas y reconciliadas. `0008` está aplicada e inmutable, con reejecución del verificador y reconciliación pendientes. `0009` es el siguiente número disponible. Todo cambio futuro debe:
+`0001`–`0007` están aplicadas, verificadas y reconciliadas. `0008` está aplicada, verificada e inmutable, con smoke tests y reconciliación pendientes. `0009` es el siguiente número disponible. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0008`;
@@ -166,7 +166,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Diferencias ambientales: timestamp, token aleatorio `\restrict`, omisión textual opcional de `SECURITY INVOKER` y formato de `pg_dump`/`psql`.
 - Resultado: sin deriva inexplicada; políticas, secuencias, catálogos y objetos post-0006 no modificados por 0007 permanecen intactos.
 
-## 0008_operational_account_barrier_identity_correction.sql — aplicada; reejecución del verificador pendiente
+## 0008_operational_account_barrier_identity_correction.sql — aplicada y verificada; smoke tests en curso
 
 - Fase B.2a preparada y aplicada sobre el snapshot post-0007 `2026-07-21T00:16:03Z`; ese snapshot sigue siendo la última evidencia reconciliada y todavía no representa los objetos vivos post-0008.
 - Añade un helper privado de cuenta operativa activa, dos políticas RLS restrictivas, guardas explícitas en 29 rutinas operativas y dos RPC de corrección administrativa.
@@ -188,5 +188,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Aplicación: la versión compatible B.2a fue publicada y 0008 terminó con `COMMIT`. La migración está aplicada y es inmutable.
 - Primera ejecución del verificador: superó los controles estáticos y avanzó hasta las fixtures, pero abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`. El helper es owner-only y PostgreSQL denegó correctamente `EXECUTE` con SQLSTATE `42501`; la transacción abortada se descartó y no persistieron fixtures, grants temporales, eventos de auditoría ni cambios operativos.
 - Segunda ejecución del verificador: aprobó la regresión del helper privado, los contratos estructurales, las fixtures, los rechazos controlados y siete correcciones de identidad por RPC. Abortó después con `0008_verify_institutional_correction_failed` porque las lecturas crudas de perfiles ajenos, auditoría y frontera histórica aún se ejecutaban bajo `authenticated`; RLS/ACL ocultaron correctamente esas superficies. La transacción se descartó sin persistir fixtures, correcciones, grants ni eventos.
-- Segunda corrección local del verificador: conserva RPC y DML cliente bajo `authenticated`, valida allí la proyección B.1 sanitizada, restablece el rol antes de inspeccionar perfiles/auditoría crudos y divide la reapertura histórica en precondiciones owner, intento cliente y atomicidad owner. Añade diagnósticos focalizados y una auditoría estática de límites de rol. La reejecución del verificador, los smoke tests, el snapshot post-0008 y la reconciliación `0001`–`0008` permanecen pendientes.
+- Segunda corrección local del verificador: conserva RPC y DML cliente bajo `authenticated`, valida allí la proyección B.1 sanitizada, restablece el rol antes de inspeccionar perfiles/auditoría crudos y divide la reapertura histórica en precondiciones owner, intento cliente y atomicidad owner. Añade diagnósticos focalizados y una auditoría estática de límites de rol. En ese momento, la reejecución y los smoke tests permanecían pendientes.
+- Verificación final: el verificador con límites owner/cliente corregidos aprobó y terminó con `ROLLBACK`; no persistieron fixtures, correcciones, grants temporales ni auditoría sintética.
+- Smoke test B.2a: la corrección de identidad y el evento append-only sanitizado aprobaron. El escenario de responsabilidad histórica entre programas expuso una compuerta de aplicación que recalculaba el programa actual, aunque `can_edit_activity(uuid)` autorizaba correctamente al creador/responsable. No es deriva de base ni requiere 0009; la interfaz y las acciones pasan a consumir la RPC autoritativa y su reejecución de smoke test queda pendiente.
 - 0001–0008 son migraciones aplicadas e inmutables. 0009 es el siguiente número disponible, pero este defecto exclusivo del arnés no requiere una migración nueva. Durante esta corrección local no se conectó a Supabase ni se ejecutó SQL.

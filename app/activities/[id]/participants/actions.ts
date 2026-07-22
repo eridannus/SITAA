@@ -3,11 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
-import { canManageActivityScope } from "@/lib/activities/activity-scope-permissions";
-import { getActivityFormOptions } from "@/lib/activities/get-activity-form-options";
 import { getActivityAttendanceDeadline } from "@/lib/activities/get-attendance-checkin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { Activity, ActivityFormValues } from "@/types/activities";
+import type { Activity } from "@/types/activities";
 import type { AttendanceStatus, ParticipantMutationState, ParticipantSearchState, ParticipationProfileSearchResult } from "@/types/participants";
 import type { InstitutionalIdType, PersonType } from "@/types/sitaa";
 
@@ -32,29 +30,23 @@ function pendingAfterExpirationError() {
   return "La ventana de asistencia ya terminó. No es posible dejar registros en Pendiente.";
 }
 
-function activityValues(activity: Activity): ActivityFormValues {
-  return {
-    title: activity.title, scope_type: activity.scope_type, description: activity.description ?? "",
-    program_id: activity.program_id ?? "", activity_type_code: activity.activity_type_code ?? "",
-    service_type_code: activity.service_type_code ?? "", attention_category_code: activity.attention_category_code ?? "",
-    modality_code: activity.modality_code ?? "", location_type_code: activity.location_type_code ?? "",
-    location_detail: activity.location_detail ?? "", start_date: activity.start_date ?? "",
-    start_time: activity.start_time ?? "", duration_mode: activity.duration_mode ?? "custom",
-    end_date: activity.end_date ?? "", end_time: activity.end_time ?? "",
-  };
-}
-
 async function requireEditor(activityId: string) {
   const context = await getAuthenticatedUserContext();
   if (!context) redirect("/login?error=sesion-requerida");
   if (context.error || !context.profile) return null;
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("activities").select("*").eq("id", activityId).maybeSingle();
-  if (error || !data) return null;
-  const activity = data as Activity;
-  if (activity.scope_type !== "program" || !activity.program_id) return null;
-  const options = await getActivityFormOptions();
-  if (!canManageActivityScope(context, activityValues(activity), options.programs, activity.division_id)) return null;
+  const [activityResult, editPermission] = await Promise.all([
+    supabase.from("activities").select("*").eq("id", activityId).maybeSingle(),
+    supabase.rpc("can_edit_activity", { target_activity_id: activityId }),
+  ]);
+  if (
+    activityResult.error ||
+    !activityResult.data ||
+    editPermission.error ||
+    editPermission.data !== true
+  ) return null;
+  const activity = activityResult.data as Activity;
+  if (activity.status_code === "draft") return null;
   return { supabase, activity };
 }
 

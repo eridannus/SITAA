@@ -3,7 +3,8 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-context";
-import { canManageActivityScope, getActivityScopeAccess, isStudentOnlyUser } from "@/lib/activities/activity-scope-permissions";
+import { getActivityDetailPermissions } from "@/lib/activities/activity-detail-permissions";
+import { getActivityScopeAccess, isStudentOnlyUser } from "@/lib/activities/activity-scope-permissions";
 import {
   getPublicationScheduleRejectionErrors,
   PUBLICATION_SCHEDULE_MESSAGE,
@@ -105,19 +106,34 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
   if (studentOnly && isDraft) return <main className="mx-auto max-w-4xl px-5 py-16"><h1 className="text-3xl font-bold">Actividad no disponible</h1><p className="mt-4">La actividad no existe o tus permisos no permiten consultarla.</p><Link href="/activities" className="sitaa-text-action mt-7">Volver a actividades</Link></main>;
   const technicalAdmin = context.activeRoleAssignments.some((item) => item.role_code === "technical_admin");
   const legacyCleanup = activity.scope_type === "division" && (technicalAdmin || activity.created_by === context.user.id);
-  const normalCanEdit = activity.scope_type === "program" && canManageActivityScope(context, values, options.programs, activity.division_id);
-  const canManageActivity = !studentOnly && (normalCanEdit || legacyCleanup);
-  const [baseUpdatePermission, deletePermission, endedResult] = await Promise.all([
+  const [baseUpdatePermission, deletePermission, editPermission, endedResult] = await Promise.all([
     supabase.rpc("can_update_activity_base", { target_activity_id: id }),
     supabase.rpc("can_delete_activity", { target_activity_id: id }),
+    supabase.rpc("can_edit_activity", { target_activity_id: id }),
     isDraft ? Promise.resolve({ data: false, error: null }) : supabase.rpc("activity_has_ended", { target_activity_id: id }),
   ]);
   const hasBaseCorrectionRole = context.activeRoleAssignments.some((item) => BASE_CORRECTION_ROLES.has(item.role_code));
   const isOwnDraft = isDraft && activity.created_by === context.user.id;
-  const canUpdateBaseData = isOwnDraft || (!isDraft && baseUpdatePermission.data === true);
-  const canDeleteActivityRecord = isOwnDraft || (!isDraft && deletePermission.data === true);
+  const {
+    canManageParticipants,
+    canManageAttendance,
+    canUpdateBaseData,
+    canDeleteActivityRecord,
+  } = getActivityDetailPermissions({
+    isDraft,
+    isOwnDraft,
+    studentOnly,
+    canEditActivity: editPermission.error ? null : editPermission.data,
+    canUpdateActivityBase: baseUpdatePermission.error ? null : baseUpdatePermission.data,
+    canDeleteActivity: deletePermission.error ? null : deletePermission.data,
+  });
   const activityHasEnded = !isDraft && endedResult.data === true;
-  const canManageParticipants = !isDraft && !studentOnly && normalCanEdit;
+  const hasAnyManagementPath =
+    canManageParticipants ||
+    canManageAttendance ||
+    canUpdateBaseData ||
+    canDeleteActivityRecord ||
+    legacyCleanup;
 
   let access = getActivityScopeAccess(context, options.programs, options.divisions);
   if (legacyCleanup && !technicalAdmin) {
@@ -173,7 +189,7 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
       : "Los datos base están bloqueados. Si necesitas corregirlos, contacta al responsable correspondiente.";
   const baseDataLockMessage = `${activityHasEnded ? "Esta actividad ya ocurrió." : "Esta actividad ya fue publicada."} ${contactMessage} Puedes actualizar participantes y asistencia cuando corresponda.`;
 
-  const [activeCheckinResult, checkinStateResult, checkinOpenAtResult, checkinDeadlineResult] = canManageParticipants
+  const [activeCheckinResult, checkinStateResult, checkinOpenAtResult, checkinDeadlineResult] = canManageAttendance
     ? await Promise.all([getActiveActivityAttendanceCheckin(id), getActivityAttendanceCheckinState(id), getActivityAttendanceOpenAt(id), getActivityAttendanceDeadline(id)])
     : [{ token: null, error: null }, { state: null, error: null }, { openAt: null }, { deadline: null, hasPassed: false }];
   const activeCheckinState = checkinStateResult.state;
@@ -222,11 +238,11 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
         <div className="min-w-0"><dt className="font-semibold text-slate-500">Responsable</dt><dd className="break-words text-slate-900">{valueOrPlaceholder(responsibleName)}</dd></div>
       </dl>
       {studentOnly && <p className="sitaa-alert sitaa-alert--info mt-6 font-semibold">{card?.ownParticipantRoleLabel ? `Tu participación: ${card.ownParticipantRoleLabel}.` : "Estás registrado como participante en esta actividad."}</p>}
-      {!isDraft && canManageActivity && !canUpdateBaseData && <p className="sitaa-alert sitaa-alert--warning mt-6 font-semibold">{baseDataLockMessage}</p>}
-      {!studentOnly && !canManageActivity && <p className="sitaa-alert mt-6">Puedes consultar este registro, pero tus asignaciones actuales no permiten editarlo ni eliminarlo.</p>}
+      {!isDraft && canManageParticipants && !canUpdateBaseData && <p className="sitaa-alert sitaa-alert--warning mt-6 font-semibold">{baseDataLockMessage}</p>}
+      {!studentOnly && !hasAnyManagementPath && <p className="sitaa-alert mt-6">Puedes consultar este registro, pero no tienes permisos de administración para esta actividad.</p>}
     </section>}
 
-    {canManageParticipants && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} checkinState={activeCheckinState} attendanceOpenAt={attendanceOpenAt} attendanceDeadline={attendanceDeadline} attendanceDeadlinePassed={attendanceDeadlinePassed} status={displayedCheckinStatus} detail={displayedCheckinDetail} />}
+    {canManageAttendance && <AttendanceCheckinManager activityId={id} token={activeCheckin} directLink={directCheckinLink} qrDataUri={qrDataUri} checkinState={activeCheckinState} attendanceOpenAt={attendanceOpenAt} attendanceDeadline={attendanceDeadline} attendanceDeadlinePassed={attendanceDeadlinePassed} status={displayedCheckinStatus} detail={displayedCheckinDetail} />}
 
     {canManageParticipants && (participantsError
       ? <section className="sitaa-alert sitaa-alert--error mt-10 p-7"><h2 className="text-xl font-bold">Participantes</h2><p className="mt-3">No fue posible cargar los participantes.</p></section>
@@ -235,4 +251,3 @@ export default async function ActivityDetailPage({ params, searchParams }: Props
     {canDeleteActivityRecord && <section className="sitaa-alert sitaa-alert--error mt-10 p-7 sm:p-10"><h2 className="text-xl font-bold">Eliminar actividad</h2><p className="mt-3">Esta acción elimina definitivamente el registro.</p>{deleteError && <p role="alert" className="mt-3 font-semibold">No fue posible eliminar la actividad.</p>}<div className="mt-5"><DeleteActivityButton activityId={id} /></div></section>}
   </main>;
 }
-

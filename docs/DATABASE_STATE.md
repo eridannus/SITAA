@@ -4,7 +4,7 @@
 
 **Snapshot vivo comparado:** `2026-07-21T00:16:03Z`, estado `SUCCESS`.
 
-La fuente de verdad histórica y evolutiva comprende `0001`–`0007`, aplicadas, verificadas y reconciliadas, más 0008, aplicada pero todavía pendiente de verificación y reconciliación:
+La fuente de verdad histórica y evolutiva comprende `0001`–`0007`, aplicadas, verificadas y reconciliadas, más 0008, aplicada y verificada pero todavía pendiente de snapshot y reconciliación:
 
 1. `0001_baseline_current_schema.sql`: baseline reconciliada.
 2. `0002_database_security_and_integrity.sql`: seguridad, publicación y privilegios mínimos.
@@ -13,7 +13,7 @@ La fuente de verdad histórica y evolutiva comprende `0001`–`0007`, aplicadas,
 5. `0005_fix_google_oauth_user_creation.sql`: secuencia de alta Google.
 6. `0006_structured_person_names.sql`: nombres personales estructurados y `full_name` derivado.
 7. `0007_admin_account_directory_audit.sql`: directorio administrativo B.1 de sólo lectura y bitácora append-only.
-8. `0008_operational_account_barrier_identity_correction.sql`: barrera operativa y corrección administrativa B.2a; aplicada e inmutable, con reejecución del verificador pendiente.
+8. `0008_operational_account_barrier_identity_correction.sql`: barrera operativa y corrección administrativa B.2a; aplicada, verificada e inmutable.
 
 La comparación fue local contra los artefactos ya generados en `supabase/reconciliation/live/`. No se conectó a Supabase ni se ejecutó SQL durante este cierre.
 
@@ -105,8 +105,10 @@ El detalle probatorio está en `supabase/reconciliation/0007_post_apply_reconcil
 
 El primer preflight remoto de 0008 terminó con un falso positivo por nombres; el segundo abortó porque `pg_get_expr` no puede decompilar `OLD` y `NEW`; el tercero expuso el cast `::text` añadido por `pg_get_triggerdef`. La cuarta ejecución, ya corregida, devolvió las 40 categorías, dejó sus 35 bloqueos en cero y terminó con `ROLLBACK`. La aplicación compatible se publicó y 0008 se aplicó después.
 
-La primera ejecución del verificador 0008 abortó al invocar directamente bajo `authenticated` el helper privado owner-only `is_b1_account_admin()`; la denegación `42501` fue correcta. La segunda aprobó esa corrección, los contratos anteriores, las fixtures, los rechazos y siete mutaciones RPC, pero abortó porque las postcondiciones crudas de perfiles ajenos, auditoría e historia permanecían bajo RLS/ACL de `authenticated`. Ambas transacciones se descartaron sin persistir fixtures, correcciones, grants, auditoría ni cambios operativos. La segunda corrección local conserva las superficies cliente bajo `authenticated` y mueve la inspección cruda al owner, incluida una secuencia histórica owner/cliente/owner. Su reejecución, los smoke tests, el snapshot post-0008 y la reconciliación `0001`–`0008` permanecen pendientes.
+La primera ejecución del verificador 0008 abortó al invocar directamente bajo `authenticated` el helper privado owner-only `is_b1_account_admin()`; la denegación `42501` fue correcta. La segunda aprobó esa corrección, los contratos anteriores, las fixtures, los rechazos y siete mutaciones RPC, pero abortó porque las postcondiciones crudas de perfiles ajenos, auditoría e historia permanecían bajo RLS/ACL de `authenticated`. Ambas transacciones se descartaron sin persistir fixtures, correcciones, grants, auditoría ni cambios operativos. La segunda corrección local conserva las superficies cliente bajo `authenticated` y mueve la inspección cruda al owner, incluida una secuencia histórica owner/cliente/owner.
 
-El directorio `supabase/reconciliation/live/` continúa siendo evidencia autoritativa post-0007 y no debe editarse para simular el estado nuevo. Los inventarios de 51 funciones, 11 triggers, 25 políticas, 132 grants de rutina, 267 de tabla, 6 de secuencia y 440 ACL expandidas son contratos esperados, no conteos vivos observados, hasta regenerar el snapshot. 0009 es el siguiente número disponible; este defecto exclusivo del verificador no requiere una migración nueva.
+La tercera ejecución del verificador aprobó y terminó con `ROLLBACK`. El smoke test de corrección de identidad y auditoría sanitizada aprobó; después se detectó que la página y las acciones de participantes ocultaban controles a un responsable histórico cuyo programa principal fue corregido. El contrato vivo `can_edit_activity(uuid)` sí autoriza por creador o `responsible_profile_id`, por lo que el bloqueo actual es exclusivamente de composición en la aplicación, sin deriva ni migración nueva. Su smoke test corregido, el snapshot post-0008 y la reconciliación `0001`–`0008` permanecen pendientes.
+
+El directorio `supabase/reconciliation/live/` continúa siendo evidencia autoritativa post-0007 y no debe editarse para simular el estado nuevo. Los inventarios de 51 funciones, 11 triggers, 25 políticas, 132 grants de rutina, 267 de tabla, 6 de secuencia y 440 ACL expandidas son contratos esperados, no conteos vivos observados, hasta regenerar el snapshot. 0009 es el siguiente número disponible; ni las correcciones del verificador ni la composición de permisos de aplicación requieren una migración nueva.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.
