@@ -1,6 +1,6 @@
 # Filtrado y visibilidad
 
-**Estado funcional:** reglas generales aprobadas; contrato administrativo B.1 implementado y reconciliado mediante 0007.
+**Estado funcional:** reglas generales aprobadas; B.1 implementada y reconciliada mediante 0007; barrera operativa B.2a aplicada y reconciliada mediante 0008.
 
 ## Regla central
 

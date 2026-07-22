@@ -1,6 +1,6 @@
 # Modelo de datos
 
-> **Vigencia:** este documento describe el esquema vivo reconciliado después de 0007. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
+> **Vigencia:** este documento describe el esquema vivo reconciliado después de 0008. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
 
 ## Tablas implementadas
 
@@ -30,7 +30,7 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 
 `admin_audit_events` está implementada como bitácora administrativa append-only: UUID, actor y objetivo en `profiles`, acción, resultado, motivo opcional, asignación V1 opcional, metadata de objeto JSON limitada a 16 384 bytes y fecha. Sus referencias usan borrado restrictivo, RLS no concede acceso directo a clientes y dos triggers bloquean actualización, eliminación y truncado. `service_role` conserva únicamente `SELECT` e `INSERT`; B.1 sólo consulta una proyección sanitizada mediante RPC, no escribe eventos ni devuelve metadata sin procesar.
 
-El snapshot `2026-07-21T00:16:03Z` confirma sus nueve columnas, ocho restricciones, tres índices propios —incluida la PK—, dos triggers, RLS sin políticas y ACL mínimo. La tabla forma parte del inventario vivo reconciliado posterior a 0007.
+El snapshot `2026-07-22T01:46:13Z` confirma sus nueve columnas, ocho restricciones, tres índices propios —incluida la PK—, dos triggers, RLS sin políticas y ACL mínimo. La tabla forma parte del inventario vivo reconciliado posterior a 0008.
 
 ### Reglas del perfil
 
@@ -167,7 +167,7 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 
 ## Estado de implementación
 
-La Fase A de identidad Google y los nombres estructurados de 0006 están aplicados, verificados y reconciliados. Participantes, asistencia y check-in son módulos implementados. La Fase B.1 está implementada, verificada, probada y reconciliada mediante 0007; B.2, B.3 y Fase C permanecen pendientes.
+La Fase A de identidad Google y los nombres estructurados de 0006 están aplicados, verificados y reconciliados. Participantes, asistencia y check-in son módulos implementados. La Fase B.1 está implementada, verificada, probada y reconciliada mediante 0007. B.2a está cerrada mediante 0008; B.2b, B.3 y Fase C permanecen pendientes.
 ### Accesos de asistencia por QR, enlace y código
 
 `activity_checkin_tokens` representa el acceso temporal para confirmar asistencia de participantes ya registrados. El enlace directo usa `secret_token`; el código manual usa `three_word_code`. Ambos actualizan los mismos campos de asistencia de `activity_participants` mediante `check_in_activity`.
@@ -186,9 +186,9 @@ La Fase A de identidad Google y los nombres estructurados de 0006 están aplicad
 - La actualización manual usa la misma estructura que después podrán actualizar QR, enlaces o códigos.
 - Las correcciones manuales deben conservar quién actualizó, cuándo y las notas disponibles.
 
-## Delta preparado por 0008
+## Delta implementado y reconciliado por 0008
 
-0008 permanece local, no aplicada, no verificada en PostgreSQL, sin smoke tests y no reconciliada. No crea tablas, columnas, índices, restricciones ni semillas. Añade una frontera de autorización, dos RPC administrativas y un trigger de integridad para las escrituras directas soportadas de `activities`; además retira el DML directo de `authenticated` sobre `activity_participants` para obligar a usar sus RPC validados.
+0008 está aplicada, verificada, probada, reconciliada e inmutable. No crea tablas, columnas, índices, restricciones ni semillas. Añade una frontera de autorización, dos RPC administrativas y un trigger de integridad para las escrituras directas soportadas de `activities`; además retira el DML directo de `authenticated` sobre `activity_participants` para obligar a usar sus RPC validadas. El snapshot `2026-07-22T01:46:13Z` confirma 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers, 51 firmas de función, 25 políticas, 51 semillas controladas y RLS habilitado en las 18 tablas.
 
 Una corrección exitosa conserva UUID de perfil, email, vínculo Auth, clase/estado de cuenta, ciclo de vida, asignaciones y toda la historia operativa. Inserta exactamente un evento append-only en `admin_audit_events` con `action_code = account_identity_corrected`, `outcome = success`, razón normalizada y metadata que contiene sólo el arreglo ordenado `changed_fields`.
 

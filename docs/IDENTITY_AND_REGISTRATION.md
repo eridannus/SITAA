@@ -87,11 +87,11 @@ La Fase A comprende registro público sólo con Google, rutas separadas para alu
 
 Durante el cierre se separaron administrativamente una cuenta técnica interna y una cuenta académica de profesor. La cuenta técnica conserva únicamente su identidad técnica y la asignación `technical_admin`; una asignación académica temporal quedó inactiva. La cuenta académica se registró normalmente con Google y no recibió roles. No se transfirieron actividades ni historia. Esta limpieza inicial no constituye fusión de cuentas ni una migración reutilizable.
 
-Las fases B–F permanecen abiertas: administración de cuentas, roles V2, paneles y filtros según permisos, retiro del acceso académico transitorio de `technical_admin` y check-in abierto.
+Fase B.1 y B.2a están cerradas. Permanecen abiertas B.2b/B.3, roles V2/Fase C, paneles y filtros posteriores, retiro del acceso académico transitorio de `technical_admin` y check-in abierto.
 
-## Corrección administrativa preparada en B.2a
+## Corrección administrativa implementada en B.2a
 
-El autoservicio autenticado continúa limitado a `first_names`, `paternal_surname` y `maternal_surname` propios. B.2a prepara una RPC distinta para que un administrador B.1 exacto corrija la identidad estable de otra cuenta activa o inactiva con motivo y auditoría.
+El autoservicio autenticado continúa limitado a `first_names`, `paternal_surname` y `maternal_surname` propios. B.2a implementa mediante 0008 una RPC distinta para que un administrador B.1 exacto corrija la identidad estable de otra cuenta activa o inactiva con motivo y auditoría. La capacidad fue verificada, probada y reconciliada contra el snapshot `2026-07-22T01:46:13Z`.
 
 En cuentas institucionales puede corregir nombres, `person_type`, identificador y programa activo; en cuentas técnicas, sólo nombres. UUID, email, `account_kind`, `account_status`, `is_active`, fechas de ciclo de vida, vínculo Auth, roles e historia son inmutables. Las cuentas `pending_registration` deben completar su propio flujo y no son objetivos de corrección administrativa.
 

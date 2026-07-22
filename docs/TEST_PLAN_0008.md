@@ -2,9 +2,9 @@
 
 ## Estado y alcance
 
-El preflight corregido de `0008_operational_account_barrier_identity_correction.sql` fue aprobado, la aplicación compatible se publicó y la migración terminó con `COMMIT`; 0008 está aplicada y es inmutable. La primera ejecución del verificador abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`. La segunda alcanzó siete correcciones RPC exitosas, pero dejó postcondiciones crudas bajo el rol cliente. Ambas transacciones se descartaron completas. La tercera ejecución, con límites owner/cliente corregidos, aprobó y terminó con `ROLLBACK`; no persistieron fixtures, grants temporales, correcciones ni eventos. La corrección de identidad aprobó en producción y creó el evento append-only sanitizado esperado. El smoke test posterior detectó sólo una composición de permisos incorrecta en la aplicación para responsables históricos cuyo programa actual ya no coincide con la actividad. La corrección y su smoke-test de confirmación permanecen pendientes; el snapshot y la reconciliación post-0008 también. Este plan no autoriza nuevas conexiones ni ejecución contra Supabase.
+El preflight corregido de `0008_operational_account_barrier_identity_correction.sql` fue aprobado, la aplicación compatible se publicó y la migración terminó con `COMMIT`; 0008 está aplicada e inmutable. La primera ejecución del verificador abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`. La segunda alcanzó siete correcciones RPC exitosas, pero dejó postcondiciones crudas bajo el rol cliente. Ambas transacciones se descartaron completas. La tercera ejecución, con límites owner/cliente corregidos, aprobó y terminó con `ROLLBACK`; no persistieron fixtures, grants temporales, correcciones ni eventos. La corrección de identidad y el evento append-only sanitizado aprobaron en producción. El defecto de composición de permisos para responsables históricos se corrigió en la aplicación y su smoke test final aprobó. El snapshot `2026-07-22T01:46:13Z` quedó reconciliado contra 0001–0008 sin deriva inexplicada. Este plan no autoriza nuevas conexiones ni ejecución contra Supabase.
 
-Inventario contractual post-0008, pendiente de confirmación mediante snapshot: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados. La clausura distingue el ACL de tabla, el ACL explícito por columna en `pg_attribute.attacl`, la proyección table-derived de `information_schema.column_privileges` y el acceso efectivo de `has_column_privilege`: no puede sobrevivir ningún `attacl` y ningún acceso de columna puede exceder el ACL exacto de tabla.
+Inventario vivo post-0008 confirmado mediante snapshot: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados. La clausura distingue el ACL de tabla, el ACL explícito por columna en `pg_attribute.attacl`, la proyección table-derived de `information_schema.column_privileges` y el acceso efectivo de `has_column_privilege`: no puede sobrevivir ningún `attacl` y ningún acceso de columna puede exceder el ACL exacto de tabla.
 
 Partiendo de los snapshots de privilegios post-0007 (125 grants de rutina, 270 de tabla, 6 de secuencia y 436 ACL expandidas), el contrato exacto post-0008 es 132/267/6/440. Las cuatro funciones añaden siete entradas de rutina —owner + `authenticated` para tres, sólo owner para el trigger— y la tabla de participantes pierde tres grants de `authenticated`; el delta ACL neto es +4.
 
@@ -314,9 +314,9 @@ La inspección local coordinada con la aplicación de 0008 confirmó, sin modifi
 - cliente de corrección: argumentos RPC nominales y mapeo de errores controlados;
 - ausencia de PII en URL y `localStorage`.
 
-## Estado de la aplicación compatible y pruebas pendientes
+## Estado de la aplicación compatible y pruebas cerradas
 
-La aplicación compatible fue publicada antes de aplicar 0008 y el verificador final ya aprobó. Los smoke tests confirmaron la corrección de identidad y la auditoría sanitizada. Queda pendiente repetir el escenario que expuso el defecto exclusivo de interfaz:
+La aplicación compatible fue publicada antes de aplicar 0008 y el verificador final aprobó. Los smoke tests confirmaron la corrección de identidad, la auditoría sanitizada y, después de corregir la composición exclusiva de aplicación, el escenario de responsable histórico entre programas:
 
 1. `/admin/accounts` y el detalle B.1 siguen funcionando.
 2. El detalle carga el contexto B.2a sin exponer errores crudos.
@@ -334,7 +334,7 @@ La aplicación compatible fue publicada antes de aplicar 0008 y el verificador f
 - `can_update_activity_base(uuid) = false` mantiene oculto el formulario base y `can_delete_activity(uuid) = false` mantiene oculta la eliminación.
 - Un actor ajeno, un borrador y un alumno participante conservan sus negativas actuales.
 - Corregir sólo `institutional_id_value` no altera ninguna decisión de actividad.
-- La regresión local ejecutable valida la composición booleana y la integración de la página/acciones; el smoke test corregido en producción sigue pendiente.
+- La regresión local ejecutable valida la composición booleana y la integración de la página/acciones; el smoke test corregido en producción aprobó.
 
 ## Contrato de rollback
 
@@ -362,9 +362,9 @@ El rollback:
 5. Segunda ejecución del verificador: aprobó la corrección anterior y las siete mutaciones RPC, pero abortó y se descartó porque las postcondiciones crudas permanecían bajo `authenticated`.
 6. Tercera ejecución del verificador con límites owner/cliente corregidos: aprobada, con `ROLLBACK`.
 7. Corrección de identidad y auditoría sanitizada en producción: aprobadas.
-8. Smoke test de permisos de responsable histórico: detectó un defecto exclusivo de aplicación; reejecución corregida pendiente.
-9. Regenerar el snapshot completo: pendiente.
-10. Reconciliar 0001–0008 y cerrar B.2a canónicamente: pendiente.
+8. Smoke test de permisos de responsable histórico: defecto exclusivo de aplicación corregido y reejecución aprobada.
+9. Snapshot completo `2026-07-22T01:46:13Z`: generado con estado `SUCCESS`.
+10. Reconciliación 0001–0008: cerrada sin deriva inexplicada; Fase B.2a cerrada dentro de su alcance aprobado.
 
 Esta corrección local no modifica ni reejecuta SQL y no realiza ninguna operación remota.
 

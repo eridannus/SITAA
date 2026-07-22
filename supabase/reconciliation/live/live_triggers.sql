@@ -1,4 +1,5 @@
 -- table	trigger	definition
+activities	enforce_activity_writer_integrity_b2a	CREATE TRIGGER enforce_activity_writer_integrity_b2a BEFORE INSERT OR UPDATE ON activities FOR EACH ROW EXECUTE FUNCTION enforce_activity_writer_integrity_b2a()
 activities	set_activities_updated_at	CREATE TRIGGER set_activities_updated_at BEFORE UPDATE ON activities FOR EACH ROW EXECUTE FUNCTION set_updated_at()
 activities	validate_activities_scheduled_state	CREATE TRIGGER validate_activities_scheduled_state BEFORE INSERT OR UPDATE ON activities FOR EACH ROW EXECUTE FUNCTION validate_activity_scheduled_state()
 activity_participants	guard_activity_participants_pending_deadline	CREATE TRIGGER guard_activity_participants_pending_deadline BEFORE UPDATE OF attendance_status ON activity_participants FOR EACH ROW EXECUTE FUNCTION guard_activity_participant_pending_deadline()

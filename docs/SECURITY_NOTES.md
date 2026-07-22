@@ -56,9 +56,9 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - La aplicación no utiliza `service_role` ni escribe auditoría en B.1. Las mutaciones de cuenta quedan en B.2/B.3 y las de rol en Fase C.
 - No incorporar nombres, correos ni identificadores personales a semillas SQL.
 
-#### Fase B.2a aplicada y verificada mediante 0008; smoke tests en curso
+#### Fase B.2a aplicada, verificada y reconciliada mediante 0008
 
-El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migración terminó con `COMMIT` y el verificador final aprobó con `ROLLBACK`. 0008 está aplicada, verificada e inmutable; los smoke tests continúan y la reconciliación post-0008 sigue pendiente.
+El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migración terminó con `COMMIT` y el verificador final aprobó con `ROLLBACK`. Los smoke tests finales aprobaron la corrección de identidad, la auditoría sanitizada y los permisos del responsable histórico entre programas. El snapshot `2026-07-22T01:46:13Z` quedó reconciliado sin deriva inexplicada; 0008 está aplicada, verificada, probada, reconciliada e inmutable.
 
 - Una cuenta pendiente, inactiva, sin perfil o con estado incompatible no puede leer ni mutar actividades, participantes, asistencia o check-in, aunque conserve un JWT o asignaciones vigentes.
 - La frontera se aplica en RLS restrictiva y dentro de las RPC operativas `SECURITY DEFINER`; ocultar botones no constituye autorización.
@@ -71,7 +71,7 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - `role_assignments` no tiene mutaciones directas de `authenticated` ni writer de aplicación en B.2a. Cualquier writer futuro de Fase C deberá repetir el protocolo de lock y revalidación después de esperar; la existencia de privilegios confiables de `postgres`/`service_role` no equivale a una ruta de aplicación soportada.
 - La normalización colapsa todo whitespace a un espacio, recorta extremos y convierte vacío en `NULL`. `person_type = NULL` institucional y nombres derivados menores de dos caracteres se rechazan con errores controlados antes de tocar el perfil.
 - El evento guarda actor, objetivo, acción, resultado, motivo normalizado y sólo los nombres de campos modificados; nunca almacena valores anteriores/nuevos, correo, identificadores, Auth, roles ni actividad.
-- Las tres funciones B.2a invocables tienen sólo owner + `authenticated`; el trigger es owner-only. Junto con la revocación de tres grants de tabla, el estado previsto pasa de 125/270/6/436 a 132/267/6/440 para rutina/tabla/secuencia/ACL expandida.
+- Las tres funciones B.2a invocables tienen sólo owner + `authenticated`; el trigger es owner-only. Junto con la revocación de tres grants de tabla, el snapshot confirma el paso de 125/270/6/436 a 132/267/6/440 para rutina/tabla/secuencia/ACL expandida.
 - `public.is_b1_account_admin()` sigue siendo un helper privado owner-only: `PUBLIC`, `anon`, `authenticated` y `service_role` no tienen `EXECUTE`. Las RPC públicas B.1/B.2a son `SECURITY DEFINER` y lo invocan internamente bajo la autoridad de su propietario después de que el cliente entra por la firma autorizada. La invocación directa como `authenticated` debe fallar con SQLSTATE `42501`; no se concede privilegio adicional para probar su semántica.
 - No se añade `auth.admin`, clave `service_role` ni cliente privilegiado a la aplicación.
 - La página de actividad y las acciones de participantes consumen `can_edit_activity(uuid)` como decisión autoritativa para participantes y asistencia. No recalculan esa autorización con el programa actual; `can_update_activity_base(uuid)` y `can_delete_activity(uuid)` permanecen decisiones independientes y más estrechas. Cada mutación continúa protegida por su RPC `SECURITY DEFINER` y no se amplía RLS ni ACL.

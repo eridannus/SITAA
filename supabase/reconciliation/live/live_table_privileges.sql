@@ -76,10 +76,7 @@ public	activity_modalities	postgres	service_role	SELECT	NO	YES
 public	activity_modalities	postgres	service_role	TRIGGER	NO	NO
 public	activity_modalities	postgres	service_role	TRUNCATE	NO	NO
 public	activity_modalities	postgres	service_role	UPDATE	NO	NO
-public	activity_participants	postgres	authenticated	DELETE	NO	NO
-public	activity_participants	postgres	authenticated	INSERT	NO	NO
 public	activity_participants	postgres	authenticated	SELECT	NO	YES
-public	activity_participants	postgres	authenticated	UPDATE	NO	NO
 public	activity_participants	postgres	postgres	DELETE	YES	NO
 public	activity_participants	postgres	postgres	INSERT	YES	NO
 public	activity_participants	postgres	postgres	REFERENCES	YES	NO

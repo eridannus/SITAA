@@ -58,7 +58,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0007` están aplicadas, verificadas y reconciliadas. `0008` está aplicada, verificada e inmutable, con smoke tests y reconciliación pendientes. `0009` es el siguiente número disponible. Todo cambio futuro debe:
+`0001`–`0008` están aplicadas, verificadas, reconciliadas e inmutables. Fase B.2a está cerrada dentro de su alcance aprobado y `0009` es el siguiente número disponible. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0008`;
@@ -155,7 +155,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Smoke tests: el administrador técnico exacto accede; profesor y alumno ordinarios no acceden; búsqueda, filtros, lista, detalle, asignaciones V1 e historial sanitizado funcionan sin controles de mutación.
 - Snapshot: conjunto completo generado en `2026-07-21T00:16:03Z`, estado `SUCCESS`, con `pg_dump 18.4`, `psql 18.4`, UTF-8 y cuatro artefactos de privilegios.
 - Reconciliación: `0001`–`0007` no presenta deriva inexplicada; informe en `supabase/reconciliation/0007_post_apply_reconciliation.md`.
-- Resultado: Fase B.1 cerrada y operativa; 0007 es inmutable y 0008 queda como siguiente número disponible.
+- Resultado en ese cierre: Fase B.1 cerrada y operativa; 0007 quedó inmutable y 0008 quedó disponible para la fase posterior, ya cerrada en el apartado de reconciliación post-0008.
 
 ## Reconciliación posterior a 0007 — 2026-07-20
 
@@ -166,13 +166,13 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Diferencias ambientales: timestamp, token aleatorio `\restrict`, omisión textual opcional de `SECURITY INVOKER` y formato de `pg_dump`/`psql`.
 - Resultado: sin deriva inexplicada; políticas, secuencias, catálogos y objetos post-0006 no modificados por 0007 permanecen intactos.
 
-## 0008_operational_account_barrier_identity_correction.sql — aplicada y verificada; smoke tests en curso
+## 0008_operational_account_barrier_identity_correction.sql — aplicada, verificada y reconciliada
 
-- Fase B.2a preparada y aplicada sobre el snapshot post-0007 `2026-07-21T00:16:03Z`; ese snapshot sigue siendo la última evidencia reconciliada y todavía no representa los objetos vivos post-0008.
+- Fase B.2a fue preparada y aplicada sobre el snapshot post-0007 `2026-07-21T00:16:03Z`; el snapshot post-0008 `2026-07-22T01:46:13Z` es ahora la evidencia viva reconciliada.
 - Añade un helper privado de cuenta operativa activa, dos políticas RLS restrictivas, guardas explícitas en 29 rutinas operativas y dos RPC de corrección administrativa.
 - No añade tablas, columnas, índices, restricciones ni semillas. Añade un trigger público y cuatro firmas de función; retira a `authenticated` los grants directos `INSERT`, `UPDATE` y `DELETE` de `activity_participants`.
-- Inventario esperado tras aplicación: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 firmas de función, 25 políticas y 51 semillas.
-- Privilegios esperados: 132 grants de rutina, 267 grants de tabla publicados por `information_schema`, 6 de secuencia y 440 entradas ACL expandidas. El delta post-0007 es +7 de rutina, −3 de tabla y +4 ACL netas: tres RPC/helper nuevas tienen owner + `authenticated`, el trigger nuevo es owner-only y el DML directo de participantes queda cerrado.
+- Inventario vivo confirmado: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 firmas de función, 25 políticas y 51 semillas.
+- Privilegios vivos confirmados: 132 grants de rutina, 267 grants de tabla publicados por `information_schema`, 6 de secuencia y 440 entradas ACL expandidas. El delta post-0007 es +7 de rutina, −3 de tabla y +4 ACL netas: tres RPC/helper nuevas tienen owner + `authenticated`, el trigger nuevo es owner-only y el DML directo de participantes queda cerrado.
 - Artefactos coordinados: migración ahora inmutable, preflight de sólo lectura, verificador transaccional, rollback conservador y `docs/TEST_PLAN_0008.md`.
 - Revisión final local: identificadores y actividades fixture libres de colisiones/lookups nominales; denegaciones esperadas verificadas por SQLSTATE y mensaje; DML cliente de participantes retirado; trigger de integridad para writers de actividades y transición histórica; guard predestructivo del rollback ampliado al contrato completo y hashes exactos de las cuatro funciones nuevas.
 - Revisión previa a aplicación: fixture de semestre independiente del calendario, normalización whitespace y límites controlados, locks de dependencias en orden fijo, preflight RLS/Auth/FK/ACL completo, firmas PostgREST y ACL de funciones exactos, y rollback alineado al hash normalizado de `prosrc`.
@@ -188,7 +188,17 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Aplicación: la versión compatible B.2a fue publicada y 0008 terminó con `COMMIT`. La migración está aplicada y es inmutable.
 - Primera ejecución del verificador: superó los controles estáticos y avanzó hasta las fixtures, pero abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`. El helper es owner-only y PostgreSQL denegó correctamente `EXECUTE` con SQLSTATE `42501`; la transacción abortada se descartó y no persistieron fixtures, grants temporales, eventos de auditoría ni cambios operativos.
 - Segunda ejecución del verificador: aprobó la regresión del helper privado, los contratos estructurales, las fixtures, los rechazos controlados y siete correcciones de identidad por RPC. Abortó después con `0008_verify_institutional_correction_failed` porque las lecturas crudas de perfiles ajenos, auditoría y frontera histórica aún se ejecutaban bajo `authenticated`; RLS/ACL ocultaron correctamente esas superficies. La transacción se descartó sin persistir fixtures, correcciones, grants ni eventos.
-- Segunda corrección local del verificador: conserva RPC y DML cliente bajo `authenticated`, valida allí la proyección B.1 sanitizada, restablece el rol antes de inspeccionar perfiles/auditoría crudos y divide la reapertura histórica en precondiciones owner, intento cliente y atomicidad owner. Añade diagnósticos focalizados y una auditoría estática de límites de rol. En ese momento, la reejecución y los smoke tests permanecían pendientes.
+- Segunda corrección local del verificador: conserva RPC y DML cliente bajo `authenticated`, valida allí la proyección B.1 sanitizada, restablece el rol antes de inspeccionar perfiles/auditoría crudos y divide la reapertura histórica en precondiciones owner, intento cliente y atomicidad owner. Añade diagnósticos focalizados y una auditoría estática de límites de rol; la reejecución posterior aprobó.
 - Verificación final: el verificador con límites owner/cliente corregidos aprobó y terminó con `ROLLBACK`; no persistieron fixtures, correcciones, grants temporales ni auditoría sintética.
-- Smoke test B.2a: la corrección de identidad y el evento append-only sanitizado aprobaron. El escenario de responsabilidad histórica entre programas expuso una compuerta de aplicación que recalculaba el programa actual, aunque `can_edit_activity(uuid)` autorizaba correctamente al creador/responsable. No es deriva de base ni requiere 0009; la interfaz y las acciones pasan a consumir la RPC autoritativa y su reejecución de smoke test queda pendiente.
-- 0001–0008 son migraciones aplicadas e inmutables. 0009 es el siguiente número disponible, pero este defecto exclusivo del arnés no requiere una migración nueva. Durante esta corrección local no se conectó a Supabase ni se ejecutó SQL.
+- Smoke test B.2a: la corrección de identidad y el evento append-only sanitizado aprobaron. El escenario de responsabilidad histórica entre programas expuso una compuerta de aplicación que recalculaba el programa actual, aunque `can_edit_activity(uuid)` autorizaba correctamente al creador/responsable. La interfaz y las acciones pasaron a consumir la RPC autoritativa; la reejecución aprobó sin ampliar RLS ni ACL.
+- 0001–0008 son migraciones aplicadas e inmutables. 0009 es el siguiente número disponible. Durante la reconciliación local no se conectó a Supabase ni se ejecutó SQL.
+
+## Reconciliación posterior a 0008 — 2026-07-21
+
+- Snapshot comparado: `2026-07-22T01:46:13Z`, estado `SUCCESS`, generado con `pg_dump 18.4`, `psql 18.4` y UTF-8.
+- Cadena reconciliada: `0001 + 0002 + 0003 + 0004 + 0005 + 0006 + 0007 + 0008`.
+- Inventario vivo: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 firmas de función, 25 políticas, RLS en 18 tablas y 51 semillas controladas.
+- Privilegios vivos: 132 grants de rutina, 267 grants de tabla publicados por `information_schema`, 6 de secuencia y 440 entradas ACL expandidas.
+- Delta post-0007: 0 tablas, 0 columnas, 0 restricciones, 0 índices, +1 trigger, +4 firmas, +2 políticas, 0 semillas, +7 grants de rutina, −3 de tabla, 0 de secuencia y +4 entradas ACL.
+- Resultado: sin deriva inexplicada; informe en `supabase/reconciliation/0008_post_apply_reconciliation.md`.
+- Cierre: 0008 queda aplicada, verificada, probada, reconciliada e inmutable; Fase B.2a queda cerrada dentro de su alcance aprobado y 0009 es el siguiente número disponible.

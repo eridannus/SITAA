@@ -43,7 +43,7 @@ npm run start  # Inicia la compilación de producción
 - `/activities/new`: alta protegida de una actividad básica.
 - `/admin/accounts`: directorio administrativo operativo y de sólo lectura para administradores con autoridad B.1 exacta.
 - `/admin/accounts/[id]`: detalle administrativo de cuenta, asignaciones V1 e historial sanitizado.
-- `/admin/accounts/[id]/identity`: corrección administrativa de identidad B.2a respaldada por 0008; el verificador aprobó y los smoke tests de cierre continúan.
+- `/admin/accounts/[id]/identity`: corrección administrativa de identidad B.2a respaldada por 0008, verificada y reconciliada.
 
 ## Configuración de Supabase
 
@@ -64,7 +64,7 @@ El registro autentica primero con Google y sólo después solicita identidad ins
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 
-La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-21T00:16:03Z` quedó reconciliado contra 0001–0007 sin deriva inexplicada y continúa siendo la última evidencia viva versionada. 0006 mantiene los nombres personales estructurados como autoridad y `full_name` como compatibilidad derivada. Fase B.1 está cerrada y operativa mediante 0007. La aplicación compatible B.2a fue publicada, 0008 se aplicó y el verificador final aprobó con `ROLLBACK`; la migración es inmutable. La corrección de identidad aprobó en producción y los smoke tests de permisos de actividad continúan; el snapshot y la reconciliación post-0008 siguen pendientes.
+La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-22T01:46:13Z` quedó reconciliado contra 0001–0008 sin deriva inexplicada. 0006 mantiene los nombres personales estructurados como autoridad y `full_name` como compatibilidad derivada. Fase B.1 está cerrada y operativa mediante 0007; Fase B.2a está aplicada, verificada, probada y reconciliada mediante 0008. Las migraciones 0001–0008 son inmutables y 0009 es el siguiente número disponible.
 
 La navegación autenticada usa avatar Google validado o iniciales, menú de cuenta accesible y estados seleccionados de alto contraste. El acceso público emplea una tarjeta única que cabe en el viewport; el fondo canvas es decorativo, pausa en pestañas ocultas y respeta movimiento reducido.
 
@@ -72,4 +72,4 @@ El sistema visual canónico está en `docs/DESIGN_SYSTEM.md`. Toda interfaz usa 
 
 ## Alcance actual
 
-Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes, asistencia manual o por QR/enlace/código, el directorio B.1 y la capacidad de base de datos B.2a aplicada. B.2a introduce una barrera operativa para cuentas no activas y corrección auditada de identidad, aunque su aceptación final continúa pendiente; B.2b/B.3 para ciclo de cuenta y Auth, Fase C para roles, paneles especializados, formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.
+Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes, asistencia manual o por QR/enlace/código, el directorio B.1 y la barrera operativa con corrección auditada de identidad de B.2a. B.2a está cerrada dentro de su alcance aprobado; B.2b/B.3 para ciclo de cuenta y Auth, Fase C para roles, paneles especializados, formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.

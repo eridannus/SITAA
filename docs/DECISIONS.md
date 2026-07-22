@@ -512,7 +512,7 @@ La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM
 
 **Decisión:** cerrar Fase B.1 y fijar `0001`–`0007` como cadena aplicada, verificada y reconciliada. El directorio administrativo permanece exclusivamente de lectura, con autoridad exacta B.1 y auditoría append-only. La corrección del verificador no representa una migración ni un cambio de objetos vivos. La reconciliación estructural, funcional, RLS, privilegios, ACL y catálogos no encontró deriva inexplicada.
 
-**Consecuencias:** 0007 es inmutable. B.2, B.3 y Fase C continúan pendientes; B.1 no incorpora mutaciones de cuentas, Auth o roles. El snapshot post-0007 es la evidencia autoritativa actual y `0008` es el siguiente número disponible para un cambio futuro real.
+**Consecuencias:** 0007 es inmutable. B.1 no incorpora mutaciones de cuentas, Auth o roles. El snapshot post-0007 fue la evidencia autoritativa hasta el cierre posterior documentado por DEC-050; 0008 ocupó después el siguiente número disponible.
 
 **Estado:** Aceptada; Fase B.1 operativa y reconciliada sin deriva inexplicada.
 
@@ -528,4 +528,14 @@ La interfaz adopta tokens semánticos azul y oro inspirados en la identidad UNAM
 
 **Ajuste de aplicación posterior:** el verificador transaccional final terminó con `ROLLBACK` y la corrección de identidad aprobó en producción. Un smoke test detectó que la página y las acciones de participantes recalculaban el alcance mediante el programa actual, en vez de consumir `can_edit_activity(uuid)`. La interfaz y sus Server Actions usan ahora esa decisión autoritativa para participantes/asistencia, manteniendo separadas `can_update_activity_base(uuid)` y `can_delete_activity(uuid)`. Así, una responsabilidad histórica registrada por UUID sobrevive a una corrección posterior de programa o identificador sin ampliar RLS ni ACL.
 
-**Estado:** Aceptada, aplicada y verificada; smoke tests B.2a en curso y reconciliación post-0008 pendiente.
+**Estado:** Aceptada e implementada; cierre canónico en DEC-050.
+
+## DEC-050 — Cierre y reconciliación de Fase B.2a / migración 0008
+
+**Contexto:** 0008 fue aplicada con `COMMIT` después de aprobar el preflight y publicar la aplicación compatible. El verificador final terminó con `ROLLBACK`; la corrección de identidad, la auditoría sanitizada y la regresión de responsable histórico entre programas aprobaron sus smoke tests. El snapshot completo `2026-07-22T01:46:13Z` fue generado con `pg_dump 18.4` y `psql 18.4` en modo de sólo lectura.
+
+**Decisión:** cerrar Fase B.2a dentro de su alcance aprobado y fijar `0001`–`0008` como cadena aplicada, verificada, probada, reconciliada e inmutable. El snapshot confirma exactamente 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers, 51 firmas de función, 25 políticas, RLS en las 18 tablas y 51 semillas controladas. Los privilegios son 132 grants de rutina, 267 de tabla, 6 de secuencia y 440 entradas ACL expandidas. La comparación contra post-0007 reproduce únicamente el delta de 0008 y no encuentra deriva inexplicada.
+
+**Consecuencias:** la barrera de cuenta activa y la corrección auditada de identidad son contratos operativos vigentes. Las pruebas manuales de concurrencia en dos sesiones siguen reservadas a un entorno desechable y no se afirma que se hayan observado en producción; no bloquean este cierre porque el contrato transaccional y el verificador estático/funcional sí aprobaron. B.2b, B.3 y Fase C continúan pendientes. `0009` es el siguiente número disponible y cualquier cambio vivo posterior requiere una migración nueva.
+
+**Estado:** Aceptada; Fase B.2a cerrada y reconciliada sin deriva inexplicada.

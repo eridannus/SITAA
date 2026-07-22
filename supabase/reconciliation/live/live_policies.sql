@@ -1,11 +1,13 @@
 -- schema	table	policy	mode	roles	command	using	with_check
 public	academic_periods	Authenticated users can read academic periods	PERMISSIVE	authenticated	SELECT	true	
 public	academic_programs	Authenticated users can read academic programs	PERMISSIVE	authenticated	SELECT	true	
+public	activities	Active accounts may operate activities	RESTRICTIVE	authenticated	ALL	is_sitaa_operational_account_active()	is_sitaa_operational_account_active()
 public	activities	Authorized users can create activities	PERMISSIVE	authenticated	INSERT		((created_by = auth.uid()) AND can_create_activity(scope_type, program_id, division_id, service_type_code))
 public	activities	Authorized users can delete activities	PERMISSIVE	authenticated	DELETE	can_delete_activity(id)	
 public	activities	Authorized users can update activities	PERMISSIVE	authenticated	UPDATE	can_update_activity_base(id)	can_update_activity_base(id)
 public	activities	Users can read permitted activities	PERMISSIVE	authenticated	SELECT	(((status_code = 'draft'::text) AND (created_by = auth.uid())) OR ((status_code <> 'draft'::text) AND ((created_by = auth.uid()) OR (responsible_profile_id = auth.uid()) OR is_activity_participant(id) OR can_manage_activity(scope_type, program_id, division_id, service_type_code))))	
 public	activity_modalities	Authenticated users can read activity modalities	PERMISSIVE	authenticated	SELECT	true	
+public	activity_participants	Active accounts may operate activity participants	RESTRICTIVE	authenticated	ALL	is_sitaa_operational_account_active()	is_sitaa_operational_account_active()
 public	activity_participants	Users can add permitted activity participants	PERMISSIVE	authenticated	INSERT		can_edit_activity(activity_id)
 public	activity_participants	Users can delete permitted activity participants	PERMISSIVE	authenticated	DELETE	can_edit_activity(activity_id)	
 public	activity_participants	Users can read permitted activity participants	PERMISSIVE	authenticated	SELECT	((profile_id = auth.uid()) OR can_read_activity(activity_id))	
