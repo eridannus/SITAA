@@ -27,6 +27,35 @@ begin
     union all select 1 where (select md5(coalesce(string_agg(table_name||':'||ordinal_position::text||':'||column_name||':'||data_type||':'||udt_name||':'||is_nullable||':'||coalesce(column_default,'')||':'||coalesce(character_maximum_length::text,'')||':'||coalesce(numeric_precision::text,'')||':'||coalesce(numeric_scale::text,'')||':'||coalesce(datetime_precision::text,''),'|' order by table_name,ordinal_position),'')) from information_schema.columns where table_schema='public')<>'847b9f5c4ec9d428c522f714de59fd1f'
     union all select 1 where (select md5(coalesce(string_agg(table_definition.relname||':'||constraint_definition.conname||':'||case constraint_definition.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(constraint_definition.oid),'|' order by table_definition.relname,constraint_definition.conname),'')) from pg_constraint constraint_definition join pg_class table_definition on table_definition.oid=constraint_definition.conrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and constraint_definition.contype in ('p','f','u','c'))<>'64f099164063d0cf500478dda3b5d25c'
     union all select 1 where (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')<>'653875a8435cf43bda4fe55950f65802'
+    union all select 1 where not (
+      with controlled_seed_rows(catalog,row_json) as (
+        select 'academic_periods',to_jsonb(seed)::text from public.academic_periods seed union all
+        select 'academic_programs',to_jsonb(seed)::text from public.academic_programs seed union all
+        select 'activity_modalities',to_jsonb(seed)::text from public.activity_modalities seed union all
+        select 'activity_statuses',to_jsonb(seed)::text from public.activity_statuses seed union all
+        select 'activity_types',to_jsonb(seed)::text from public.activity_types seed union all
+        select 'attention_categories',to_jsonb(seed)::text from public.attention_categories seed union all
+        select 'divisions',to_jsonb(seed)::text from public.divisions seed union all
+        select 'location_types',to_jsonb(seed)::text from public.location_types seed union all
+        select 'participant_roles',to_jsonb(seed)::text from public.participant_roles seed union all
+        select 'roles',to_jsonb(seed)::text from public.roles seed union all
+        select 'service_types',to_jsonb(seed)::text from public.service_types seed
+      )
+      select count(*)=51
+        and count(*) filter(where catalog='academic_periods')=5
+        and count(*) filter(where catalog='academic_programs')=2
+        and count(*) filter(where catalog='activity_modalities')=3
+        and count(*) filter(where catalog='activity_statuses')=6
+        and count(*) filter(where catalog='activity_types')=5
+        and count(*) filter(where catalog='attention_categories')=5
+        and count(*) filter(where catalog='divisions')=1
+        and count(*) filter(where catalog='location_types')=7
+        and count(*) filter(where catalog='participant_roles')=5
+        and count(*) filter(where catalog='roles')=10
+        and count(*) filter(where catalog='service_types')=2
+        and md5(string_agg(catalog||E'\t'||row_json,E'\n' order by catalog,row_json))='2e450238768fbe9889470864a1832486'
+      from controlled_seed_rows
+    )
     union all select 1 where (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||policyname||':'||permissive||':'||roles::text||':'||cmd||':'||coalesce(qual,'')||':'||coalesce(with_check,''),'|' order by schemaname,tablename,policyname),'')) from pg_policies where schemaname='public')<>'a72df97fbb8e73d8445f7fe8765da4ba'
     union all select 1 where (select md5(coalesce(string_agg(table_definition.relname||':'||trigger_definition.tgname||':'||pg_get_triggerdef(trigger_definition.oid,false),'|' order by table_definition.relname,trigger_definition.tgname),'')) from pg_trigger trigger_definition join pg_class table_definition on table_definition.oid=trigger_definition.tgrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and not trigger_definition.tgisinternal)<>'67ee47bcd43c0594129facf3d7729bad'
     union all select 1 where (select md5(coalesce(string_agg(table_name||':'||privilege_type,'|' order by table_name,privilege_type),'')) from information_schema.role_table_grants where table_schema='public' and grantee='authenticated')<>'017b6a7c8048ffdfdc0b7d7319b59a92'
@@ -385,6 +414,7 @@ declare
   matching_auth_count bigint:=0;
   auth_confirmed boolean:=false;
   identity_valid boolean:=false;
+  locked_program_active boolean:=null;
   event_id uuid;
   persisted_updated_at timestamptz;
   prior_status text;
@@ -467,6 +497,17 @@ begin
   end if;
 
   if requested_transition='reactivate' then
+    -- La decisión institucional usa la fila bloqueada, no una lectura no protegida.
+    if target_profile.account_kind='institutional' then
+      select program.is_active into locked_program_active
+      from public.academic_programs program
+      where program.id=target_profile.primary_program_id
+      for share;
+      if locked_program_active is distinct from true then
+        raise exception 'sitaa_account_lifecycle_invalid_identity' using errcode='23514';
+      end if;
+    end if;
+
     select count(*),coalesce(bool_or(
       auth_user.email_confirmed_at is not null or exists (
         select 1 from auth.identities identity_row
@@ -495,7 +536,7 @@ begin
         and char_length(target_profile.full_name) between 2 and 200
         and target_profile.full_name=concat_ws(' ',target_profile.first_names,target_profile.paternal_surname,target_profile.maternal_surname)
         and target_profile.primary_program_id is not null
-        and exists (select 1 from public.academic_programs program where program.id=target_profile.primary_program_id and program.is_active=true)
+        and locked_program_active is true
         and target_profile.institutional_id_value~'^[0-9]{1,50}$'
         and target_profile.institutional_id_type=case when target_profile.person_type='student' then 'student_account' else 'worker_number' end
         or target_profile.account_kind='technical'
@@ -574,8 +615,40 @@ begin
     raise exception 'sitaa_0009_post_ddl_inventory_mismatch' using errcode='55000';
   end if;
 
+  if not (
+    with controlled_seed_rows(catalog,row_json) as (
+      select 'academic_periods',to_jsonb(seed)::text from public.academic_periods seed union all
+      select 'academic_programs',to_jsonb(seed)::text from public.academic_programs seed union all
+      select 'activity_modalities',to_jsonb(seed)::text from public.activity_modalities seed union all
+      select 'activity_statuses',to_jsonb(seed)::text from public.activity_statuses seed union all
+      select 'activity_types',to_jsonb(seed)::text from public.activity_types seed union all
+      select 'attention_categories',to_jsonb(seed)::text from public.attention_categories seed union all
+      select 'divisions',to_jsonb(seed)::text from public.divisions seed union all
+      select 'location_types',to_jsonb(seed)::text from public.location_types seed union all
+      select 'participant_roles',to_jsonb(seed)::text from public.participant_roles seed union all
+      select 'roles',to_jsonb(seed)::text from public.roles seed union all
+      select 'service_types',to_jsonb(seed)::text from public.service_types seed
+    )
+    select count(*)=51
+      and count(*) filter(where catalog='academic_periods')=5
+      and count(*) filter(where catalog='academic_programs')=2
+      and count(*) filter(where catalog='activity_modalities')=3
+      and count(*) filter(where catalog='activity_statuses')=6
+      and count(*) filter(where catalog='activity_types')=5
+      and count(*) filter(where catalog='attention_categories')=5
+      and count(*) filter(where catalog='divisions')=1
+      and count(*) filter(where catalog='location_types')=7
+      and count(*) filter(where catalog='participant_roles')=5
+      and count(*) filter(where catalog='roles')=10
+      and count(*) filter(where catalog='service_types')=2
+      and md5(string_agg(catalog||E'\t'||row_json,E'\n' order by catalog,row_json))='2e450238768fbe9889470864a1832486'
+    from controlled_seed_rows
+  ) then
+    raise exception 'sitaa_0009_post_ddl_seed_contract_mismatch' using errcode='55000';
+  end if;
+
   if (select md5(coalesce(string_agg(p.oid::regprocedure::text,'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'89d8e1d260ccc0af72ee42c394f79f90'
-     or (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'5d966de3f2374078bbe39ec268bba6a5'
+     or (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'71f9763d702e95e4eede51a4a4611694'
      or (select md5(coalesce(string_agg(table_name||':'||ordinal_position::text||':'||column_name||':'||data_type||':'||udt_name||':'||is_nullable||':'||coalesce(column_default,'')||':'||coalesce(character_maximum_length::text,'')||':'||coalesce(numeric_precision::text,'')||':'||coalesce(numeric_scale::text,'')||':'||coalesce(datetime_precision::text,''),'|' order by table_name,ordinal_position),'')) from information_schema.columns where table_schema='public')<>'847b9f5c4ec9d428c522f714de59fd1f'
      or (select md5(coalesce(string_agg(table_definition.relname||':'||constraint_definition.conname||':'||case constraint_definition.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(constraint_definition.oid),'|' order by table_definition.relname,constraint_definition.conname),'')) from pg_constraint constraint_definition join pg_class table_definition on table_definition.oid=constraint_definition.conrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and constraint_definition.contype in ('p','f','u','c'))<>'64f099164063d0cf500478dda3b5d25c'
      or (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')<>'653875a8435cf43bda4fe55950f65802'
@@ -645,7 +718,7 @@ begin
   from (values
     ('is_exact_b1_account_admin_profile_b2b(uuid)','104d16a531ea53a5b4908102322097dc'),
     ('get_admin_account_lifecycle_context_b2b(uuid)','6e7c8bb5e2dcf99fce6a75e03e07c309'),
-    ('transition_admin_account_lifecycle_b2b(uuid,text,text)','0080f41a2cd78576763ebb5d5128996e')
+    ('transition_admin_account_lifecycle_b2b(uuid,text,text)','7f940968051ff1b844443f6c76b561c3')
   ) expected(signature,body_hash)
   left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
   where p.oid is null

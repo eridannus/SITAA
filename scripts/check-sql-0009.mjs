@@ -116,13 +116,33 @@ assert.match(sql.verify, /deactivation_timestamp_contract/);
 assert.match(sql.verify, /reactivation_timestamp_contract/);
 assert.match(sql.verify, /deactivation_audit_contract/);
 assert.match(sql.verify, /reactivation_audit_contract/);
-assert.match(sql.verify, /\$two_admin_safety_contract\$/);
+assert.match(sql.verify, /\$two_admin_owner_baseline\$/);
+assert.match(sql.verify, /\$two_admin_deactivate_client\$/);
+assert.match(sql.verify, /\$two_admin_deactivate_owner\$/);
+assert.match(sql.verify, /\$two_admin_reciprocal_client\$/);
+assert.match(sql.verify, /\$two_admin_restore_owner\$/);
 assert.match(sql.verify, /sitaa_admin_access_denied/);
 assert.match(sql.verify, /sitaa_account_lifecycle_self_forbidden/);
+assert.match(sql.verify, /sitaa_0009_baseline_exact_admins/);
+assert.match(sql.verify, /sitaa_0009_baseline_counts/);
+assert.match(sql.verify, /baseline_count\+2/);
+assert.match(sql.verify, /baseline_count\+1/);
+assert.match(sql.verify, /sitaa_0009_allocated_identifiers/);
+assert.match(sql.verify, /create function pg_temp\.allocate_identifier\(target_label text\)/i);
+assert.match(sql.verify, /target_identifier\s+text:=case[\s\S]*?pg_temp\.allocate_identifier\(target_label\)/i);
+assert.doesNotMatch(sql.verify, /target_identifier:=.*md5/i);
+assert.match(sql.verify, /0009_verify_live_exact_admin_baseline_changed/);
+assert.doesNotMatch(sql.preflight, /activity_has_ended\s*\(/i);
 assert.match(
   sql.verify,
   /grant select on table pg_temp\.sitaa_0009_context to authenticated;/i,
 );
+assert.match(sql.verify, /grant select on table pg_temp\.sitaa_0009_cases to authenticated;/i);
+assert.match(sql.verify, /grant select,insert on table pg_temp\.sitaa_0009_results to authenticated;/i);
+assert.match(sql.verify, /grant select on table pg_temp\.sitaa_0009_baseline_counts to authenticated;/i);
+assert.match(sql.verify, /grant execute on function pg_temp\.case_id\(text\),pg_temp\.set_request_user\(text\) to authenticated;/i);
+assert.doesNotMatch(sql.verify, /active_exact_b1_admin_count\s*(?:=|<>)\s*2\b/i);
+assert.doesNotMatch(sql.verify, /observed_count\s*<>\s*[12]\b/i);
 assert.match(
   sql.migration,
   /account_status='inactive' and target_profile\.is_active=false\s+and target_profile\.activated_at is not null and target_profile\.deactivated_at is not null/i,
@@ -131,8 +151,89 @@ assert.match(
 const expectedHashes = {
   is_exact_b1_account_admin_profile_b2b: "104d16a531ea53a5b4908102322097dc",
   get_admin_account_lifecycle_context_b2b: "6e7c8bb5e2dcf99fce6a75e03e07c309",
-  transition_admin_account_lifecycle_b2b: "0080f41a2cd78576763ebb5d5128996e",
+  transition_admin_account_lifecycle_b2b: "7f940968051ff1b844443f6c76b561c3",
 };
+
+function authenticatedIntervals(source) {
+  const boundary = /\b(set local role authenticated|reset role)\s*;/gi;
+  const intervals = [];
+  let active = null;
+  let match;
+  while ((match = boundary.exec(source)) !== null) {
+    const command = match[1].toLowerCase();
+    if (command.startsWith("set local")) {
+      assert.equal(active, null, "Intervalo authenticated anidado en el verificador");
+      active = boundary.lastIndex;
+    } else {
+      assert.notEqual(active, null, "RESET ROLE sin SET LOCAL ROLE authenticated");
+      intervals.push(source.slice(active, match.index));
+      active = null;
+    }
+  }
+  assert.equal(active, null, "Falta RESET ROLE para un intervalo authenticated");
+  return intervals;
+}
+
+const clientIntervals = authenticatedIntervals(sql.verify);
+assert.ok(clientIntervals.length >= 10, "El verificador perdió sus fases cliente authenticated");
+let protectedHelperCalls = 0;
+let directDenialIntervals = 0;
+for (const interval of clientIntervals) {
+  assert.doesNotMatch(
+    interval,
+    /\b(?:from|join)\s+(?:public\.(?:profiles|role_assignments|activities|activity_participants|admin_audit_events)|auth\.(?:users|identities))\b/i,
+    "Una fase cliente authenticated contiene una lectura cruda protegida",
+  );
+  assert.doesNotMatch(
+    interval,
+    /public\.is_b1_account_admin\s*\(/i,
+    "Una fase cliente authenticated invoca directamente el helper histórico B.1",
+  );
+  protectedHelperCalls += (interval.match(/public\.is_exact_b1_account_admin_profile_b2b\s*\(/gi) ?? []).length;
+
+  const directWrites = interval.match(
+    /\b(?:update\s+public\.(?:profiles|role_assignments|admin_audit_events)|insert\s+into\s+(?:public\.(?:profiles|role_assignments|admin_audit_events)|auth\.(?:users|identities))|delete\s+from\s+(?:public\.(?:profiles|role_assignments|admin_audit_events)|auth\.(?:users|identities)))/gi,
+  ) ?? [];
+  if (directWrites.length > 0) {
+    directDenialIntervals += 1;
+    assert.match(interval, /\$direct_acl_denial_contract\$/);
+    assert.equal(directWrites.length, 2, "La prueba ACL directa debe contener sólo dos escrituras negativas");
+    assert.match(interval, /exception when insufficient_privilege then null;/i);
+  }
+}
+assert.equal(protectedHelperCalls, 1, "Debe existir una sola invocación cliente del helper privado");
+assert.equal(directDenialIntervals, 1, "Debe existir un solo intervalo de escrituras directas negativas");
+assert.match(sql.verify, /\$private_helper_acl_denial\$[\s\S]*?sqlstate '42501'[\s\S]*?\$private_helper_acl_denial\$/i);
+
+const catalogHash = "2e450238768fbe9889470864a1832486";
+assert.equal(
+  (Object.values(sql).join("\n").match(new RegExp(catalogHash, "g")) ?? []).length,
+  6,
+  "El contrato canónico de catálogos debe aparecer en los seis puntos de control",
+);
+for (const [catalog, count] of Object.entries({
+  academic_periods: 5,
+  academic_programs: 2,
+  activity_modalities: 3,
+  activity_statuses: 6,
+  activity_types: 5,
+  attention_categories: 5,
+  divisions: 1,
+  location_types: 7,
+  participant_roles: 5,
+  roles: 10,
+  service_types: 2,
+})) {
+  assert.match(
+    Object.values(sql).join("\n"),
+    new RegExp(`count\\(\\*\\)\\s+filter\\(where catalog='${catalog}'\\)=${count}`),
+    `Falta el cardinal exacto del catálogo ${catalog}`,
+  );
+}
+assert.ok(
+  (Object.values(sql).join("\n").match(/count\(\*\)=51/g) ?? []).length >= 6,
+  "Falta el total exacto de 51 semillas en algún punto de control",
+);
 assert.match(
   sql.migration,
   /create function public\.is_exact_b1_account_admin_profile_b2b\(\s*requested_profile_id uuid\s*\)/i,
@@ -151,6 +252,13 @@ for (const [name, expectedHash] of Object.entries(expectedHashes)) {
   if (name === "transition_admin_account_lifecycle_b2b") {
     assert.doesNotMatch(match[1], /\b(update|insert|delete)\s+(?:from\s+|into\s+)?public\.role_assignments\b/i);
     assert.doesNotMatch(match[1], /auth\.admin/i);
+    const authorityChecks = [...match[1].matchAll(/public\.is_b1_account_admin\(\)/gi)];
+    assert.ok(authorityChecks.length >= 2, "Falta la segunda comprobación de autoridad bajo bloqueo");
+    const secondAuthority = authorityChecks[1].index;
+    const programLock = match[1].toLowerCase().indexOf("for share", secondAuthority);
+    const profileUpdate = match[1].toLowerCase().indexOf("update public.profiles", programLock);
+    assert.ok(programLock > secondAuthority, "El bloqueo FOR SHARE del programa debe seguir a la segunda autorización");
+    assert.ok(profileUpdate > programLock, "La mutación del perfil debe seguir al bloqueo FOR SHARE del programa");
   }
 }
 

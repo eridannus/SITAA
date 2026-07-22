@@ -14,7 +14,36 @@ with blocking(category,aggregate_count) as (
     (case when (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p') and c.relrowsecurity)=18 then 0 else 1 end)+
     (case when (select md5(coalesce(string_agg(table_name||':'||ordinal_position::text||':'||column_name||':'||data_type||':'||udt_name||':'||is_nullable||':'||coalesce(column_default,'')||':'||coalesce(character_maximum_length::text,'')||':'||coalesce(numeric_precision::text,'')||':'||coalesce(numeric_scale::text,'')||':'||coalesce(datetime_precision::text,''),'|' order by table_name,ordinal_position),'')) from information_schema.columns where table_schema='public')='847b9f5c4ec9d428c522f714de59fd1f' then 0 else 1 end)+
     (case when (select md5(coalesce(string_agg(table_definition.relname||':'||constraint_definition.conname||':'||case constraint_definition.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(constraint_definition.oid),'|' order by table_definition.relname,constraint_definition.conname),'')) from pg_constraint constraint_definition join pg_class table_definition on table_definition.oid=constraint_definition.conrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and constraint_definition.contype in ('p','f','u','c'))='64f099164063d0cf500478dda3b5d25c' then 0 else 1 end)+
-    (case when (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')='653875a8435cf43bda4fe55950f65802' then 0 else 1 end)),
+    (case when (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')='653875a8435cf43bda4fe55950f65802' then 0 else 1 end)+
+    (case when (
+      with controlled_seed_rows(catalog,row_json) as (
+        select 'academic_periods',to_jsonb(seed)::text from public.academic_periods seed union all
+        select 'academic_programs',to_jsonb(seed)::text from public.academic_programs seed union all
+        select 'activity_modalities',to_jsonb(seed)::text from public.activity_modalities seed union all
+        select 'activity_statuses',to_jsonb(seed)::text from public.activity_statuses seed union all
+        select 'activity_types',to_jsonb(seed)::text from public.activity_types seed union all
+        select 'attention_categories',to_jsonb(seed)::text from public.attention_categories seed union all
+        select 'divisions',to_jsonb(seed)::text from public.divisions seed union all
+        select 'location_types',to_jsonb(seed)::text from public.location_types seed union all
+        select 'participant_roles',to_jsonb(seed)::text from public.participant_roles seed union all
+        select 'roles',to_jsonb(seed)::text from public.roles seed union all
+        select 'service_types',to_jsonb(seed)::text from public.service_types seed
+      )
+      select count(*)=51
+        and count(*) filter(where catalog='academic_periods')=5
+        and count(*) filter(where catalog='academic_programs')=2
+        and count(*) filter(where catalog='activity_modalities')=3
+        and count(*) filter(where catalog='activity_statuses')=6
+        and count(*) filter(where catalog='activity_types')=5
+        and count(*) filter(where catalog='attention_categories')=5
+        and count(*) filter(where catalog='divisions')=1
+        and count(*) filter(where catalog='location_types')=7
+        and count(*) filter(where catalog='participant_roles')=5
+        and count(*) filter(where catalog='roles')=10
+        and count(*) filter(where catalog='service_types')=2
+        and md5(string_agg(catalog||E'\t'||row_json,E'\n' order by catalog,row_json))='2e450238768fbe9889470864a1832486'
+      from controlled_seed_rows
+    ) then 0 else 1 end)),
   ('post_0008_privilege_drift',
     (case when (select count(*) from information_schema.routine_privileges where routine_schema='public')=132 then 0 else 1 end)+
     (case when (select count(*) from information_schema.table_privileges where table_schema='public')=267 then 0 else 1 end)+
@@ -150,10 +179,10 @@ with blocking(category,aggregate_count) as (
   values
   ('active_exact_b1_administrators',(select count(*) from exact_admins)),
   ('inactive_accounts_with_current_or_future_assignments',(select count(distinct profile.id) from public.profiles profile join public.role_assignments assignment on assignment.user_id=profile.id where profile.account_status='inactive' and assignment.is_active and (assignment.ends_at is null or assignment.ends_at>=public.sitaa_current_mexico_date()))),
-  ('inactive_accounts_with_open_responsibilities',(select count(distinct profile.id) from public.profiles profile join public.activities activity on activity.created_by=profile.id or activity.responsible_profile_id=profile.id where profile.account_status='inactive' and (activity.status_code='draft' or public.activity_has_ended(activity.id) is distinct from true))),
-  ('inactive_accounts_with_open_participations',(select count(distinct profile.id) from public.profiles profile join public.activity_participants participant on participant.profile_id=profile.id join public.activities activity on activity.id=participant.activity_id where profile.account_status='inactive' and (activity.status_code='draft' or public.activity_has_ended(activity.id) is distinct from true))),
+  ('inactive_accounts_with_open_responsibilities',(select count(distinct profile.id) from public.profiles profile join public.activities activity on activity.created_by=profile.id or activity.responsible_profile_id=profile.id where profile.account_status='inactive' and (activity.status_code='draft' or not coalesce((coalesce(activity.end_date,activity.start_date)::timestamp+coalesce(activity.end_time,activity.start_time,time '23:59:59'))<(now() at time zone 'America/Mexico_City'),false)))),
+  ('inactive_accounts_with_open_participations',(select count(distinct profile.id) from public.profiles profile join public.activity_participants participant on participant.profile_id=profile.id join public.activities activity on activity.id=participant.activity_id where profile.account_status='inactive' and (activity.status_code='draft' or not coalesce((coalesce(activity.end_date,activity.start_date)::timestamp+coalesce(activity.end_time,activity.start_time,time '23:59:59'))<(now() at time zone 'America/Mexico_City'),false)))),
   ('inactive_accounts_with_exact_current_b1_assignment',(select count(distinct profile.id) from public.profiles profile join public.role_assignments assignment on assignment.user_id=profile.id where profile.account_status='inactive' and assignment.role_code='technical_admin' and assignment.scope_type='system' and assignment.service_area='technical' and assignment.program_id is null and assignment.division_id is null and assignment.is_active and assignment.starts_at<=public.sitaa_current_mexico_date() and (assignment.ends_at is null or assignment.ends_at>=public.sitaa_current_mexico_date()))),
-  ('inactive_accounts_ineligible_by_identity',(select count(*) from public.profiles profile where profile.account_status='inactive' and not (profile.full_name=concat_ws(' ',profile.first_names,profile.paternal_surname,profile.maternal_surname) and (profile.account_kind='institutional' and profile.person_type in ('student','professor') and profile.primary_program_id is not null and profile.institutional_id_value~'^[0-9]{1,50}$' or profile.account_kind='technical' and profile.person_type is null and profile.primary_program_id is null and profile.institutional_id_value is null)))),
+  ('inactive_accounts_ineligible_by_identity',(select count(*) from public.profiles profile left join public.academic_programs program on program.id=profile.primary_program_id where profile.account_status='inactive' and not (profile.full_name=concat_ws(' ',profile.first_names,profile.paternal_surname,profile.maternal_surname) and (profile.account_kind='institutional' and profile.person_type in ('student','professor') and profile.primary_program_id is not null and program.id is not null and program.is_active and profile.institutional_id_value~'^[0-9]{1,50}$' and profile.institutional_id_type=case when profile.person_type='student' then 'student_account' else 'worker_number' end or profile.account_kind='technical' and profile.person_type is null and profile.primary_program_id is null and profile.institutional_id_type is null and profile.institutional_id_value is null)))),
   ('inactive_accounts_ineligible_by_auth',(select count(*) from public.profiles profile left join auth.users auth_user on auth_user.id=profile.id where profile.account_status='inactive' and (auth_user.id is null or lower(btrim(auth_user.email))<>profile.email or not (auth_user.email_confirmed_at is not null or exists(select 1 from auth.identities identity_row where identity_row.user_id=auth_user.id and identity_row.provider='google' and lower(btrim(identity_row.identity_data->>'email'))=lower(btrim(auth_user.email)) and lower(btrim(coalesce(identity_row.identity_data->>'email_verified',''))) in ('true','t','1'))))))
 )
 select category,'blocking'::text classification,aggregate_count

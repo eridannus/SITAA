@@ -7,6 +7,7 @@ declare
   mutation_oid oid:=to_regprocedure('public.transition_admin_account_lifecycle_b2b(uuid,text,text)');
   helper_oid oid:=to_regprocedure('public.is_exact_b1_account_admin_profile_b2b(uuid)');
   mismatch_count integer;
+  normalized_mutation text;
 begin
   if helper_oid is null or context_oid is null or mutation_oid is null then
     raise exception '0009_verify_missing_function';
@@ -25,8 +26,39 @@ begin
      or (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where n.nspname='public')+(select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral aclexplode(coalesce(c.relacl,acldefault(case when c.relkind='S' then 's'::"char" else 'r'::"char" end,c.relowner))) a where n.nspname='public' and c.relkind in ('r','p','v','m','S'))<>445 then
     raise exception '0009_verify_inventory_mismatch';
   end if;
+  if not (
+    with controlled_seed_rows(catalog,row_json) as (
+      select 'academic_periods',to_jsonb(seed)::text from public.academic_periods seed union all
+      select 'academic_programs',to_jsonb(seed)::text from public.academic_programs seed union all
+      select 'activity_modalities',to_jsonb(seed)::text from public.activity_modalities seed union all
+      select 'activity_statuses',to_jsonb(seed)::text from public.activity_statuses seed union all
+      select 'activity_types',to_jsonb(seed)::text from public.activity_types seed union all
+      select 'attention_categories',to_jsonb(seed)::text from public.attention_categories seed union all
+      select 'divisions',to_jsonb(seed)::text from public.divisions seed union all
+      select 'location_types',to_jsonb(seed)::text from public.location_types seed union all
+      select 'participant_roles',to_jsonb(seed)::text from public.participant_roles seed union all
+      select 'roles',to_jsonb(seed)::text from public.roles seed union all
+      select 'service_types',to_jsonb(seed)::text from public.service_types seed
+    )
+    select count(*)=51
+      and count(*) filter(where catalog='academic_periods')=5
+      and count(*) filter(where catalog='academic_programs')=2
+      and count(*) filter(where catalog='activity_modalities')=3
+      and count(*) filter(where catalog='activity_statuses')=6
+      and count(*) filter(where catalog='activity_types')=5
+      and count(*) filter(where catalog='attention_categories')=5
+      and count(*) filter(where catalog='divisions')=1
+      and count(*) filter(where catalog='location_types')=7
+      and count(*) filter(where catalog='participant_roles')=5
+      and count(*) filter(where catalog='roles')=10
+      and count(*) filter(where catalog='service_types')=2
+      and md5(string_agg(catalog||E'\t'||row_json,E'\n' order by catalog,row_json))='2e450238768fbe9889470864a1832486'
+    from controlled_seed_rows
+  ) then
+    raise exception '0009_verify_seed_contract_mismatch';
+  end if;
   if (select md5(coalesce(string_agg(p.oid::regprocedure::text,'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'89d8e1d260ccc0af72ee42c394f79f90'
-     or (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'5d966de3f2374078bbe39ec268bba6a5'
+     or (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'71f9763d702e95e4eede51a4a4611694'
      or (select md5(coalesce(string_agg(table_name||':'||ordinal_position::text||':'||column_name||':'||data_type||':'||udt_name||':'||is_nullable||':'||coalesce(column_default,'')||':'||coalesce(character_maximum_length::text,'')||':'||coalesce(numeric_precision::text,'')||':'||coalesce(numeric_scale::text,'')||':'||coalesce(datetime_precision::text,''),'|' order by table_name,ordinal_position),'')) from information_schema.columns where table_schema='public')<>'847b9f5c4ec9d428c522f714de59fd1f'
      or (select md5(coalesce(string_agg(table_definition.relname||':'||constraint_definition.conname||':'||case constraint_definition.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(constraint_definition.oid),'|' order by table_definition.relname,constraint_definition.conname),'')) from pg_constraint constraint_definition join pg_class table_definition on table_definition.oid=constraint_definition.conrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and constraint_definition.contype in ('p','f','u','c'))<>'64f099164063d0cf500478dda3b5d25c'
      or (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')<>'653875a8435cf43bda4fe55950f65802'
@@ -85,12 +117,22 @@ begin
   from (values
     ('is_exact_b1_account_admin_profile_b2b(uuid)','104d16a531ea53a5b4908102322097dc'),
     ('get_admin_account_lifecycle_context_b2b(uuid)','6e7c8bb5e2dcf99fce6a75e03e07c309'),
-    ('transition_admin_account_lifecycle_b2b(uuid,text,text)','0080f41a2cd78576763ebb5d5128996e')
+    ('transition_admin_account_lifecycle_b2b(uuid,text,text)','7f940968051ff1b844443f6c76b561c3')
   ) expected(signature,body_hash)
   left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
   where p.oid is null or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash;
   if mismatch_count<>0 then
     raise exception '0009_verify_function_body_mismatch';
+  end if;
+  select regexp_replace(p.prosrc,'\s+','','g') into normalized_mutation
+  from pg_proc p where p.oid=mutation_oid;
+  if strpos(normalized_mutation,'orderbyprofile.idforupdate;ifnotpublic.is_b1_account_admin()then')=0
+     or strpos(normalized_mutation,'frompublic.academic_programsprogramwhereprogram.id=target_profile.primary_program_idforshare;')=0
+     or strpos(normalized_mutation,'frompublic.academic_programsprogramwhereprogram.id=target_profile.primary_program_idforshare;')<
+        strpos(normalized_mutation,'orderbyprofile.idforupdate;ifnotpublic.is_b1_account_admin()then')
+     or strpos(normalized_mutation,'updatepublic.profilesprofile')<
+        strpos(normalized_mutation,'frompublic.academic_programsprogramwhereprogram.id=target_profile.primary_program_idforshare;') then
+    raise exception '0009_verify_program_lock_order_mismatch';
   end if;
   select count(*) into mismatch_count
   from (values
@@ -225,6 +267,40 @@ begin
 end;
 $fixture_prerequisite$;
 
+-- Evidencia owner del baseline vivo: se captura antes de crear perfiles o
+-- asignaciones sintéticas y nunca se expone en la salida del verificador.
+create temporary table sitaa_0009_baseline_exact_admins(
+  profile_id uuid primary key,
+  profile_hash text not null,
+  assignment_hash text not null,
+  audit_hash text not null
+) on commit drop;
+insert into sitaa_0009_baseline_exact_admins
+select profile.id,
+  md5(row_to_json(profile)::text),
+  md5(coalesce((select string_agg(row_to_json(assignment)::text,'|' order by assignment.id)
+    from public.role_assignments assignment where assignment.user_id=profile.id),'')),
+  md5(coalesce((select string_agg(row_to_json(event)::text,'|' order by event.id)
+    from public.admin_audit_events event
+    where event.actor_profile_id=profile.id or event.target_profile_id=profile.id),''))
+from public.profiles profile
+where public.is_exact_b1_account_admin_profile_b2b(profile.id)
+;
+
+create temporary table sitaa_0009_baseline_counts(
+  baseline_active_exact_b1_admin_count bigint not null
+) on commit drop;
+insert into sitaa_0009_baseline_counts
+select count(*) from pg_temp.sitaa_0009_baseline_exact_admins;
+
+do $baseline_prerequisite$
+begin
+  if (select baseline_active_exact_b1_admin_count from pg_temp.sitaa_0009_baseline_counts)<1 then
+    raise exception '0009_verify_live_exact_admin_baseline_missing';
+  end if;
+end;
+$baseline_prerequisite$;
+
 insert into public.academic_programs(id,division_id,code,name,is_active)
 select invalid_program_id,division_id,'sitaa-0009-'||run_marker,
   'Programa sintético 0009',true
@@ -235,6 +311,12 @@ create temporary table sitaa_0009_cases(
   id uuid not null unique,
   email text not null unique,
   identifier text null unique
+) on commit drop;
+create temporary table sitaa_0009_allocated_identifiers(
+  label text primary key,
+  identifier text not null unique,
+  check(identifier~'^[0-9]{1,50}$'),
+  check(left(identifier,1)='0')
 ) on commit drop;
 create temporary table sitaa_0009_results(
   transition text primary key,
@@ -264,10 +346,48 @@ begin
   perform set_config('request.jwt.claims',jsonb_build_object('sub',target_id,'role','authenticated')::text,true);
 end;
 $$;
+create function pg_temp.allocate_identifier(target_label text)
+returns text language plpgsql
+set search_path=pg_temp,public,pg_catalog
+as $$
+declare
+  marker text:=(select run_marker from sitaa_0009_context);
+  candidate text;
+  attempt integer;
+begin
+  select allocated.identifier into candidate
+  from sitaa_0009_allocated_identifiers allocated
+  where allocated.label=target_label;
+  if candidate is not null then
+    return candidate;
+  end if;
+
+  for attempt in 0..999 loop
+    candidate:='0'||lpad(mod(
+      (('x'||substr(md5(marker||':'||target_label||':'||attempt::text),1,15))::bit(60)::bigint),
+      1000000000000000::bigint
+    )::text,15,'0');
+    if not exists (
+         select 1 from sitaa_0009_allocated_identifiers allocated
+         where allocated.identifier=candidate
+       ) and not exists (
+         select 1 from public.profiles profile
+         where profile.institutional_id_type in ('student_account','worker_number')
+           and profile.institutional_id_value=candidate
+       ) then
+      insert into sitaa_0009_allocated_identifiers(label,identifier)
+      values(target_label,candidate);
+      return candidate;
+    end if;
+  end loop;
+  raise exception '0009_verify_identifier_allocator_exhausted';
+end;
+$$;
 grant select on table pg_temp.sitaa_0009_cases to authenticated;
 grant select on table pg_temp.sitaa_0009_context to authenticated;
 grant select,insert on table pg_temp.sitaa_0009_results to authenticated;
 grant select on table pg_temp.sitaa_0009_lifecycle_baseline to authenticated;
+grant select on table pg_temp.sitaa_0009_baseline_counts to authenticated;
 grant execute on function pg_temp.case_id(text),pg_temp.set_request_user(text) to authenticated;
 
 create function pg_temp.create_case(
@@ -285,8 +405,7 @@ declare
   marker text:=(select run_marker from sitaa_0009_context);
   target_email text:=replace(target_label,'_','-')||'-'||marker||'@example.invalid';
   target_identifier text:=case when target_kind='institutional'
-    then '9'||substr((('x'||substr(md5(target_id::text),1,15))::bit(60)::bigint)::text,1,15)
-    else null end;
+    then pg_temp.allocate_identifier(target_label) else null end;
 begin
   insert into sitaa_0009_cases values(target_label,target_id,target_email,target_identifier);
   insert into auth.users(
@@ -371,6 +490,22 @@ insert into public.role_assignments(
  (select program_id from sitaa_0009_context),
  (select institutional_today from sitaa_0009_context),null,false,pg_temp.case_id('admin_a'));
 
+do $synthetic_admin_baseline_contract$
+declare
+  baseline_count bigint:=(select baseline_active_exact_b1_admin_count from pg_temp.sitaa_0009_baseline_counts);
+  observed_count bigint;
+begin
+  select count(*) into observed_count
+  from public.profiles profile
+  where public.is_exact_b1_account_admin_profile_b2b(profile.id);
+  if public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_a')) is distinct from true
+     or public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_b')) is distinct from true
+     or observed_count<>baseline_count+2 then
+    raise exception '0009_verify_synthetic_admin_baseline_failed';
+  end if;
+end;
+$synthetic_admin_baseline_contract$;
+
 insert into public.activities(
   id,title,status_code,program_id,scope_type,division_id,
   responsible_profile_id,created_by
@@ -409,6 +544,21 @@ insert into sitaa_0009_invariants values
 ('activities',(select md5(coalesce(string_agg(row_to_json(activity)::text,'|' order by activity.id),'')) from public.activities activity where activity.id=(select activity_id from sitaa_0009_context))),
 ('participants',(select md5(coalesce(string_agg(row_to_json(participant)::text,'|' order by participant.id),'')) from public.activity_participants participant where participant.activity_id=(select activity_id from sitaa_0009_context)));
 
+create temporary table sitaa_0009_negative_baseline(
+  label text primary key,
+  profile_hash text not null,
+  auth_hash text not null,
+  assignment_hash text not null
+) on commit drop;
+insert into sitaa_0009_negative_baseline
+select fixture.label,md5(row_to_json(profile)::text),md5(row_to_json(auth_user)::text),
+  md5(coalesce((select string_agg(row_to_json(assignment)::text,'|' order by assignment.id)
+    from public.role_assignments assignment where assignment.user_id=profile.id),''))
+from pg_temp.sitaa_0009_cases fixture
+join public.profiles profile on profile.id=fixture.id
+join auth.users auth_user on auth_user.id=fixture.id
+where fixture.label in ('pending_target','inactive_invalid_identity','inactive_unconfirmed');
+
 -- Actor ordinario: ni contexto ni mutación atraviesan la autorización interna.
 select pg_temp.set_request_user('ordinary');
 set local role authenticated;
@@ -439,31 +589,41 @@ begin
     exception when insufficient_privilege then
       if sqlerrm<>'sitaa_admin_access_denied' then raise; end if;
     end;
-    begin
-      perform public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_a'));
-      raise exception '0009_verify_expected_helper_acl_denial';
-    exception when insufficient_privilege then null;
-    end;
   end loop;
 end;
 $ordinary_denied$;
 reset role;
 
+-- Única invocación cliente del helper privado: debe fallar por ACL con 42501.
 select pg_temp.set_request_user('admin_a');
 set local role authenticated;
+do $private_helper_acl_denial$
+begin
+  begin
+    perform public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_a'));
+    raise exception '0009_verify_expected_helper_acl_denial';
+  exception when sqlstate '42501' then null;
+  end;
+end;
+$private_helper_acl_denial$;
+reset role;
 
+-- Proyecciones públicas: no hay lecturas crudas durante este intervalo cliente.
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
 do $context_contract$
 declare
   context_row record;
   missing_target uuid:=gen_random_uuid();
   context_count integer;
+  baseline_count bigint:=(select baseline_active_exact_b1_admin_count from pg_temp.sitaa_0009_baseline_counts);
 begin
   select * into context_row
   from public.get_admin_account_lifecycle_context_b2b(pg_temp.case_id('active_target'));
   if context_row.target_profile_id is distinct from pg_temp.case_id('active_target')
      or not context_row.can_deactivate or context_row.can_reactivate
      or context_row.current_or_future_assignment_count<>2
-     or context_row.active_exact_b1_admin_count<>2
+     or context_row.active_exact_b1_admin_count<>baseline_count+2
      or context_row.open_responsibility_count<>1
      or context_row.open_participation_count<>1
      or context_row.denial_code is not null then
@@ -541,7 +701,10 @@ begin
   end if;
 end;
 $context_contract$;
+reset role;
 
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
 do $input_contract$
 begin
   begin
@@ -594,7 +757,10 @@ begin
   end;
 end;
 $input_contract$;
+reset role;
 
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
 do $direct_acl_denial_contract$
 begin
   begin
@@ -615,16 +781,16 @@ begin
   end;
 end;
 $direct_acl_denial_contract$;
+reset role;
 
-do $deactivate_reactivate_contract$
+-- Transición institucional: cliente invoca y guarda sólo la fila RPC temporal.
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
+do $deactivate_client_phase$
 declare
   result_row record;
   context_row record;
-  persisted_profile record;
-  baseline_profile record;
 begin
-  select * into baseline_profile
-  from pg_temp.sitaa_0009_lifecycle_baseline where label='active_target';
   select * into result_row from public.transition_admin_account_lifecycle_b2b(
     pg_temp.case_id('active_target'),'deactivate',E'  Motivo\t sintético   válido de desactivación  '
   );
@@ -632,15 +798,6 @@ begin
      or result_row.previous_status<>'active' or result_row.new_status<>'inactive'
      or result_row.changed_fields<>array['account_status','deactivated_at','is_active']::text[] then
     raise exception '0009_verify_deactivation_failed';
-  end if;
-  select activated_at,deactivated_at,updated_at into persisted_profile
-  from public.profiles where id=pg_temp.case_id('active_target');
-  if persisted_profile.activated_at is distinct from baseline_profile.activated_at
-     or baseline_profile.deactivated_at is not null
-     or persisted_profile.deactivated_at is null
-     or persisted_profile.updated_at is distinct from result_row.updated_at
-     or persisted_profile.updated_at < baseline_profile.updated_at then
-    raise exception '0009_verify_deactivation_timestamp_contract_failed';
   end if;
   insert into pg_temp.sitaa_0009_results values(
     'deactivate',result_row.target_profile_id,result_row.audit_event_id,
@@ -658,6 +815,36 @@ begin
      or (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='inactive')<>1 then
     raise exception '0009_verify_inactive_assignment_presentation_failed';
   end if;
+  begin
+    perform public.transition_admin_account_lifecycle_b2b(
+      pg_temp.case_id('active_target'),'deactivate','Motivo sintético válido duplicado'
+    );
+    raise exception '0009_verify_expected_duplicate_state_conflict';
+  exception when object_not_in_prerequisite_state then
+    if sqlerrm<>'sitaa_account_lifecycle_state_conflict' then raise; end if;
+  end;
+end;
+$deactivate_client_phase$;
+reset role;
+
+-- Postcondiciones crudas de desactivación, exclusivamente como owner.
+do $deactivate_owner_phase$
+declare
+  persisted_profile record;
+  baseline_profile record;
+  result_row record;
+begin
+  select * into baseline_profile from pg_temp.sitaa_0009_lifecycle_baseline where label='active_target';
+  select * into result_row from pg_temp.sitaa_0009_results where transition='deactivate';
+  select activated_at,deactivated_at,updated_at into persisted_profile
+  from public.profiles where id=pg_temp.case_id('active_target');
+  if persisted_profile.activated_at is distinct from baseline_profile.activated_at
+     or baseline_profile.deactivated_at is not null
+     or persisted_profile.deactivated_at is null
+     or persisted_profile.updated_at is distinct from result_row.updated_at
+     or persisted_profile.updated_at<baseline_profile.updated_at then
+    raise exception '0009_verify_deactivation_timestamp_contract_failed';
+  end if;
   if not exists (
     select 1 from public.admin_audit_events event
     where event.id=result_row.audit_event_id
@@ -670,20 +857,25 @@ begin
   ) then
     raise exception '0009_verify_deactivation_audit_contract_failed';
   end if;
-  begin
-    perform public.transition_admin_account_lifecycle_b2b(
-      pg_temp.case_id('active_target'),'deactivate','Motivo sintético válido duplicado'
-    );
-    raise exception '0009_verify_expected_duplicate_state_conflict';
-  exception when object_not_in_prerequisite_state then
-    if sqlerrm<>'sitaa_account_lifecycle_state_conflict' then raise; end if;
-  end;
-  perform pg_temp.set_request_user('active_target');
+end;
+$deactivate_owner_phase$;
+
+select pg_temp.set_request_user('active_target');
+set local role authenticated;
+do $inactive_barrier_client_phase$
+begin
   if public.can_edit_activity((select activity_id from pg_temp.sitaa_0009_context)) then
     raise exception '0009_verify_inactive_operational_barrier_failed';
   end if;
-  perform pg_temp.set_request_user('admin_a');
+end;
+$inactive_barrier_client_phase$;
+reset role;
 
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
+do $reactivate_client_phase$
+declare result_row record;
+begin
   select * into result_row from public.transition_admin_account_lifecycle_b2b(
     pg_temp.case_id('active_target'),'reactivate','Motivo sintético válido de reactivación'
   );
@@ -692,22 +884,38 @@ begin
      or result_row.changed_fields<>array['account_status','deactivated_at','is_active']::text[] then
     raise exception '0009_verify_reactivation_failed';
   end if;
+  insert into pg_temp.sitaa_0009_results values(
+    'reactivate',result_row.target_profile_id,result_row.audit_event_id,
+    result_row.previous_status,result_row.new_status,result_row.changed_fields,result_row.updated_at
+  );
+  if (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='current')<>1
+     or (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='future')<>1
+     or (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='expired')<>1
+     or (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='inactive')<>1
+     or (select count(*) from public.get_admin_account_audit_history_b1(pg_temp.case_id('active_target'),50,0) history where history.action_code in ('account_deactivated','account_reactivated'))<>2 then
+    raise exception '0009_verify_reactivation_projection_failed';
+  end if;
+end;
+$reactivate_client_phase$;
+reset role;
+
+do $reactivate_owner_phase$
+declare
+  persisted_profile record;
+  baseline_profile record;
+  result_row record;
+begin
+  select * into baseline_profile from pg_temp.sitaa_0009_lifecycle_baseline where label='active_target';
+  select * into result_row from pg_temp.sitaa_0009_results where transition='reactivate';
   select activated_at,deactivated_at,updated_at into persisted_profile
   from public.profiles where id=pg_temp.case_id('active_target');
   if persisted_profile.activated_at is distinct from baseline_profile.activated_at
      or persisted_profile.deactivated_at is not null
      or persisted_profile.updated_at is distinct from result_row.updated_at
-     or persisted_profile.updated_at < baseline_profile.updated_at
-     or persisted_profile.updated_at < (
-       select updated_at from pg_temp.sitaa_0009_results where transition='deactivate'
-     ) then
+     or persisted_profile.updated_at<baseline_profile.updated_at
+     or persisted_profile.updated_at<(select updated_at from pg_temp.sitaa_0009_results where transition='deactivate') then
     raise exception '0009_verify_reactivation_timestamp_contract_failed';
   end if;
-  insert into pg_temp.sitaa_0009_results values(
-    'reactivate',result_row.target_profile_id,result_row.audit_event_id,
-    result_row.previous_status,result_row.new_status,result_row.changed_fields,
-    result_row.updated_at
-  );
   if not exists (
     select 1 from public.admin_audit_events event
     where event.id=result_row.audit_event_id
@@ -720,75 +928,82 @@ begin
   ) then
     raise exception '0009_verify_reactivation_audit_contract_failed';
   end if;
-  perform pg_temp.set_request_user('active_target');
+end;
+$reactivate_owner_phase$;
+
+select pg_temp.set_request_user('active_target');
+set local role authenticated;
+do $reactivated_barrier_client_phase$
+begin
   if not public.can_edit_activity((select activity_id from pg_temp.sitaa_0009_context)) then
     raise exception '0009_verify_reactivation_authorization_failed';
   end if;
-  perform pg_temp.set_request_user('admin_a');
-  if (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='current')<>1
-     or (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='future')<>1
-     or (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='expired')<>1
-     or (select count(*) from public.get_admin_account_assignments_b1(pg_temp.case_id('active_target')) assignment where assignment.presentation_status='inactive')<>1 then
-    raise exception '0009_verify_assignment_presentation_preservation_failed';
-  end if;
-  if (select count(*) from public.get_admin_account_audit_history_b1(
-        pg_temp.case_id('active_target'),50,0
-      ) history
-      where history.action_code in ('account_deactivated','account_reactivated'))<>2 then
-    raise exception '0009_verify_sanitized_audit_history_failed';
-  end if;
 end;
-$deactivate_reactivate_contract$;
+$reactivated_barrier_client_phase$;
+reset role;
 
 -- Seguridad real del último administrador: la rama last_admin queda como defensa
 -- en profundidad; la autoridad se pierde antes de que un administrador inactivo
 -- pueda intentar la transición recíproca.
-do $two_admin_safety_contract$
+do $two_admin_owner_baseline$
 declare
-  result_row record;
-  event_count integer;
+  baseline_count bigint:=(select baseline_active_exact_b1_admin_count from pg_temp.sitaa_0009_baseline_counts);
+  observed_count bigint;
 begin
-  perform pg_temp.set_request_user('admin_a');
+  select count(*) into observed_count from public.profiles profile
+  where public.is_exact_b1_account_admin_profile_b2b(profile.id);
+  if public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_a')) is distinct from true
+     or public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_b')) is distinct from true
+     or observed_count<>baseline_count+2 then
+    raise exception '0009_verify_two_admin_owner_baseline_failed';
+  end if;
+end;
+$two_admin_owner_baseline$;
+
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
+do $two_admin_deactivate_client$
+declare result_row record;
+begin
   select * into result_row
   from public.transition_admin_account_lifecycle_b2b(
     pg_temp.case_id('admin_b'),'deactivate',
     'Motivo sintético válido de seguridad administrativa'
   );
   if result_row.target_profile_id is distinct from pg_temp.case_id('admin_b')
-     or result_row.previous_status<>'active' or result_row.new_status<>'inactive'
-     or not exists (
-       select 1 from public.profiles profile
-       where profile.id=pg_temp.case_id('admin_a')
-         and profile.account_status='active' and profile.is_active
-         and public.is_b1_account_admin()
-     )
-     or not exists (
-       select 1 from public.profiles profile
-       where profile.id=pg_temp.case_id('admin_b')
-         and profile.account_status='inactive' and not profile.is_active
-     )
-     or (select count(distinct profile.id)
-         from public.profiles profile
-         join public.role_assignments assignment on assignment.user_id=profile.id
-         where profile.account_status='active' and profile.is_active
-           and assignment.role_code='technical_admin'
-           and assignment.scope_type='system'
-           and assignment.service_area='technical'
-           and assignment.program_id is null and assignment.division_id is null
-           and assignment.is_active
-           and assignment.starts_at<=public.sitaa_current_mexico_date()
-           and (assignment.ends_at is null or assignment.ends_at>=public.sitaa_current_mexico_date()))<>1 then
-    raise exception '0009_verify_two_admin_deactivation_failed';
+     or result_row.previous_status<>'active' or result_row.new_status<>'inactive' then
+    raise exception '0009_verify_two_admin_deactivation_result_failed';
   end if;
-  select count(*) into event_count
-  from public.admin_audit_events event
-  where event.target_profile_id=pg_temp.case_id('admin_b')
-    and event.action_code='account_deactivated';
-  if event_count<>1 then
-    raise exception '0009_verify_two_admin_event_count_failed';
-  end if;
+  insert into pg_temp.sitaa_0009_results values(
+    'admin_b_deactivate',result_row.target_profile_id,result_row.audit_event_id,
+    result_row.previous_status,result_row.new_status,result_row.changed_fields,result_row.updated_at
+  );
+end;
+$two_admin_deactivate_client$;
+reset role;
 
-  perform pg_temp.set_request_user('admin_b');
+do $two_admin_deactivate_owner$
+declare
+  baseline_count bigint:=(select baseline_active_exact_b1_admin_count from pg_temp.sitaa_0009_baseline_counts);
+  observed_count bigint;
+begin
+  select count(*) into observed_count from public.profiles profile
+  where public.is_exact_b1_account_admin_profile_b2b(profile.id);
+  if public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_a')) is distinct from true
+     or public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_b')) is distinct from false
+     or observed_count<>baseline_count+1
+     or not exists(select 1 from public.profiles where id=pg_temp.case_id('admin_b') and account_status='inactive' and not is_active)
+     or (select count(*) from public.admin_audit_events event where event.target_profile_id=pg_temp.case_id('admin_b') and event.action_code='account_deactivated')<>1
+     or not exists(select 1 from public.admin_audit_events event join pg_temp.sitaa_0009_results result on result.audit_event_id=event.id where result.transition='admin_b_deactivate' and event.actor_profile_id=pg_temp.case_id('admin_a') and event.target_profile_id=pg_temp.case_id('admin_b') and event.action_code='account_deactivated' and event.outcome='success') then
+    raise exception '0009_verify_two_admin_deactivation_owner_failed';
+  end if;
+end;
+$two_admin_deactivate_owner$;
+
+select pg_temp.set_request_user('admin_b');
+set local role authenticated;
+do $two_admin_reciprocal_client$
+begin
   begin
     perform public.transition_admin_account_lifecycle_b2b(
       pg_temp.case_id('admin_a'),'deactivate',
@@ -798,13 +1013,24 @@ begin
   exception when insufficient_privilege then
     if sqlerrm<>'sitaa_admin_access_denied' then raise; end if;
   end;
+end;
+$two_admin_reciprocal_client$;
+reset role;
+
+do $two_admin_reciprocal_owner$
+begin
   if not exists(select 1 from public.profiles where id=pg_temp.case_id('admin_a') and account_status='active' and is_active)
      or not exists(select 1 from public.profiles where id=pg_temp.case_id('admin_b') and account_status='inactive' and not is_active)
      or (select count(*) from public.admin_audit_events event where event.target_profile_id in (pg_temp.case_id('admin_a'),pg_temp.case_id('admin_b')) and event.action_code='account_deactivated')<>1 then
     raise exception '0009_verify_reciprocal_denial_side_effect';
   end if;
+end;
+$two_admin_reciprocal_owner$;
 
-  perform pg_temp.set_request_user('admin_a');
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
+do $two_admin_self_client$
+begin
   begin
     perform public.transition_admin_account_lifecycle_b2b(
       pg_temp.case_id('admin_a'),'deactivate',
@@ -814,22 +1040,55 @@ begin
   exception when insufficient_privilege then
     if sqlerrm<>'sitaa_account_lifecycle_self_forbidden' then raise; end if;
   end;
+end;
+$two_admin_self_client$;
+reset role;
+
+do $two_admin_self_owner$
+begin
   if not exists(select 1 from public.profiles where id=pg_temp.case_id('admin_a') and account_status='active' and is_active)
      or (select count(*) from public.admin_audit_events event where event.target_profile_id in (pg_temp.case_id('admin_a'),pg_temp.case_id('admin_b')) and event.action_code='account_deactivated')<>1 then
     raise exception '0009_verify_admin_self_denial_side_effect';
   end if;
+end;
+$two_admin_self_owner$;
 
-  perform public.transition_admin_account_lifecycle_b2b(
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
+do $two_admin_restore_client$
+declare result_row record;
+begin
+  select * into result_row from public.transition_admin_account_lifecycle_b2b(
     pg_temp.case_id('admin_b'),'reactivate',
     'Motivo sintético válido de restauración administrativa'
   );
-  if not exists(select 1 from public.profiles where id=pg_temp.case_id('admin_b') and account_status='active' and is_active) then
+  insert into pg_temp.sitaa_0009_results values(
+    'admin_b_reactivate',result_row.target_profile_id,result_row.audit_event_id,
+    result_row.previous_status,result_row.new_status,result_row.changed_fields,result_row.updated_at
+  );
+end;
+$two_admin_restore_client$;
+reset role;
+
+do $two_admin_restore_owner$
+declare
+  baseline_count bigint:=(select baseline_active_exact_b1_admin_count from pg_temp.sitaa_0009_baseline_counts);
+  observed_count bigint;
+begin
+  select count(*) into observed_count from public.profiles profile
+  where public.is_exact_b1_account_admin_profile_b2b(profile.id);
+  if public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_b')) is distinct from true
+     or observed_count<>baseline_count+2
+     or not exists(select 1 from public.profiles where id=pg_temp.case_id('admin_b') and account_status='active' and is_active) then
     raise exception '0009_verify_admin_reactivation_restoration_failed';
   end if;
 end;
-$two_admin_safety_contract$;
+$two_admin_restore_owner$;
 
-do $additional_lifecycle_contract$
+-- Cuentas técnicas e inactivas: RPC como cliente, estado crudo como owner.
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
+do $additional_lifecycle_client_phase_one$
 declare
   result_row record;
   target_label text;
@@ -841,9 +1100,11 @@ begin
   if result_row.previous_status<>'active' or result_row.new_status<>'inactive' then
     raise exception '0009_verify_technical_deactivation_failed';
   end if;
-  perform public.transition_admin_account_lifecycle_b2b(
+  insert into pg_temp.sitaa_0009_results values('active_technical_deactivate',result_row.target_profile_id,result_row.audit_event_id,result_row.previous_status,result_row.new_status,result_row.changed_fields,result_row.updated_at);
+  select * into result_row from public.transition_admin_account_lifecycle_b2b(
     pg_temp.case_id('active_technical'),'reactivate','Motivo técnico válido de reactivación'
   );
+  insert into pg_temp.sitaa_0009_results values('active_technical_reactivate',result_row.target_profile_id,result_row.audit_event_id,result_row.previous_status,result_row.new_status,result_row.changed_fields,result_row.updated_at);
 
   foreach target_label in array array['inactive_target','inactive_technical','admin_inactive'] loop
     select * into result_row from public.transition_admin_account_lifecycle_b2b(
@@ -852,6 +1113,7 @@ begin
     if result_row.previous_status<>'inactive' or result_row.new_status<>'active' then
       raise exception '0009_verify_additional_reactivation_failed:%',target_label;
     end if;
+    insert into pg_temp.sitaa_0009_results values(target_label||'_reactivate',result_row.target_profile_id,result_row.audit_event_id,result_row.previous_status,result_row.new_status,result_row.changed_fields,result_row.updated_at);
     if target_label='admin_inactive' then
       select * into context_row
       from public.get_admin_account_lifecycle_context_b2b(pg_temp.case_id(target_label));
@@ -859,13 +1121,49 @@ begin
         raise exception '0009_verify_exact_admin_authority_restoration_failed';
       end if;
     end if;
-    perform public.transition_admin_account_lifecycle_b2b(
-      pg_temp.case_id(target_label),'deactivate','Motivo sintético válido de restauración'
-    );
   end loop;
 end;
-$additional_lifecycle_contract$;
+$additional_lifecycle_client_phase_one$;
+reset role;
 
+do $additional_lifecycle_owner_phase_one$
+begin
+  if not exists(select 1 from public.profiles where id=pg_temp.case_id('active_technical') and account_status='active' and is_active)
+     or not exists(select 1 from public.profiles where id=pg_temp.case_id('inactive_target') and account_status='active' and is_active)
+     or not exists(select 1 from public.profiles where id=pg_temp.case_id('inactive_technical') and account_status='active' and is_active)
+     or public.is_exact_b1_account_admin_profile_b2b(pg_temp.case_id('admin_inactive')) is distinct from true then
+    raise exception '0009_verify_additional_owner_reactivation_failed';
+  end if;
+end;
+$additional_lifecycle_owner_phase_one$;
+
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
+do $additional_lifecycle_client_phase_two$
+declare target_label text; result_row record;
+begin
+  foreach target_label in array array['inactive_target','inactive_technical','admin_inactive'] loop
+    select * into result_row from public.transition_admin_account_lifecycle_b2b(
+      pg_temp.case_id(target_label),'deactivate','Motivo sintético válido de restauración'
+    );
+    insert into pg_temp.sitaa_0009_results values(target_label||'_deactivate',result_row.target_profile_id,result_row.audit_event_id,result_row.previous_status,result_row.new_status,result_row.changed_fields,result_row.updated_at);
+  end loop;
+end;
+$additional_lifecycle_client_phase_two$;
+reset role;
+
+do $additional_lifecycle_owner_phase_two$
+begin
+  if not exists(select 1 from public.profiles where id=pg_temp.case_id('inactive_target') and account_status='inactive' and not is_active)
+     or not exists(select 1 from public.profiles where id=pg_temp.case_id('inactive_technical') and account_status='inactive' and not is_active)
+     or not exists(select 1 from public.profiles where id=pg_temp.case_id('admin_inactive') and account_status='inactive' and not is_active) then
+    raise exception '0009_verify_additional_owner_deactivation_failed';
+  end if;
+end;
+$additional_lifecycle_owner_phase_two$;
+
+select pg_temp.set_request_user('admin_a');
+set local role authenticated;
 do $negative_mutation_contract$
 begin
   begin
@@ -894,7 +1192,6 @@ begin
   end;
 end;
 $negative_mutation_contract$;
-
 reset role;
 
 -- No hay auditoría de fallos y la bitácora sigue append-only.
@@ -916,6 +1213,30 @@ begin
   end;
   if exists(select 1 from public.admin_audit_events where target_profile_id in (pg_temp.case_id('pending_target'),pg_temp.case_id('inactive_unconfirmed')) and action_code in ('account_deactivated','account_reactivated')) then
     raise exception '0009_verify_failure_audit_leak';
+  end if;
+  if exists (
+    select 1
+    from pg_temp.sitaa_0009_baseline_exact_admins baseline
+    left join public.profiles profile on profile.id=baseline.profile_id
+    where profile.id is null
+       or public.is_exact_b1_account_admin_profile_b2b(profile.id) is distinct from true
+       or baseline.profile_hash<>md5(row_to_json(profile)::text)
+       or baseline.assignment_hash<>md5(coalesce((select string_agg(row_to_json(assignment)::text,'|' order by assignment.id) from public.role_assignments assignment where assignment.user_id=profile.id),''))
+       or baseline.audit_hash<>md5(coalesce((select string_agg(row_to_json(event)::text,'|' order by event.id) from public.admin_audit_events event where event.actor_profile_id=profile.id or event.target_profile_id=profile.id),''))
+  ) then
+    raise exception '0009_verify_live_exact_admin_baseline_changed';
+  end if;
+  if exists (
+    select 1
+    from pg_temp.sitaa_0009_negative_baseline baseline
+    join pg_temp.sitaa_0009_cases fixture using(label)
+    join public.profiles profile on profile.id=fixture.id
+    join auth.users auth_user on auth_user.id=fixture.id
+    where baseline.profile_hash<>md5(row_to_json(profile)::text)
+       or baseline.auth_hash<>md5(row_to_json(auth_user)::text)
+       or baseline.assignment_hash<>md5(coalesce((select string_agg(row_to_json(assignment)::text,'|' order by assignment.id) from public.role_assignments assignment where assignment.user_id=profile.id),''))
+  ) then
+    raise exception '0009_verify_rejected_operation_side_effect';
   end if;
   if (select count(*) from public.profiles where id in (select id from pg_temp.sitaa_0009_cases))<>(select count(*) from pg_temp.sitaa_0009_cases) then
     raise exception '0009_verify_fixture_profile_loss';

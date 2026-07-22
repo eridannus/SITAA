@@ -23,8 +23,39 @@ begin
      or (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where n.nspname='public') + (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral aclexplode(coalesce(c.relacl,acldefault(case when c.relkind='S' then 's'::"char" else 'r'::"char" end,c.relowner))) a where n.nspname='public' and c.relkind in ('r','p','v','m','S'))<>445 then
     raise exception 'sitaa_0009_rollback_guard_failed' using errcode='55000';
   end if;
+  if not (
+    with controlled_seed_rows(catalog,row_json) as (
+      select 'academic_periods',to_jsonb(seed)::text from public.academic_periods seed union all
+      select 'academic_programs',to_jsonb(seed)::text from public.academic_programs seed union all
+      select 'activity_modalities',to_jsonb(seed)::text from public.activity_modalities seed union all
+      select 'activity_statuses',to_jsonb(seed)::text from public.activity_statuses seed union all
+      select 'activity_types',to_jsonb(seed)::text from public.activity_types seed union all
+      select 'attention_categories',to_jsonb(seed)::text from public.attention_categories seed union all
+      select 'divisions',to_jsonb(seed)::text from public.divisions seed union all
+      select 'location_types',to_jsonb(seed)::text from public.location_types seed union all
+      select 'participant_roles',to_jsonb(seed)::text from public.participant_roles seed union all
+      select 'roles',to_jsonb(seed)::text from public.roles seed union all
+      select 'service_types',to_jsonb(seed)::text from public.service_types seed
+    )
+    select count(*)=51
+      and count(*) filter(where catalog='academic_periods')=5
+      and count(*) filter(where catalog='academic_programs')=2
+      and count(*) filter(where catalog='activity_modalities')=3
+      and count(*) filter(where catalog='activity_statuses')=6
+      and count(*) filter(where catalog='activity_types')=5
+      and count(*) filter(where catalog='attention_categories')=5
+      and count(*) filter(where catalog='divisions')=1
+      and count(*) filter(where catalog='location_types')=7
+      and count(*) filter(where catalog='participant_roles')=5
+      and count(*) filter(where catalog='roles')=10
+      and count(*) filter(where catalog='service_types')=2
+      and md5(string_agg(catalog||E'\t'||row_json,E'\n' order by catalog,row_json))='2e450238768fbe9889470864a1832486'
+    from controlled_seed_rows
+  ) then
+    raise exception 'sitaa_0009_rollback_seed_guard_failed' using errcode='55000';
+  end if;
   if (select md5(coalesce(string_agg(p.oid::regprocedure::text,'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'89d8e1d260ccc0af72ee42c394f79f90'
-     or (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'5d966de3f2374078bbe39ec268bba6a5'
+     or (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'71f9763d702e95e4eede51a4a4611694'
      or (select md5(coalesce(string_agg(table_name||':'||ordinal_position::text||':'||column_name||':'||data_type||':'||udt_name||':'||is_nullable||':'||coalesce(column_default,'')||':'||coalesce(character_maximum_length::text,'')||':'||coalesce(numeric_precision::text,'')||':'||coalesce(numeric_scale::text,'')||':'||coalesce(datetime_precision::text,''),'|' order by table_name,ordinal_position),'')) from information_schema.columns where table_schema='public')<>'847b9f5c4ec9d428c522f714de59fd1f'
      or (select md5(coalesce(string_agg(table_definition.relname||':'||constraint_definition.conname||':'||case constraint_definition.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(constraint_definition.oid),'|' order by table_definition.relname,constraint_definition.conname),'')) from pg_constraint constraint_definition join pg_class table_definition on table_definition.oid=constraint_definition.conrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and constraint_definition.contype in ('p','f','u','c'))<>'64f099164063d0cf500478dda3b5d25c'
      or (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')<>'653875a8435cf43bda4fe55950f65802'
@@ -38,7 +69,7 @@ begin
   from (values
     ('is_exact_b1_account_admin_profile_b2b(uuid)','104d16a531ea53a5b4908102322097dc'),
     ('get_admin_account_lifecycle_context_b2b(uuid)','6e7c8bb5e2dcf99fce6a75e03e07c309'),
-    ('transition_admin_account_lifecycle_b2b(uuid,text,text)','0080f41a2cd78576763ebb5d5128996e')
+    ('transition_admin_account_lifecycle_b2b(uuid,text,text)','7f940968051ff1b844443f6c76b561c3')
   ) expected(signature,body_hash)
   left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
   where p.oid is null or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash;
@@ -160,6 +191,37 @@ begin
      or (select count(*) from information_schema.usage_privileges where object_schema='public' and object_type='SEQUENCE')<>6
      or (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where n.nspname='public') + (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral aclexplode(coalesce(c.relacl,acldefault(case when c.relkind='S' then 's'::"char" else 'r'::"char" end,c.relowner))) a where n.nspname='public' and c.relkind in ('r','p','v','m','S'))<>440 then
     raise exception 'sitaa_0009_rollback_postcondition_failed' using errcode='55000';
+  end if;
+  if not (
+    with controlled_seed_rows(catalog,row_json) as (
+      select 'academic_periods',to_jsonb(seed)::text from public.academic_periods seed union all
+      select 'academic_programs',to_jsonb(seed)::text from public.academic_programs seed union all
+      select 'activity_modalities',to_jsonb(seed)::text from public.activity_modalities seed union all
+      select 'activity_statuses',to_jsonb(seed)::text from public.activity_statuses seed union all
+      select 'activity_types',to_jsonb(seed)::text from public.activity_types seed union all
+      select 'attention_categories',to_jsonb(seed)::text from public.attention_categories seed union all
+      select 'divisions',to_jsonb(seed)::text from public.divisions seed union all
+      select 'location_types',to_jsonb(seed)::text from public.location_types seed union all
+      select 'participant_roles',to_jsonb(seed)::text from public.participant_roles seed union all
+      select 'roles',to_jsonb(seed)::text from public.roles seed union all
+      select 'service_types',to_jsonb(seed)::text from public.service_types seed
+    )
+    select count(*)=51
+      and count(*) filter(where catalog='academic_periods')=5
+      and count(*) filter(where catalog='academic_programs')=2
+      and count(*) filter(where catalog='activity_modalities')=3
+      and count(*) filter(where catalog='activity_statuses')=6
+      and count(*) filter(where catalog='activity_types')=5
+      and count(*) filter(where catalog='attention_categories')=5
+      and count(*) filter(where catalog='divisions')=1
+      and count(*) filter(where catalog='location_types')=7
+      and count(*) filter(where catalog='participant_roles')=5
+      and count(*) filter(where catalog='roles')=10
+      and count(*) filter(where catalog='service_types')=2
+      and md5(string_agg(catalog||E'\t'||row_json,E'\n' order by catalog,row_json))='2e450238768fbe9889470864a1832486'
+    from controlled_seed_rows
+  ) then
+    raise exception 'sitaa_0009_rollback_post_seed_contract_failed' using errcode='55000';
   end if;
   if (select md5(coalesce(string_agg(p.oid::regprocedure::text,'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'7f2ecc4f95b05b5ea44413773bdc8e71'
      or (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')<>'43f89f8dba9ff02bb3c3f47dcee25af2'

@@ -6,7 +6,7 @@
 
 Orden manual obligatorio: ejecutar el preflight de sólo lectura, revisar sus 19 categorías bloqueantes y 7 informativas (26 filas siempre presentes, incluso cuando un bloqueo vale cero), desplegar la aplicación compatible, aplicar la migración, ejecutar el verificador transaccional, realizar smoke tests y finalmente regenerar/reconciliar el snapshot.
 
-La revisión previa a aplicación corrigió el handler canónico del trigger de correo a `sync_sitaa_profile_email_from_auth()`, preservó exactamente los `UPDATE` de columna de `authenticated` sobre `first_names`, `paternal_surname` y `maternal_surname`, y mantuvo denegados los campos de identidad y ciclo de vida protegidos. Los contratos usan mapas/hashes exactos post-0008 para impedir sustituciones que conserven sólo los conteos.
+La revisión previa a aplicación corrigió el handler canónico del trigger de correo a `sync_sitaa_profile_email_from_auth()`, preservó exactamente los `UPDATE` de columna de `authenticated` sobre `first_names`, `paternal_surname` y `maternal_surname`, y mantuvo denegados los campos de identidad y ciclo de vida protegidos. Los contratos usan mapas/hashes exactos post-0008 para impedir sustituciones que conserven sólo los conteos. El conjunto controlado de once catálogos contiene exactamente 51 filas y usa el hash canónico `2e450238768fbe9889470864a1832486`; se comprueba en preflight independiente, preflight embebido, guarda posterior al DDL, verificador y las dos guardas del rollback.
 
 ## Contrato automatizado y transaccional
 
@@ -93,8 +93,19 @@ La revisión previa a aplicación corrigió el handler canónico del trigger de 
 81. El detalle B.1 muestra los eventos sin exponer metadata.
 82. El rollback elimina sólo las tres funciones y conserva datos/eventos.
 83. El rollback recupera exactamente el contrato post-0008.
+84. Cada intervalo `SET LOCAL ROLE authenticated` tiene su `RESET ROLE`; en esas fases sólo se usan RPC públicas, objetos `pg_temp` concedidos y pruebas negativas protegidas.
+85. Las lecturas crudas de perfiles, Auth, asignaciones, actividades, participantes y auditoría se ejecutan exclusivamente como owner.
+86. La única llamada cliente al helper exacto privado es una prueba protegida que exige SQLSTATE `42501`; `authenticated` no recibe `EXECUTE`.
+87. Antes de crear fixtures se captura el conjunto y conteo de administradores B.1 exactos activos vivos, sin mostrarlos ni modificarlos.
+88. Los conteos sintéticos son relativos: línea base + 2, línea base + 1 tras desactivar B y línea base + 2 tras restaurarlo.
+89. Cada fixture institucional obtiene un identificador numérico con cero inicial mediante un allocator `pg_temp`, con reuso determinista y comprobación contra fixtures previos y ambos tipos de identificador vivos.
+90. La reactivación institucional bloquea el programa con `FOR SHARE`, exige que exista y permanezca activo y reutiliza ese resultado en la validación autoritativa.
+91. La secuencia de locks es advisory de ciclo, `role_assignments` en `SHARE`, Auth objetivo, perfiles ordenados por UUID, segunda autorización, programa institucional en `FOR SHARE`, validación, actualización y auditoría.
+92. Los diagnósticos informativos de dependencias abiertas usan directamente la frontera temporal pura 0008, sin depender de JWT ni de `activity_has_ended(uuid)`.
+93. Las seis superficies SQL exigen los cardinales exactos de los once catálogos, 51 filas totales y el hash canónico; 0009 introduce delta cero de semillas.
+94. El cuerpo normalizado de la mutación usa MD5 `7f940968051ff1b844443f6c76b561c3`; el mapa agregado de 54 funciones posteriores usa `71f9763d702e95e4eede51a4a4611694`.
 
-El verificador automatiza los contratos estructurales, ACL, autorizaciones, fixtures principales, transiciones, auditoría, preservación y rechazos deterministas. Prueba el helper privado como owner para autoridad exacta, asignación malformada y cuenta inactiva, y confirma `42501` al invocarlo como `authenticated`. También exige cardinalidad de contexto 0/1, objetivo inexistente sin filas, `auth_unconfirmed`, timestamps persistidos y monótonos, UUID exactos, actor/objetivo/acción/motivo/metadata exactos de auditoría y la presentación vigente/futura/vencida/inactiva/suspendida de asignaciones. Como `set_updated_at()` usa `now()`, que es estable dentro de una transacción PostgreSQL, el verificador transaccional prueba igualdad exacta entre la marca devuelta y la persistida, pero no exige valores de reloj distintos entre dos transiciones de la misma transacción; esa diferencia se comprueba en transacciones separadas durante la verificación manual posterior a la aplicación.
+El verificador automatiza los contratos estructurales, ACL, autorizaciones, fixtures principales, transiciones, auditoría, preservación y rechazos deterministas. Alterna fases cliente bajo `authenticated` con fases owner después de `RESET ROLE`: la primera sólo invoca RPC/proyecciones públicas o denegaciones expresas y la segunda inspecciona estado crudo. Prueba el helper privado como owner para autoridad exacta, asignación malformada y cuenta inactiva, y confirma `42501` en su única invocación directa como `authenticated`. Captura y conserva byte por byte los administradores exactos preexistentes, mientras las expectativas de A/B se calculan desde esa línea base. También exige cardinalidad de contexto 0/1, objetivo inexistente sin filas, `auth_unconfirmed`, timestamps persistidos y monótonos, UUID exactos, actor/objetivo/acción/motivo/metadata exactos de auditoría y la presentación vigente/futura/vencida/inactiva/suspendida de asignaciones. Como `set_updated_at()` usa `now()`, que es estable dentro de una transacción PostgreSQL, el verificador transaccional prueba igualdad exacta entre la marca devuelta y la persistida, pero no exige valores de reloj distintos entre dos transiciones de la misma transacción; esa diferencia se comprueba en transacciones separadas durante la verificación manual posterior a la aplicación.
 
 La seguridad de última autoridad usa una secuencia real con dos administradores: A desactiva a B; B pierde autoridad y su intento recíproco contra A falla con `42501/sitaa_admin_access_denied`; A no puede actuar sobre sí mismo; finalmente A restaura a B por la RPC pública. No se fabrica un estado imposible para forzar `last_admin`. Los casos de bloqueo entre sesiones se ejecutan aparte porque una sola transacción no puede probar esperas reales.
 
@@ -108,8 +119,9 @@ La seguridad de última autoridad usa una secuencia real con dos administradores
 6. Una transición comienza antes que la revocación: la revocación espera y la transición puede confirmar bajo autoridad todavía válida.
 7. Un cambio de email Auth comienza antes que la reactivación: ésta espera el lock Auth y evalúa el estado ya confirmado.
 8. La reactivación comienza antes que el cambio de email Auth: el cambio espera y el trigger sincroniza después del commit de la reactivación.
+9. La sesión A desactiva el programa institucional y se pausa antes de `COMMIT`; la sesión B intenta reactivar una cuenta de ese programa y espera su fila. Si A confirma, B rechaza con `sitaa_account_lifecycle_invalid_identity`; si A revierte, B puede continuar. Nunca debe confirmar un perfil activo ligado a un programa inactivo.
 
-Cada escenario debe ejecutarse en una rama Supabase, base local o clon desechable que pueda descartarse por completo. No se limpia producción borrando eventos append-only.
+Cada escenario debe ejecutarse en una rama Supabase, base local o clon desechable que pueda descartarse por completo. No se limpia producción borrando eventos append-only. Ningún escenario de concurrencia ni verificación PostgreSQL de 0009 se ha ejecutado todavía.
 
 ## Aplicación compatible y smoke tests
 

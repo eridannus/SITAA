@@ -142,11 +142,13 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 
 - Sólo un administrador B.1 exacto activo puede consultar elegibilidad o solicitar una transición; el helper de autoridad permanece owner-only.
 - La mutación captura el actor, bloquea autoridad y perfiles en orden determinista y repite la autorización antes de leer o cambiar el objetivo.
+- La reactivación institucional bloquea después el programa con `FOR SHARE`; sólo valida y actualiza si la fila existe y sigue activa. El orden termina en validación, actualización de perfil e inserción de auditoría.
 - Nunca se permite una transición propia ni desactivar la última autoridad B.1 exacta.
 - La reactivación exige identidad consistente, programa activo cuando aplica, correspondencia Auth/profile y correo confirmado.
 - El evento auditado no contiene Auth, tokens, cookies ni PII adicional. La desactivación no equivale a revocar físicamente sesiones ya emitidas.
 - 0009 preserva exactamente los tres permisos de columna de `authenticated` para nombres estructurados (`first_names`, `paternal_surname`, `maternal_surname`). No concede `UPDATE` de tabla ni acceso de escritura a `full_name`, correo, identidad, programa o campos del ciclo de vida.
 - Los dos triggers Auth continúan conectados por OID a `handle_sitaa_auth_user_created()` y `sync_sitaa_profile_email_from_auth()`; 0009 sólo verifica su contrato y no los altera.
+- El verificador 0009 ejecuta RPC y denegaciones cliente bajo `authenticated`, restablece el rol antes de inspeccionar perfiles, Auth, asignaciones o auditoría y conserva como owner la línea base de administradores exactos vivos. El allocator temporal de identificadores comprueba colisiones sin registrar identificadores existentes.
 
 ## Validaciones previas al piloto
 

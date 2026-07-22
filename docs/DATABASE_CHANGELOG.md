@@ -208,4 +208,6 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Se preparó `0009_admin_account_lifecycle_transitions.sql` con tres funciones: autoridad B.1 exacta por perfil, contexto de elegibilidad sin PII y transición auditada de desactivación/reactivación.
 - El delta previsto es 0 tablas, 0 columnas, 0 restricciones, 0 índices, 0 triggers, +3 funciones, 0 políticas, 0 semillas, +5 grants de rutina, 0 grants de tabla/secuencia y +5 ACL expandidas.
 - Se añadieron preflight de sólo lectura, verificador transaccional, rollback protegido y `TEST_PLAN_0009.md`. Las pruebas reales de dos sesiones quedan reservadas a un entorno desechable.
+- La revisión final separó estrictamente fases cliente/owner del verificador, hizo relativos a la línea base viva los conteos de administradores, incorporó un allocator temporal sin colisiones y añadió el lock `FOR SHARE` del programa institucional durante reactivación.
+- Las seis superficies de contrato verifican exactamente 51 semillas controladas (cardinales por catálogo y hash canónico), y los diagnósticos informativos de dependencias usan la frontera temporal pura 0008.
 - Estado: preparada localmente; no aplicada, no verificada en PostgreSQL y no reconciliada. No hubo conexión a Supabase ni ejecución SQL durante esta preparación.
