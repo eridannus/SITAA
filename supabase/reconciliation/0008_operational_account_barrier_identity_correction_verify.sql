@@ -1483,6 +1483,42 @@ where ap.profile_id in (
 );
 grant select on table pg_temp.sitaa_0008_snapshots to authenticated;
 
+-- Estado inmutable de cuenta/Auth previo a las correcciones exitosas.
+create temporary table sitaa_0008_profile_identity_snapshots as
+select
+  fixture.label,
+  profile.id,
+  profile.email,
+  profile.account_kind,
+  profile.account_status,
+  profile.is_active,
+  profile.created_at,
+  profile.updated_at,
+  profile.activated_at,
+  profile.deactivated_at,
+  (select count(*) from auth.users auth_user where auth_user.id=profile.id) auth_row_count,
+  (select auth_user.email from auth.users auth_user where auth_user.id=profile.id) auth_email
+from pg_temp.sitaa_0008_cases fixture
+join public.profiles profile on profile.id=fixture.id
+where fixture.label in (
+  'target_institutional','target_technical','target_inactive',
+  'target_historical_role','target_history_only','target_current_role'
+);
+
+create temporary table sitaa_0008_correction_results(
+  result_label text primary key,
+  expected_target_id uuid not null,
+  expected_reason text not null,
+  expected_changed_fields text[] not null,
+  target_profile_id uuid not null,
+  audit_event_id uuid not null unique,
+  changed_fields text[] not null,
+  updated_at timestamptz not null
+) on commit drop;
+revoke all on table pg_temp.sitaa_0008_correction_results
+  from public,anon,authenticated,service_role;
+grant insert on table pg_temp.sitaa_0008_correction_results to authenticated;
+
 -- Barrera operativa: usuario activo, invalidación inmediata y restauración.
 select pg_temp.set_request_user('active_professor');
 set local role authenticated;
@@ -2183,52 +2219,167 @@ end;
 $missing_target_mutation$;
 
 -- Éxitos: institucional, técnico, inactivo, histórico y cambios no bloqueados.
-select * from public.correct_admin_account_identity_b2a(
+insert into pg_temp.sitaa_0008_correction_results(
+  result_label,expected_target_id,expected_reason,expected_changed_fields,
+  target_profile_id,audit_event_id,changed_fields,updated_at
+)
+select
+  'institutional',pg_temp.case_id('target_institutional'),
+  'Corrección verificada con fuente institucional',
+  array[
+    'first_names','institutional_id_value','maternal_surname',
+    'paternal_surname','primary_program_id'
+  ]::text[],
+  result.target_profile_id,result.audit_event_id,result.changed_fields,result.updated_at
+from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_institutional'),E'\n  María\t  José  \n',E'\tD''Ángelo\n',E' López\t',
   'student',pg_temp.fixture_identifier('mutation:success_institutional'),
   (select program_b from pg_temp.sitaa_0008_context),
   E'\n  Corrección\t  verificada   con fuente institucional  \n'
-);
-select * from public.correct_admin_account_identity_b2a(
+) result;
+
+insert into pg_temp.sitaa_0008_correction_results(
+  result_label,expected_target_id,expected_reason,expected_changed_fields,
+  target_profile_id,audit_event_id,changed_fields,updated_at
+)
+select
+  'technical',pg_temp.case_id('target_technical'),'Corrección técnica verificada',
+  array['first_names','paternal_surname']::text[],
+  result.target_profile_id,result.audit_event_id,result.changed_fields,result.updated_at
+from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_technical'),'Soporte','Técnico',null,
   null,null,null,'Corrección técnica verificada'
-);
-select * from public.correct_admin_account_identity_b2a(
+) result;
+
+insert into pg_temp.sitaa_0008_correction_results(
+  result_label,expected_target_id,expected_reason,expected_changed_fields,
+  target_profile_id,audit_event_id,changed_fields,updated_at
+)
+select
+  'inactive',pg_temp.case_id('target_inactive'),'Corrección de identidad inactiva',
+  array[
+    'first_names','institutional_id_value','maternal_surname','paternal_surname'
+  ]::text[],
+  result.target_profile_id,result.audit_event_id,result.changed_fields,result.updated_at
+from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_inactive'),'Cuenta','Inactiva','Corregida',
   'professor',pg_temp.fixture_identifier('mutation:success_inactive'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Corrección de identidad inactiva'
-);
-select * from public.correct_admin_account_identity_b2a(
+) result;
+
+insert into pg_temp.sitaa_0008_correction_results(
+  result_label,expected_target_id,expected_reason,expected_changed_fields,
+  target_profile_id,audit_event_id,changed_fields,updated_at
+)
+select
+  'historical_role',pg_temp.case_id('target_historical_role'),
+  'Cambio permitido por asignación vencida',
+  array[
+    'first_names','institutional_id_type','institutional_id_value',
+    'paternal_surname','person_type'
+  ]::text[],
+  result.target_profile_id,result.audit_event_id,result.changed_fields,result.updated_at
+from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_historical_role'),'Histórica','Persona',null,
   'professor',pg_temp.fixture_identifier('mutation:success_historical_role'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Cambio permitido por asignación vencida'
-);
-select * from public.correct_admin_account_identity_b2a(
+) result;
+
+insert into pg_temp.sitaa_0008_correction_results(
+  result_label,expected_target_id,expected_reason,expected_changed_fields,
+  target_profile_id,audit_event_id,changed_fields,updated_at
+)
+select
+  'history_only',pg_temp.case_id('target_history_only'),
+  'Cambio permitido por actividad histórica',
+  array[
+    'first_names','institutional_id_type','institutional_id_value',
+    'paternal_surname','person_type','primary_program_id'
+  ]::text[],
+  result.target_profile_id,result.audit_event_id,result.changed_fields,result.updated_at
+from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_history_only'),'Historial','Conservado',null,
   'student',pg_temp.fixture_identifier('mutation:success_history_only'),
   (select program_b from pg_temp.sitaa_0008_context),
   'Cambio permitido por actividad histórica'
-);
-select * from public.correct_admin_account_identity_b2a(
+) result;
+
+insert into pg_temp.sitaa_0008_correction_results(
+  result_label,expected_target_id,expected_reason,expected_changed_fields,
+  target_profile_id,audit_event_id,changed_fields,updated_at
+)
+select
+  'current_role_names',pg_temp.case_id('target_current_role'),
+  'Corrección de nombre sin alterar dependencias',
+  array['first_names','paternal_surname']::text[],
+  result.target_profile_id,result.audit_event_id,result.changed_fields,result.updated_at
+from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_current_role'),'Nombre','Corregido',null,
   'student',pg_temp.case_identifier('target_current_role'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Corrección de nombre sin alterar dependencias'
-);
-select * from public.correct_admin_account_identity_b2a(
+) result;
+
+insert into pg_temp.sitaa_0008_correction_results(
+  result_label,expected_target_id,expected_reason,expected_changed_fields,
+  target_profile_id,audit_event_id,changed_fields,updated_at
+)
+select
+  'current_role_identifier',pg_temp.case_id('target_current_role'),
+  'Corrección de identificador sin alterar dependencias',
+  array['institutional_id_value']::text[],
+  result.target_profile_id,result.audit_event_id,result.changed_fields,result.updated_at
+from public.correct_admin_account_identity_b2a(
   pg_temp.case_id('target_current_role'),'Nombre','Corregido',null,
   'student',pg_temp.fixture_identifier('mutation:success_identifier'),
   (select program_a from pg_temp.sitaa_0008_context),
   'Corrección de identificador sin alterar dependencias'
-);
+) result;
 
-do $successful_corrections$
+do $b1_sanitized_history_contract$
 declare
-  event_count bigint;
-  metadata_value jsonb;
+  history_row_count integer;
+  matching_row_count integer;
+  metadata_row_count integer;
 begin
+  select
+    count(*),
+    count(*) filter (
+      where history.target_profile_id=pg_temp.case_id('target_institutional')
+        and history.actor_profile_id=pg_temp.case_id('admin_exact')
+        and history.action_code='account_identity_corrected'
+        and history.outcome='success'
+        and history.reason='Corrección verificada con fuente institucional'
+        and history.role_assignment_id is null
+    ),
+    count(*) filter (where to_jsonb(history) ? 'metadata')
+  into history_row_count,matching_row_count,metadata_row_count
+  from public.get_admin_account_audit_history_b1(
+    pg_temp.case_id('target_institutional'),50,0
+  ) history;
+
+  if history_row_count<>1 or matching_row_count<>1 or metadata_row_count<>0 then
+    raise exception '0008_verify_b1_sanitized_history_regression';
+  end if;
+end;
+$b1_sanitized_history_contract$;
+reset role;
+
+-- Las postcondiciones crudas se inspeccionan sólo como owner del verificador.
+do $successful_profile_postconditions$
+begin
+  if (select count(*) from pg_temp.sitaa_0008_correction_results)<>7
+     or exists (
+       select 1
+       from pg_temp.sitaa_0008_correction_results result
+       where result.target_profile_id is distinct from result.expected_target_id
+          or result.changed_fields is distinct from result.expected_changed_fields
+     ) then
+    raise exception '0008_verify_successful_rpc_result_mismatch';
+  end if;
+
   if not exists(
        select 1 from public.profiles
        where id=pg_temp.case_id('target_institutional')
@@ -2238,86 +2389,127 @@ begin
          and institutional_id_value=
            pg_temp.fixture_identifier('mutation:success_institutional')
          and primary_program_id=(select program_b from pg_temp.sitaa_0008_context)
+         and updated_at=(
+           select result.updated_at
+           from pg_temp.sitaa_0008_correction_results result
+           where result.result_label='institutional'
+         )
      ) then
-    raise exception '0008_verify_institutional_correction_failed';
+    raise exception '0008_verify_institutional_profile_state_mismatch';
   end if;
 
   if not exists(
        select 1 from public.profiles
        where id=pg_temp.case_id('target_technical')
          and first_names='Soporte' and paternal_surname='Técnico'
+         and maternal_surname is null and full_name='Soporte Técnico'
          and person_type is null and institutional_id_type is null
          and institutional_id_value is null and primary_program_id is null
+         and updated_at=(
+           select result.updated_at
+           from pg_temp.sitaa_0008_correction_results result
+           where result.result_label='technical'
+         )
      ) then
-    raise exception '0008_verify_technical_correction_failed';
+    raise exception '0008_verify_technical_profile_state_mismatch';
   end if;
 
   if not exists(
        select 1 from public.profiles
        where id=pg_temp.case_id('target_inactive')
+         and first_names='Cuenta' and paternal_surname='Inactiva'
+         and maternal_surname='Corregida' and full_name='Cuenta Inactiva Corregida'
+         and person_type='professor' and institutional_id_type='worker_number'
+         and institutional_id_value=
+           pg_temp.fixture_identifier('mutation:success_inactive')
+         and primary_program_id=(select program_a from pg_temp.sitaa_0008_context)
          and account_status='inactive' and not is_active
          and deactivated_at is not null
+         and updated_at=(
+           select result.updated_at
+           from pg_temp.sitaa_0008_correction_results result
+           where result.result_label='inactive'
+         )
      ) then
-    raise exception '0008_verify_inactive_lifecycle_changed';
+    raise exception '0008_verify_inactive_profile_lifecycle_mismatch';
   end if;
 
-  select count(*) into event_count
-  from public.admin_audit_events
-  where action_code='account_identity_corrected'
-    and target_profile_id=pg_temp.case_id('target_institutional');
-  if event_count<>1 then raise exception '0008_verify_audit_event_count'; end if;
-
-  select metadata into metadata_value
-  from public.admin_audit_events
-  where action_code='account_identity_corrected'
-    and target_profile_id=pg_temp.case_id('target_institutional');
-
-  if metadata_value<>jsonb_build_object(
-       'changed_fields',
-       to_jsonb(array[
-         'first_names','institutional_id_value','maternal_surname',
-         'paternal_surname','primary_program_id'
-       ]::text[])
-     )
-     or metadata_value ?| array[
-       'email','old_value','new_value','institutional_id_value','role','activity'
-     ] then
-    raise exception '0008_verify_audit_metadata_not_minimal';
-  end if;
-
-  if not exists(
-       select 1 from public.admin_audit_events
-       where target_profile_id=pg_temp.case_id('target_institutional')
-         and actor_profile_id=pg_temp.case_id('admin_exact')
-         and action_code='account_identity_corrected' and outcome='success'
-         and reason='Corrección verificada con fuente institucional'
-         and role_assignment_id is null
-     ) then
-    raise exception '0008_verify_audit_contract_mismatch';
-  end if;
-
-  if not exists(
-       select 1 from public.get_admin_account_audit_history_b1(
-         pg_temp.case_id('target_institutional'),50,0
-       ) where action_code='account_identity_corrected'
-         and outcome='success'
-         and reason='Corrección verificada con fuente institucional'
-     ) then
-    raise exception '0008_verify_b1_sanitized_history_regression';
+  if (select count(*) from pg_temp.sitaa_0008_profile_identity_snapshots)<>6
+     or exists (
+    select 1
+    from pg_temp.sitaa_0008_profile_identity_snapshots snapshot
+    left join public.profiles profile on profile.id=snapshot.id
+    where profile.id is null
+       or profile.email is distinct from snapshot.email
+       or profile.account_kind is distinct from snapshot.account_kind
+       or profile.account_status is distinct from snapshot.account_status
+       or profile.is_active is distinct from snapshot.is_active
+       or profile.created_at is distinct from snapshot.created_at
+       or profile.activated_at is distinct from snapshot.activated_at
+       or profile.deactivated_at is distinct from snapshot.deactivated_at
+       or profile.updated_at is distinct from (
+         select max(result.updated_at)
+         from pg_temp.sitaa_0008_correction_results result
+         where result.expected_target_id=snapshot.id
+       )
+       or (select count(*) from auth.users auth_user where auth_user.id=profile.id)
+         is distinct from snapshot.auth_row_count
+       or (select auth_user.email from auth.users auth_user where auth_user.id=profile.id)
+         is distinct from snapshot.auth_email
+  ) then
+    raise exception '0008_verify_immutable_account_state_mismatch';
   end if;
 end;
-$successful_corrections$;
+$successful_profile_postconditions$;
 
-do $historical_boundary_contract$
-declare
-  activity_before jsonb;
-  activity_after jsonb;
-  identity_before jsonb;
-  identity_after jsonb;
-  audit_before bigint;
-  audit_after bigint;
-  actual_state text;
-  actual_message text;
+do $successful_audit_postconditions$
+begin
+  if exists (
+    select 1
+    from (
+      select result.expected_target_id,count(*) expected_count
+      from pg_temp.sitaa_0008_correction_results result
+      group by result.expected_target_id
+    ) expected
+    where (
+      select count(*)
+      from public.admin_audit_events event
+      where event.target_profile_id=expected.expected_target_id
+    )<>expected.expected_count
+  ) then
+    raise exception '0008_verify_audit_event_count_mismatch';
+  end if;
+
+  if exists (
+    select 1
+    from pg_temp.sitaa_0008_correction_results result
+    left join public.admin_audit_events event on event.id=result.audit_event_id
+    where event.id is null
+       or event.actor_profile_id is distinct from pg_temp.case_id('admin_exact')
+       or event.target_profile_id is distinct from result.expected_target_id
+       or event.action_code is distinct from 'account_identity_corrected'
+       or event.outcome is distinct from 'success'
+       or event.reason is distinct from result.expected_reason
+       or event.role_assignment_id is not null
+  ) then
+    raise exception '0008_verify_audit_actor_target_mismatch';
+  end if;
+
+  if exists (
+    select 1
+    from pg_temp.sitaa_0008_correction_results result
+    join public.admin_audit_events event on event.id=result.audit_event_id
+    where event.metadata is distinct from jsonb_build_object(
+      'changed_fields',to_jsonb(result.expected_changed_fields)
+    )
+  ) then
+    raise exception '0008_verify_audit_metadata_mismatch';
+  end if;
+end;
+$successful_audit_postconditions$;
+
+-- Frontera histórica, fase 1: precondiciones e instantáneas crudas como owner.
+do $historical_boundary_owner_preconditions$
 begin
   if not exists (
        select 1
@@ -2362,22 +2554,40 @@ begin
              false
            )
          )
-     ) then
+  ) then
     raise exception '0008_verify_historical_dependency_boundary_mismatch';
   end if;
+end;
+$historical_boundary_owner_preconditions$;
 
-  select to_jsonb(activity) into activity_before
-  from public.activities activity
-  where activity.id=(
-    select activity_completed_history from pg_temp.sitaa_0008_context
-  );
-  select to_jsonb(profile) into identity_before
-  from public.profiles profile
-  where profile.id=pg_temp.case_id('target_history_only');
-  select count(*) into audit_before
-  from public.admin_audit_events
-  where target_profile_id=pg_temp.case_id('target_history_only');
+create temporary table sitaa_0008_historical_boundary_snapshot on commit drop as
+select
+  (
+    select to_jsonb(activity)
+    from public.activities activity
+    where activity.id=(
+      select activity_completed_history from pg_temp.sitaa_0008_context
+    )
+  ) activity_before,
+  (
+    select to_jsonb(profile)
+    from public.profiles profile
+    where profile.id=pg_temp.case_id('target_history_only')
+  ) identity_before,
+  (
+    select count(*)
+    from public.admin_audit_events event
+    where event.target_profile_id=pg_temp.case_id('target_history_only')
+  ) audit_before;
 
+-- Fase 2: sólo el DML cliente que intenta reabrir la actividad histórica.
+select pg_temp.set_request_user('admin_exact');
+set local role authenticated;
+do $historical_reopen_client_write$
+declare
+  actual_state text;
+  actual_message text;
+begin
   begin
     update public.activities activity
     set
@@ -2394,12 +2604,28 @@ begin
   exception when sqlstate '23514' then
     get stacked diagnostics
       actual_state=returned_sqlstate,actual_message=message_text;
+  when others then
+    raise exception '0008_verify_historical_reopen_wrong_denial';
   end;
 
   if actual_state is distinct from '23514'
      or actual_message is distinct from 'sitaa_activity_reopen_forbidden' then
-    raise exception '0008_verify_historical_reopen_contract_mismatch';
+    raise exception '0008_verify_historical_reopen_wrong_denial';
   end if;
+end;
+$historical_reopen_client_write$;
+reset role;
+
+-- Fase 3: atomicidad e invariantes crudas nuevamente como owner.
+do $historical_boundary_owner_postconditions$
+declare
+  activity_after jsonb;
+  identity_after jsonb;
+  audit_after bigint;
+  snapshot pg_temp.sitaa_0008_historical_boundary_snapshot%rowtype;
+begin
+  select * into strict snapshot
+  from pg_temp.sitaa_0008_historical_boundary_snapshot;
 
   select to_jsonb(activity) into activity_after
   from public.activities activity
@@ -2413,14 +2639,17 @@ begin
   from public.admin_audit_events
   where target_profile_id=pg_temp.case_id('target_history_only');
 
-  if activity_before is distinct from activity_after
-     or identity_before is distinct from identity_after
-     or audit_before<>audit_after then
-    raise exception '0008_verify_rejected_reopen_not_atomic';
+  if snapshot.activity_before is distinct from activity_after then
+    raise exception '0008_verify_historical_reopen_changed_activity';
+  end if;
+  if snapshot.identity_before is distinct from identity_after then
+    raise exception '0008_verify_historical_reopen_changed_identity';
+  end if;
+  if snapshot.audit_before<>audit_after then
+    raise exception '0008_verify_historical_reopen_changed_audit';
   end if;
 end;
-$historical_boundary_contract$;
-reset role;
+$historical_boundary_owner_postconditions$;
 
 -- Matriz de escritores soportados: DML directo cerrado para participantes,
 -- RPC compatible vigente y trigger de actividad revalidando tras cualquier espera.

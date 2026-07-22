@@ -68,7 +68,7 @@ El rollback sólo puede retirar `admin_audit_events` mientras no exista historia
 
 B.1 no escribe eventos porque no ofrece mutaciones. Fases posteriores deberán insertar mediante operaciones privilegiadas revisadas y sólo podrán leer una proyección sanitizada.
 
-La aplicación compatible con B.2a expone `/admin/accounts/[id]/identity`. Con 0008 aplicada, la Server Action autentica de forma independiente, verifica la autoridad B.1 exacta, reconsulta el contexto y llama exclusivamente a la RPC transaccional; nunca expone el error crudo de PostgREST. La aceptación de este flujo permanece pendiente de la reejecución del verificador y de los smoke tests.
+La aplicación compatible con B.2a expone `/admin/accounts/[id]/identity`. Con 0008 aplicada e inmutable, la Server Action autentica de forma independiente, verifica la autoridad B.1 exacta, reconsulta el contexto y llama exclusivamente a la RPC transaccional; nunca expone el error crudo de PostgREST. La primera ejecución del verificador falló por invocar un helper owner-only como cliente; la segunda alcanzó siete correcciones RPC exitosas pero falló al inspeccionar postcondiciones crudas aún bajo `authenticated`. Ambas transacciones se descartaron sin persistencia. La capacidad de base de datos está aplicada, pero su aceptación operativa permanece pendiente de reejecutar el verificador con límites owner/cliente corregidos y completar los smoke tests.
 
 ## Criterios de aceptación
 

@@ -2,7 +2,7 @@
 
 ## Estado y alcance
 
-El preflight corregido de `0008_operational_account_barrier_identity_correction.sql` fue aprobado, la aplicación compatible se publicó y la migración terminó con `COMMIT`; 0008 está aplicada y es inmutable. La primera ejecución del verificador aprobó sus controles estáticos, creó fixtures transaccionales y después abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`, cuyo ACL owner-only rechazó correctamente la llamada con SQLSTATE `42501`. La transacción se descartó completa: no persistieron fixtures, grants temporales, eventos de auditoría ni cambios operativos. La corrección del verificador es local; su reejecución, los smoke tests y la reconciliación contra un snapshot post-0008 permanecen pendientes. Este plan no autoriza conexión ni ejecución contra Supabase.
+El preflight corregido de `0008_operational_account_barrier_identity_correction.sql` fue aprobado, la aplicación compatible se publicó y la migración terminó con `COMMIT`; 0008 está aplicada y es inmutable. La primera ejecución del verificador abortó al invocar directamente `is_b1_account_admin()` bajo `authenticated`, cuyo ACL owner-only rechazó correctamente la llamada con SQLSTATE `42501`. La segunda aprobó esa regresión corregida, los controles estructurales, las fixtures, los rechazos controlados y las siete correcciones RPC exitosas, pero abortó porque las postcondiciones crudas de perfiles y auditoría seguían ejecutándose bajo RLS/ACL de `authenticated`. Ambas transacciones se descartaron completas: no persistieron fixtures, grants temporales, correcciones, eventos de auditoría ni cambios operativos. La corrección de límites de rol del verificador es local; su reejecución, los smoke tests y la reconciliación contra un snapshot post-0008 permanecen pendientes. Este plan no autoriza conexión ni ejecución contra Supabase.
 
 Inventario contractual post-0008, pendiente de confirmación mediante snapshot: 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers públicos, 51 funciones, 25 políticas y 51 semillas. Las tres RPC/helper B.2a nuevas conservan propietario y `authenticated`; el nuevo trigger de integridad de escritores es owner-only. `authenticated` conserva `SELECT` sobre `activity_participants`, pero sus escrituras directas se retiran porque la aplicación ya usa los RPC autorizados. La clausura distingue el ACL de tabla, el ACL explícito por columna en `pg_attribute.attacl`, la proyección table-derived de `information_schema.column_privileges` y el acceso efectivo de `has_column_privilege`: no puede sobrevivir ningún `attacl` y ningún acceso de columna puede exceder el ACL exacto de tabla.
 
@@ -111,6 +111,10 @@ La cuarta ejecución remota del preflight corregido devolvió las 40 categorías
 ## Verificador transaccional
 
 El verificador usa UUID aleatorios, correos `.invalid`, tablas/funciones `pg_temp`, grants temporales mínimos y termina con `ROLLBACK`. Los cambios de rol a `authenticated` conservan la evaluación real de RLS y RPC. No usa PII operativa. Su primera ejecución post-aplicación superó los controles estáticos y llegó a las fixtures, pero abortó en la línea 1670 de la versión ejecutada con `permission denied for function is_b1_account_admin`: el bloque evaluaba directamente el helper B.1 privado bajo `authenticated`. PostgreSQL devolvió el `42501` esperado por el ACL; el defecto pertenecía al arnés, no al esquema aplicado.
+
+La segunda ejecución aprobó el contrato corregido del helper privado, todos los controles anteriores, las fixtures, los rechazos controlados y las siete correcciones de identidad mediante la RPC pública. Después falló con `0008_verify_institutional_correction_failed`: el mismo bloque mantenía `authenticated` activo al leer directamente perfiles ajenos, auditoría cruda y las postcondiciones históricas. La propia política de perfil ocultó correctamente el objetivo; la transacción abortada se descartó por completo. Esto confirmó un defecto de orquestación del verificador, no de la migración ni de la mutación.
+
+La secuencia corregida separa superficies con precisión: (1) bajo `authenticated`, conserva contexto B.2a, objetivo ausente, todos los rechazos, las siete mutaciones exitosas y la proyección sanitizada de `get_admin_account_audit_history_b1`; (2) ejecuta `RESET ROLE` inmediatamente; (3) como owner, valida estados exactos de perfiles, campos inmutables, relación Auth y eventos/metadata crudos; y (4) para la frontera histórica, verifica y fotografía como owner, ejecuta únicamente el `UPDATE` directo bajo `authenticated`, restablece el rol y compara actividad, perfil y auditoría como owner. Ninguna lectura cruda de `admin_audit_events`, de Auth o de perfiles ajenos ocurre en un intervalo autenticado.
 
 Su contrato estático comprueba por separado nombre, unicidad, relación, condición no interna, habilitación ordinaria, función por OID, evento/timing, granularidad por fila, ausencia de columnas/`WHEN` en el alta, lista exacta `email` y predicado semántico en la sincronización. Para el `WHEN` con `OLD` y `NEW` usa `pg_get_triggerdef`, no `pg_get_expr`. Una regresión sintética acepta la forma canónica con `::text` y rechaza operandos invertidos, igualdad, un término `AND true` y otra columna, sin tocar triggers persistentes. También rechaza triggers adicionales que invoquen cualquiera de los dos handlers. No usa una sola existencia agrupada mediante `IN (...)` para aceptar ambos objetos.
 
@@ -254,6 +258,8 @@ Cobertura mínima numerada:
 
 El verificador también compara hashes normalizados de `prosrc` para las 29 rutinas reemplazadas y, en un dominio exacto independiente y uniforme, para las cuatro funciones nuevas; conserva el ACL exacto de esas rutinas, las dos políticas restrictivas y el inventario estructural y de privilegios sin delta no autorizado.
 
+La revisión estática local de fuente delimita cada intervalo `SET LOCAL ROLE authenticated`/`RESET ROLE`: exige cierre de todos los intervalos, conserva dentro de ellos las RPC públicas, DML cliente, regresiones de perfil propio y denegaciones esperadas, y rechaza lecturas directas de `admin_audit_events`, Auth o postcondiciones crudas de perfiles ajenos. Además comprueba que la proyección B.1 sanitizada y el intento histórico de reapertura permanecen como pruebas cliente, mientras las fotografías antes/después y la auditoría cruda quedan fuera. Esta revisión no ejecuta SQL ni sustituye la reejecución transaccional pendiente.
+
 ## Protocolo de locks y prueba manual en dos sesiones
 
 La mutación captura al actor una sola vez y lo autoriza primero. Rechaza autocorrección antes de locks amplios; adquiere siempre `SHARE` en este orden: `role_assignments`, `activities`, `activity_participants`; luego bloquea actor y objetivo en una sola consulta ordenada por UUID. Sólo entonces repite la autoridad B.1 exacta, carga el objetivo, relee el programa, evalúa dependencias, actualiza e inserta auditoría. Las escrituras normales toman `ROW EXCLUSIVE`, incompatible con `SHARE`, por lo que no atraviesan la decisión. `add_activity_participant` adelanta explícitamente su `ROW EXCLUSIVE` y relee el perfil con `FOR SHARE` antes de validar e insertar.
@@ -344,10 +350,11 @@ El rollback:
 2. Aplicación compatible: publicada.
 3. Migración 0008: aplicada con `COMMIT`; artefacto inmutable.
 4. Primera ejecución del verificador: abortada y descartada por la llamada cliente inválida al helper owner-only.
-5. Reejecutar el verificador corregido y confirmar su `ROLLBACK`: pendiente.
-6. Ejecutar smoke tests: pendiente.
-7. Regenerar el snapshot completo: pendiente.
-8. Reconciliar 0001–0008 y cerrar B.2a canónicamente: pendiente.
+5. Segunda ejecución del verificador: aprobó la corrección anterior y las siete mutaciones RPC, pero abortó y se descartó porque las postcondiciones crudas permanecían bajo `authenticated`.
+6. Reejecutar el verificador con los límites de rol corregidos y confirmar su `ROLLBACK`: pendiente.
+7. Ejecutar smoke tests: pendiente.
+8. Regenerar el snapshot completo: pendiente.
+9. Reconciliar 0001–0008 y cerrar B.2a canónicamente: pendiente.
 
 Esta corrección local no reejecuta el verificador ni realiza ninguna operación remota.
 

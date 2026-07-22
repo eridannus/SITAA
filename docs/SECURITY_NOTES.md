@@ -129,6 +129,13 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó y la migra
 - Definir respaldo, restauración, retención y respuesta a incidentes antes del piloto.
 - Verificar periódicamente límites, copias disponibles y condiciones de los planes gratuitos; no asumir que equivalen a un SLA institucional.
 
+### Límites de lectura administrativa B.2a
+
+- `authenticated` consulta estado de otras cuentas únicamente mediante RPC `SECURITY DEFINER` autorizadas y con proyecciones sanitizadas; no recibe lectura directa de perfiles ajenos.
+- `authenticated` no tiene acceso directo a `admin_audit_events`. La historia pública B.1 excluye metadata cruda y se valida como superficie cliente mediante su RPC autorizada.
+- En el verificador 0008, las RPC, denegaciones y DML cliente se ejecutan bajo `authenticated`; las postcondiciones crudas de perfil, Auth y auditoría se inspeccionan sólo como owner después de `RESET ROLE`.
+- Las dos ejecuciones fallidas del verificador fueron transacciones descartadas y no justifican ampliar RLS ni ACL: la primera llamó un helper owner-only como cliente y la segunda intentó leer postcondiciones owner-only bajo el rol cliente.
+
 ## Validaciones previas al piloto
 
 - Revisión de privacidad y aviso correspondiente.
