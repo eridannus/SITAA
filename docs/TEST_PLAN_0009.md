@@ -8,6 +8,8 @@ Orden manual obligatorio: ejecutar el preflight de sólo lectura, revisar sus 19
 
 La revisión previa a aplicación corrigió el handler canónico del trigger de correo a `sync_sitaa_profile_email_from_auth()`, preservó exactamente los `UPDATE` de columna de `authenticated` sobre `first_names`, `paternal_surname` y `maternal_surname`, y mantuvo denegados los campos de identidad y ciclo de vida protegidos. Los contratos usan mapas/hashes exactos post-0008 para impedir sustituciones que conserven sólo los conteos. El conjunto controlado de once catálogos contiene exactamente 51 filas y usa el hash canónico `2e450238768fbe9889470864a1832486`; se comprueba en preflight independiente, preflight embebido, guarda posterior al DDL, verificador y las dos guardas del rollback.
 
+Los cuatro artefactos abren su transacción y fijan localmente `TimeZone = UTC` y `DateStyle = ISO, MDY` antes de calcular evidencia textual. Estos valores desaparecen al terminar la transacción y sirven exclusivamente para hacer reproducibles los JSON y hashes de catálogos: no alteran la fecha institucional B.1, las fronteras de actividad en `America/Mexico_City` ni la semántica de los `timestamptz` de ciclo de vida.
+
 ## Contrato automatizado y transaccional
 
 1. Preflight termina en `ROLLBACK`.
@@ -104,6 +106,11 @@ La revisión previa a aplicación corrigió el handler canónico del trigger de 
 92. Los diagnósticos informativos de dependencias abiertas usan directamente la frontera temporal pura 0008, sin depender de JWT ni de `activity_has_ended(uuid)`.
 93. Las seis superficies SQL exigen los cardinales exactos de los once catálogos, 51 filas totales y el hash canónico; 0009 introduce delta cero de semillas.
 94. El cuerpo normalizado de la mutación usa MD5 `7f940968051ff1b844443f6c76b561c3`; el mapa agregado de 54 funciones posteriores usa `71f9763d702e95e4eede51a4a4611694`.
+95. Migración, preflight, verificador y rollback fijan `UTC` y `ISO, MDY` con `SET LOCAL` inmediatamente después de abrir su transacción y antes del primer hash de semillas.
+96. Las tres funciones nuevas deben pertenecer exactamente a `postgres`; una ejecución bajo otro owner aborta la migración antes de `COMMIT`, sin reparación automática.
+97. Ninguna entrada ACL de las tres funciones puede usar grant option, incluida la entrada del owner.
+98. El helper privado tiene exactamente una entrada `EXECUTE` para su owner; contexto y mutación tienen exactamente dos, para owner y `authenticated`.
+99. La guarda post-DDL, el verificador y la guarda predestructiva del rollback aplican el mismo contrato exacto de owner, grantees, cardinalidad y ausencia de grant option.
 
 El verificador automatiza los contratos estructurales, ACL, autorizaciones, fixtures principales, transiciones, auditoría, preservación y rechazos deterministas. Alterna fases cliente bajo `authenticated` con fases owner después de `RESET ROLE`: la primera sólo invoca RPC/proyecciones públicas o denegaciones expresas y la segunda inspecciona estado crudo. Prueba el helper privado como owner para autoridad exacta, asignación malformada y cuenta inactiva, y confirma `42501` en su única invocación directa como `authenticated`. Captura y conserva byte por byte los administradores exactos preexistentes, mientras las expectativas de A/B se calculan desde esa línea base. También exige cardinalidad de contexto 0/1, objetivo inexistente sin filas, `auth_unconfirmed`, timestamps persistidos y monótonos, UUID exactos, actor/objetivo/acción/motivo/metadata exactos de auditoría y la presentación vigente/futura/vencida/inactiva/suspendida de asignaciones. Como `set_updated_at()` usa `now()`, que es estable dentro de una transacción PostgreSQL, el verificador transaccional prueba igualdad exacta entre la marca devuelta y la persistida, pero no exige valores de reloj distintos entre dos transiciones de la misma transacción; esa diferencia se comprueba en transacciones separadas durante la verificación manual posterior a la aplicación.
 

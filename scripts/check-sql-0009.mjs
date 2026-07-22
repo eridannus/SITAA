@@ -72,6 +72,25 @@ assert.match(sql.preflight.trim(), /begin transaction read only;[\s\S]*rollback;
 assert.match(sql.verify.trim(), /\bbegin;[\s\S]*rollback;$/i);
 assert.match(sql.rollback.trim(), /\bbegin;[\s\S]*commit;$/i);
 
+for (const [label, source] of Object.entries(sql)) {
+  const beginPattern = label === "preflight"
+    ? /begin transaction read only;\s*set local time zone 'UTC';\s*set local datestyle to 'ISO, MDY';/i
+    : /\bbegin;\s*set local time zone 'UTC';\s*set local datestyle to 'ISO, MDY';/i;
+  assert.match(source, beginPattern, `${label}: falta el bloque canónico inmediatamente después de BEGIN`);
+  assert.equal((source.match(/set local time zone 'UTC';/gi) ?? []).length, 1, `${label}: TimeZone debe fijarse una vez`);
+  assert.equal((source.match(/set local datestyle to 'ISO, MDY';/gi) ?? []).length, 1, `${label}: DateStyle debe fijarse una vez`);
+  const beginAt = label === "preflight"
+    ? source.search(/begin transaction read only;/i)
+    : source.search(/\bbegin;/i);
+  const timeZoneAt = source.search(/set local time zone 'UTC';/i);
+  const dateStyleAt = source.search(/set local datestyle to 'ISO, MDY';/i);
+  const firstSeedHashAt = source.search(/2e450238768fbe9889470864a1832486/i);
+  assert.ok(beginAt >= 0 && beginAt < timeZoneAt && timeZoneAt < dateStyleAt && dateStyleAt < firstSeedHashAt,
+    `${label}: orden inválido de transacción, sesión canónica y hash de semillas`);
+  assert.doesNotMatch(source, /alter\s+(?:database|role)\b[\s\S]{0,160}\bset\s+(?:time\s+zone|timezone|datestyle)\b/i);
+  assert.doesNotMatch(source, /alter\s+system\b/i);
+}
+
 assert.equal((sql.migration.match(/create function public\./gi) ?? []).length, 3);
 assert.doesNotMatch(sql.migration, /\b(create|alter|drop)\s+(table|policy|index|trigger|type|extension)\b/i);
 assert.doesNotMatch(sql.preflight, /^\s*(insert|update|delete|truncate|alter|drop|grant|revoke|create)\b/im);
@@ -148,11 +167,30 @@ assert.match(
   /account_status='inactive' and target_profile\.is_active=false\s+and target_profile\.activated_at is not null and target_profile\.deactivated_at is not null/i,
 );
 
+const postDdl = sql.migration.match(/do \$post_ddl\$([\s\S]*?)\$post_ddl\$;/i)?.[1];
+assert.ok(postDdl, "No se encontró la guarda post-DDL de 0009");
+assert.match(postDdl, /pg_get_userbyid\(p\.proowner\)='postgres'/i);
+assert.match(postDdl, /\bor acl\.is_grantable\b/i);
+assert.doesNotMatch(postDdl, /acl\.is_grantable\s+and\s+acl\.grantee/i);
+assert.match(postDdl, /is_exact_b1_account_admin_profile_b2b\(uuid\)'::regprocedure\)<>1/i);
+assert.match(postDdl, /get_admin_account_lifecycle_context_b2b\(uuid\)'::regprocedure\)<>2/i);
+assert.match(postDdl, /transition_admin_account_lifecycle_b2b\(uuid,text,text\)'::regprocedure\)<>2/i);
+
+assert.match(sql.verify, /where p\.oid=helper_oid\)<>1/i);
+assert.match(sql.verify, /where p\.oid=context_oid\)<>2/i);
+assert.match(sql.verify, /where p\.oid=mutation_oid\)<>2/i);
+assert.match(sql.rollback, /is_exact_b1_account_admin_profile_b2b\(uuid\)'::regprocedure\)<>1/i);
+assert.match(sql.rollback, /get_admin_account_lifecycle_context_b2b\(uuid\)'::regprocedure\)<>2/i);
+assert.match(sql.rollback, /transition_admin_account_lifecycle_b2b\(uuid,text,text\)'::regprocedure\)<>2/i);
+
 const expectedHashes = {
   is_exact_b1_account_admin_profile_b2b: "104d16a531ea53a5b4908102322097dc",
   get_admin_account_lifecycle_context_b2b: "6e7c8bb5e2dcf99fce6a75e03e07c309",
   transition_admin_account_lifecycle_b2b: "7f940968051ff1b844443f6c76b561c3",
 };
+for (const source of [sql.migration, sql.verify, sql.rollback]) {
+  assert.match(source, /71f9763d702e95e4eede51a4a4611694/);
+}
 
 function authenticatedIntervals(source) {
   const boundary = /\b(set local role authenticated|reset role)\s*;/gi;

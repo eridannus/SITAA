@@ -1,6 +1,9 @@
 -- Preflight 0009. Sólo lectura; devuelve categorías y conteos, nunca PII.
 begin transaction read only;
 
+set local time zone 'UTC';
+set local datestyle to 'ISO, MDY';
+
 with blocking(category,aggregate_count) as (
   values
   ('post_0008_inventory_drift',

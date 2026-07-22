@@ -1,6 +1,9 @@
 -- Rollback controlado 0009. No revierte estados ni elimina auditoría/datos.
 begin;
 
+set local time zone 'UTC';
+set local datestyle to 'ISO, MDY';
+
 do $guard$
 declare
   mismatch_count integer;
@@ -82,13 +85,16 @@ begin
     'public.get_admin_account_lifecycle_context_b2b(uuid)'::regprocedure,
     'public.transition_admin_account_lifecycle_b2b(uuid,text,text)'::regprocedure
   ] loop
-    if not (select p.prosecdef and p.proconfig=array['search_path=pg_catalog, public']::text[] from pg_proc p where p.oid=function_oid)
+    if not (select p.prosecdef
+          and p.proconfig=array['search_path=pg_catalog, public']::text[]
+          and pg_get_userbyid(p.proowner)='postgres'
+        from pg_proc p where p.oid=function_oid)
        or has_function_privilege('anon',function_oid,'EXECUTE')
        or has_function_privilege('service_role',function_oid,'EXECUTE')
        or exists(
          select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
-         where p.oid=function_oid and acl.privilege_type='EXECUTE' and (
-           acl.grantee=0 or acl.is_grantable and acl.grantee<>p.proowner
+         where p.oid=function_oid and (
+           acl.privilege_type<>'EXECUTE' or acl.grantee=0 or acl.is_grantable
            or function_oid='public.is_exact_b1_account_admin_profile_b2b(uuid)'::regprocedure and acl.grantee<>p.proowner
            or function_oid<>'public.is_exact_b1_account_admin_profile_b2b(uuid)'::regprocedure and acl.grantee not in (p.proowner,'authenticated'::regrole)
          )
@@ -96,6 +102,11 @@ begin
       raise exception 'sitaa_0009_rollback_function_acl_guard_failed:%',function_oid using errcode='55000';
     end if;
   end loop;
+  if (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid='public.is_exact_b1_account_admin_profile_b2b(uuid)'::regprocedure)<>1
+     or (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid='public.get_admin_account_lifecycle_context_b2b(uuid)'::regprocedure)<>2
+     or (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid='public.transition_admin_account_lifecycle_b2b(uuid,text,text)'::regprocedure)<>2 then
+    raise exception 'sitaa_0009_rollback_function_acl_cardinality_guard_failed' using errcode='55000';
+  end if;
   if has_function_privilege('authenticated','public.is_exact_b1_account_admin_profile_b2b(uuid)','EXECUTE')
      or not has_function_privilege('authenticated','public.get_admin_account_lifecycle_context_b2b(uuid)','EXECUTE')
      or not has_function_privilege('authenticated','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE')

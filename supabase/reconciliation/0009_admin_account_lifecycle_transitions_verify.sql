@@ -1,6 +1,9 @@
 -- Verificador transaccional 0009. No persiste fixtures ni eventos.
 begin;
 
+set local time zone 'UTC';
+set local datestyle to 'ISO, MDY';
+
 do $static_contract$
 declare
   context_oid oid:=to_regprocedure('public.get_admin_account_lifecycle_context_b2b(uuid)');
@@ -94,7 +97,10 @@ begin
             or p.oid in (context_oid,mutation_oid)
               and acl.grantee not in (p.proowner,'authenticated'::regrole)
           ))
-     ) then
+     )
+     or (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid=helper_oid)<>1
+     or (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid=context_oid)<>2
+     or (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid=mutation_oid)<>2 then
     raise exception '0009_verify_function_acl_mismatch';
   end if;
   if pg_get_function_result(context_oid)<>

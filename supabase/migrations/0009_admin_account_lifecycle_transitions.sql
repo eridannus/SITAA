@@ -3,6 +3,9 @@
 
 begin;
 
+set local time zone 'UTC';
+set local datestyle to 'ISO, MDY';
+
 -- Preflight bloqueante: 0008 debe ser el estado canónico y 0009 no debe existir.
 do $preflight$
 declare
@@ -675,7 +678,10 @@ begin
     'public.get_admin_account_lifecycle_context_b2b(uuid)'::regprocedure,
     'public.transition_admin_account_lifecycle_b2b(uuid,text,text)'::regprocedure
   ] loop
-    if not (select p.prosecdef and p.proconfig=array['search_path=pg_catalog, public']::text[] from pg_proc p where p.oid=function_oid) then
+    if not (select p.prosecdef
+          and p.proconfig=array['search_path=pg_catalog, public']::text[]
+          and pg_get_userbyid(p.proowner)='postgres'
+        from pg_proc p where p.oid=function_oid) then
       raise exception 'sitaa_0009_post_ddl_function_security_mismatch:%',function_oid;
     end if;
     if has_function_privilege('anon',function_oid,'EXECUTE')
@@ -683,10 +689,11 @@ begin
        or exists (
          select 1 from pg_proc p
          cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
-         where p.oid=function_oid and acl.privilege_type='EXECUTE'
+         where p.oid=function_oid
            and (
-             acl.grantee=0
-             or acl.is_grantable and acl.grantee<>p.proowner
+             acl.privilege_type<>'EXECUTE'
+             or acl.is_grantable
+             or acl.grantee=0
              or function_oid='public.is_exact_b1_account_admin_profile_b2b(uuid)'::regprocedure
                and acl.grantee<>p.proowner
              or function_oid<>'public.is_exact_b1_account_admin_profile_b2b(uuid)'::regprocedure
@@ -696,6 +703,12 @@ begin
       raise exception 'sitaa_0009_post_ddl_function_acl_mismatch:%',function_oid;
     end if;
   end loop;
+
+  if (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid='public.is_exact_b1_account_admin_profile_b2b(uuid)'::regprocedure)<>1
+     or (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid='public.get_admin_account_lifecycle_context_b2b(uuid)'::regprocedure)<>2
+     or (select count(*) from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where p.oid='public.transition_admin_account_lifecycle_b2b(uuid,text,text)'::regprocedure)<>2 then
+    raise exception 'sitaa_0009_post_ddl_function_acl_cardinality_mismatch';
+  end if;
 
   if has_function_privilege('authenticated','public.is_exact_b1_account_admin_profile_b2b(uuid)','EXECUTE')
      or not has_function_privilege('authenticated','public.get_admin_account_lifecycle_context_b2b(uuid)','EXECUTE')
