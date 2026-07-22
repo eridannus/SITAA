@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { login, loginWithGoogle } from "@/app/login/actions";
 
@@ -5,7 +6,16 @@ export function AuthenticationCard({ errorMessage, nextPath }: { errorMessage?: 
   return (
     <div className="sitaa-surface w-full max-w-md rounded-3xl p-6 sm:p-8">
       <div className="text-center">
-        <p className="text-4xl font-black tracking-[0.12em] text-[var(--sitaa-blue-dark)] sm:text-5xl">SITAA</p>
+        <Image
+          src="/brand/escudo-a.png"
+          alt="Escudo de la FES Acatlán"
+          width={1280}
+          height={1491}
+          sizes="(max-width: 639px) 42px, 55px"
+          priority
+          className="mx-auto h-12 w-auto sm:h-16"
+        />
+        <p className="mt-2 text-4xl font-black tracking-[0.12em] text-[var(--sitaa-blue-dark)] sm:text-5xl">SITAA</p>
         <h1 className="mx-auto mt-3 max-w-sm text-base font-bold leading-6 text-[var(--sitaa-text)] sm:text-lg">Sistema Integral de Tutorías y Asesorías Académicas</h1>
         <span className="mx-auto mt-4 block h-1 w-16 rounded-full bg-[var(--sitaa-gold)]" aria-hidden="true" />
       </div>
