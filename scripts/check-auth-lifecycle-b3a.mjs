@@ -36,6 +36,8 @@ assert.match(edge, /function parseSnapshot/);
 assert.match(edge, /function parseClaim/);
 assert.match(edge, /function parseFinalization/);
 assert.match(edge, /function exactSingleRow/);
+assert.match(edge, /function hasExactSnapshotState/);
+assert.match(edge, /function initialStage/);
 assert.equal((edge.match(/\.rpc\("record_admin_auth_operation_result_b3a"/g) ?? []).length, 1);
 assert.match(edge, /claimed_attempt_count:\s*operation\.attemptCount/);
 assert.match(edge, /attemptCount:\s*operation\.attemptCount/);
@@ -47,6 +49,7 @@ assert.match(edge, /kind: "state_conflict"/);
 assert.match(edge, /kind: "malformed_response"/);
 assert.match(edge, /kind: "unavailable"/);
 assert.match(edge, /finalResponse\(operation\)/);
+assert.match(edge, /operation\.status === "succeeded"[\s\S]*operation\.completedStage === "completed"[\s\S]*operation\.lastErrorCode === null/);
 assert.match(edge, /completedStage === "auth_synchronized"/);
 assert.match(data, /EDGE_COMPLETED_CODES/);
 assert.match(data, /EDGE_TERMINAL_CODES/);
@@ -55,6 +58,8 @@ assert.match(data, /EDGE_PENDING_WITHOUT_OPERATION_CODES/);
 assert.match(data, /EDGE_REJECTED_CODES/);
 assert.match(action, /result\.state === "rejected" \? "error" : "pending"/);
 assert.match(action, /result\.code === \(values\.transition === "deactivate" \? "account_deactivated" : "account_reactivated"\)/);
+assert.doesNotMatch(action, /context\.operationCode !== values\.transition \|\| !context\.canRetryOrFinalize/);
+assert.doesNotMatch(action, /values\.mode === "retry"[\s\S]{0,500}canRetryOrFinalize/);
 assert.match(data, /FunctionsHttpError/);
 assert.match(data, /FunctionsRelayError/);
 assert.match(data, /FunctionsFetchError/);
@@ -69,16 +74,94 @@ const edgeInvocationBody = data.slice(edgeInvocationStart);
 assert.doesNotMatch(edgeInvocationBody, /error\.message|error\.context\.text|error\.context\.headers/);
 assert.match(action, /if \(context\.b3aAvailable\)[\s\S]*runAdminAccountAuthLifecycle[\s\S]*else \{[\s\S]*transitionAdminAccountLifecycleLegacyBeforeB3a/);
 assert.match(action, /const nextValues = result\.operationId[\s\S]*: values/);
+const startBranch = action.slice(
+  action.indexOf("} else {\n      if (context.b3aAvailable)"),
+  action.indexOf("  } catch (error)"),
+);
+assert.ok(startBranch.indexOf("if (context.b3aAvailable)") < startBranch.indexOf("const allowed ="),
+  "B.3a debe invocarse antes de cualquier elegibilidad de presentación");
+assert.ok(startBranch.indexOf("runAdminAccountAuthLifecycle") < startBranch.indexOf("const allowed ="),
+  "El replay start B.3a debe llegar al límite Edge aunque el contexto ya cambió");
+assert.match(startBranch, /else \{[\s\S]*const allowed = values\.transition === "deactivate"[\s\S]*if \(!allowed\)[\s\S]*transitionAdminAccountLifecycleLegacyBeforeB3a/,
+  "Sólo el flujo legado conserva canDeactivate/canReactivate");
+assert.match(action, /!context\.b3aAvailable \|\| context\.currentOperationId !== values\.operation_id[\s\S]*\|\| context\.operationCode !== values\.transition/);
+assert.doesNotMatch(action, /canRetryOrFinalize/,
+  "canRetryOrFinalize es sólo presentación y no puede cercar la Server Action");
+
+function fixtureStartReachesAuthoritativePath({ b3aAvailable, canTransition }) {
+  return b3aAvailable || canTransition;
+}
+for (const replayState of [
+  "completed_after_lost_response",
+  "profile_suspended_before_form_operation_id",
+  "retryable_failure_same_request",
+]) {
+  assert.equal(fixtureStartReachesAuthoritativePath({
+    b3aAvailable: true,
+    canTransition: false,
+    replayState,
+  }), true, `El replay start debe alcanzar prepare: ${replayState}`);
+}
+assert.equal(fixtureStartReachesAuthoritativePath({
+  b3aAvailable: false,
+  canTransition: false,
+}), false, "El flujo legado debe conservar la elegibilidad local");
+assert.equal(fixtureStartReachesAuthoritativePath({
+  b3aAvailable: false,
+  canTransition: true,
+}), true);
+
+function fixtureRetryReachesAuthoritativePath({
+  b3aAvailable,
+  currentOperationId,
+  submittedOperationId,
+  operationCode,
+  submittedTransition,
+}) {
+  return b3aAvailable
+    && currentOperationId === submittedOperationId
+    && operationCode === submittedTransition;
+}
+const replayFixtureUuid = "11111111-1111-4111-8111-111111111111";
+for (const authoritativeState of [
+  "succeeded_between_render_and_action",
+  "terminal_between_render_and_action",
+  "fresh_processing",
+  "auth_synchronized_finalize_recovery",
+]) {
+  assert.equal(fixtureRetryReachesAuthoritativePath({
+    b3aAvailable: true,
+    currentOperationId: replayFixtureUuid,
+    submittedOperationId: replayFixtureUuid,
+    operationCode: "reactivate",
+    submittedTransition: "reactivate",
+    authoritativeState,
+  }), true, `El replay retry debe alcanzar claim: ${authoritativeState}`);
+}
+assert.equal(fixtureRetryReachesAuthoritativePath({
+  b3aAvailable: true,
+  currentOperationId: replayFixtureUuid,
+  submittedOperationId: "22222222-2222-4222-8222-222222222222",
+  operationCode: "reactivate",
+  submittedTransition: "reactivate",
+}), false);
+assert.equal(fixtureRetryReachesAuthoritativePath({
+  b3aAvailable: true,
+  currentOperationId: replayFixtureUuid,
+  submittedOperationId: replayFixtureUuid,
+  operationCode: "deactivate",
+  submittedTransition: "reactivate",
+}), false);
 
 const fixtureCompletedCodes = new Set(["account_deactivated", "account_reactivated"]);
 const fixtureTerminalCodes = new Set([
   "auth_user_not_found", "auth_update_rejected", "unsupported_auth_contract",
-  "operation_terminal_failure",
 ]);
 const fixturePendingWithOperationCodes = new Set([
   "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
   "auth_update_rejected", "unsupported_auth_contract", "database_finalize_pending",
   "operation_processing", "operation_unavailable", "authorization_lost",
+  "self_forbidden", "auth_unconfirmed",
   "state_conflict", "database_contract_rejected", "malformed_database_response",
   "result_persistence_failed",
 ]);
@@ -89,6 +172,7 @@ const fixtureRejectedCodes = new Set([
   "method_not_allowed", "invalid_content_type", "request_too_large",
   "authentication_required", "invalid_json", "invalid_request", "invalid_reason",
   "invalid_mode", "authorization_lost", "request_id_conflict", "pending_target",
+  "self_forbidden", "auth_unconfirmed",
   "operation_in_progress", "state_conflict", "database_contract_rejected",
 ]);
 const fixtureUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -145,8 +229,8 @@ const validFixtures = [
     transition: "deactivate", expectedCode: "operation_processing" },
   { data: { code: "trusted_boundary_unavailable", state: "pending", operationId: null },
     transition: "deactivate", expectedCode: "trusted_boundary_unavailable" },
-  { data: { code: "operation_terminal_failure", state: "terminal_failure", operationId: fixtureUuid },
-    transition: "deactivate", expectedCode: "operation_terminal_failure" },
+  { data: { code: "auth_update_rejected", state: "terminal_failure", operationId: fixtureUuid },
+    transition: "deactivate", expectedCode: "auth_update_rejected" },
   { errorKind: "http", httpBody: { code: "authentication_required", state: "rejected", operationId: null },
     transition: "deactivate", expectedCode: "authentication_required" },
 ];
@@ -160,7 +244,8 @@ const invalidFixtures = [
   { data: { code: "account_reactivated", state: "completed", operationId: fixtureUuid }, transition: "deactivate" },
   { errorKind: "http", httpBody: { code: "request_id_conflict", state: "rejected", operationId: fixtureUuid }, transition: "deactivate" },
   { data: { code: "operation_processing", state: "pending", operationId: null }, transition: "deactivate" },
-  { data: { code: "operation_terminal_failure", state: "terminal_failure", operationId: null }, transition: "deactivate" },
+  { data: { code: "auth_update_rejected", state: "terminal_failure", operationId: null }, transition: "deactivate" },
+  { data: { code: "operation_terminal_failure", state: "terminal_failure", operationId: fixtureUuid }, transition: "deactivate" },
   { data: { code: "unknown_code", state: "pending", operationId: fixtureUuid }, transition: "deactivate" },
   { data: { code: "account_deactivated", state: "unknown_state", operationId: fixtureUuid }, transition: "deactivate" },
   { errorKind: "http", httpBody: { code: "request_id_conflict", state: "rejected", operationId: null, detail: "raw" }, transition: "deactivate" },
@@ -176,6 +261,104 @@ for (const fixture of invalidFixtures) {
 }
 assert.equal(validFixtures.filter((fixture) =>
   canRedirectFixture(resolveFixtureInvocation(fixture), fixture.transition)).length, 2);
+
+const preAuthCodes = new Set([
+  "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
+  "auth_update_rejected", "unsupported_auth_contract",
+]);
+const terminalCodes = new Set([
+  "auth_user_not_found", "auth_update_rejected", "unsupported_auth_contract",
+]);
+function exactFixtureSnapshot(snapshot) {
+  const initial = snapshot.operationCode === "deactivate" ? "profile_suspended" : "prepared";
+  const postAuth = snapshot.operationCode === "reactivate"
+    && snapshot.completedStage === "auth_synchronized";
+  if (snapshot.status === "open") {
+    return snapshot.completedStage === initial && snapshot.attemptCount === 0
+      && snapshot.retryable === false && snapshot.lastErrorCode === null;
+  }
+  if (snapshot.status === "processing") {
+    return (snapshot.completedStage === initial || postAuth) && snapshot.attemptCount > 0
+      && snapshot.retryable === false && snapshot.lastErrorCode === null;
+  }
+  if (snapshot.status === "retryable_failure") {
+    return snapshot.attemptCount > 0 && snapshot.retryable === true
+      && (snapshot.completedStage === initial && preAuthCodes.has(snapshot.lastErrorCode)
+        || postAuth && snapshot.lastErrorCode === "database_finalize_pending");
+  }
+  if (snapshot.status === "succeeded") {
+    return snapshot.completedStage === "completed" && snapshot.attemptCount > 0
+      && snapshot.retryable === false && snapshot.lastErrorCode === null;
+  }
+  return snapshot.status === "terminal_failure"
+    && snapshot.completedStage === initial
+    && snapshot.attemptCount > 0
+    && snapshot.retryable === false
+    && terminalCodes.has(snapshot.lastErrorCode);
+}
+const snapshotBase = {
+  operationCode: "reactivate",
+  status: "open",
+  completedStage: "prepared",
+  attemptCount: 0,
+  retryable: false,
+  lastErrorCode: null,
+};
+for (const snapshot of [
+  snapshotBase,
+  { ...snapshotBase, status: "processing", attemptCount: 1 },
+  { ...snapshotBase, status: "retryable_failure", attemptCount: 1, retryable: true,
+    lastErrorCode: "auth_temporarily_unavailable" },
+  { ...snapshotBase, status: "processing", completedStage: "auth_synchronized", attemptCount: 2 },
+  { ...snapshotBase, status: "retryable_failure", completedStage: "auth_synchronized",
+    attemptCount: 2, retryable: true, lastErrorCode: "database_finalize_pending" },
+  { ...snapshotBase, status: "succeeded", completedStage: "completed", attemptCount: 2 },
+  { ...snapshotBase, status: "terminal_failure", attemptCount: 1,
+    lastErrorCode: "auth_update_rejected" },
+]) assert.equal(exactFixtureSnapshot(snapshot), true);
+const malformedSnapshots = [
+  { ...snapshotBase, status: "succeeded", completedStage: "prepared", attemptCount: 1 },
+  { ...snapshotBase, status: "succeeded", completedStage: "completed", attemptCount: 1,
+    lastErrorCode: "auth_update_rejected" },
+  { ...snapshotBase, status: "open", attemptCount: 1 },
+  { ...snapshotBase, status: "processing", attemptCount: 0 },
+  { ...snapshotBase, status: "retryable_failure", completedStage: "auth_synchronized",
+    attemptCount: 1, retryable: true, lastErrorCode: "auth_rate_limited" },
+  { ...snapshotBase, status: "retryable_failure", attemptCount: 1, retryable: true,
+    lastErrorCode: "database_finalize_pending" },
+  { ...snapshotBase, operationCode: "deactivate", status: "retryable_failure",
+    completedStage: "profile_suspended", attemptCount: 1, retryable: true,
+    lastErrorCode: "database_finalize_pending" },
+  { ...snapshotBase, status: "terminal_failure", completedStage: "auth_synchronized",
+    attemptCount: 2, lastErrorCode: "auth_update_rejected" },
+];
+for (const snapshot of malformedSnapshots) assert.equal(exactFixtureSnapshot(snapshot), false);
+assert.equal(exactFixtureSnapshot({
+  ...snapshotBase,
+  status: "succeeded",
+  completedStage: "prepared",
+  attemptCount: 1,
+}), false, "Un status succeeded malformado nunca puede autorizar completed");
+
+function fixtureDatabaseCondition({ code = "", message = "" }, operationKnown) {
+  const text = `${code} ${message}`.toLowerCase();
+  if (text.includes("sitaa_admin_access_denied")) return "authorization_lost";
+  if (text.includes("sitaa_account_lifecycle_self_forbidden")) return "self_forbidden";
+  if (text.includes("sitaa_account_lifecycle_auth_unconfirmed")) return "auth_unconfirmed";
+  if (text.includes("sitaa_service_boundary_required") || code === "42501") {
+    return operationKnown ? "database_contract_rejected" : "trusted_boundary_unavailable";
+  }
+  return "database_contract_rejected";
+}
+assert.equal(fixtureDatabaseCondition({ code: "42501", message: "sitaa_admin_access_denied" }, true), "authorization_lost");
+assert.equal(fixtureDatabaseCondition({ code: "42501", message: "sitaa_account_lifecycle_self_forbidden" }, false), "self_forbidden");
+assert.equal(fixtureDatabaseCondition({ code: "42501", message: "sitaa_account_lifecycle_auth_unconfirmed" }, false), "auth_unconfirmed");
+assert.equal(fixtureDatabaseCondition({ code: "42501", message: "sitaa_service_boundary_required" }, false), "trusted_boundary_unavailable");
+assert.equal(fixtureDatabaseCondition({ code: "42501", message: "permission denied" }, true), "database_contract_rejected");
+assert.notEqual(fixtureDatabaseCondition({ code: "42501", message: "permission denied" }, true), "authorization_lost");
+assert.doesNotMatch(edge, /sitaa_admin_access_denied"\) \|\| error\?\.code === "42501"/);
+assert.match(edge, /sitaa_service_boundary_required"\) \|\| error\?\.code === "42501"/);
+
 for (const errorKind of ["relay", "fetch", "unknown"]) {
   assert.throws(() => resolveFixtureInvocation({ errorKind }), /trusted_boundary_unavailable/);
 }
@@ -224,5 +407,8 @@ assert.doesNotMatch(`${edge}\n${adapter}\n${action}\n${data}`, /immediate access
 console.log("Límite confiable Auth B.3a: OK");
 console.log(`Fixtures Edge válidos aceptados: ${validFixtures.length}`);
 console.log(`Fixtures Edge inválidos sin redirección: ${invalidFixtures.length}`);
+console.log(`Snapshots RPC incompatibles rechazados: ${malformedSnapshots.length}`);
+console.log("Replays start/retry alcanzan la autoridad B.3a; el legado conserva su elegibilidad: OK");
+console.log("Clasificación exacta 42501 y límite confiable: OK");
 console.log("Contrato discriminado Edge y coincidencia transición/código: OK");
 console.log("Errores HTTP malformados, Relay, Fetch y desconocidos fallan cerrados: OK");

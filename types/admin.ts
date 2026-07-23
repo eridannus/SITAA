@@ -235,8 +235,7 @@ export type AdminAccountAuthLifecycleCompletedCode =
 export type AdminAccountAuthLifecycleTerminalCode =
   | "auth_user_not_found"
   | "auth_update_rejected"
-  | "unsupported_auth_contract"
-  | "operation_terminal_failure";
+  | "unsupported_auth_contract";
 
 export type AdminAccountAuthLifecyclePendingCode =
   | "auth_temporarily_unavailable"
@@ -248,6 +247,8 @@ export type AdminAccountAuthLifecyclePendingCode =
   | "operation_processing"
   | "operation_unavailable"
   | "authorization_lost"
+  | "self_forbidden"
+  | "auth_unconfirmed"
   | "state_conflict"
   | "database_contract_rejected"
   | "malformed_database_response"
@@ -265,6 +266,8 @@ export type AdminAccountAuthLifecycleRejectedCode =
   | "invalid_reason"
   | "invalid_mode"
   | "authorization_lost"
+  | "self_forbidden"
+  | "auth_unconfirmed"
   | "request_id_conflict"
   | "pending_target"
   | "operation_in_progress"

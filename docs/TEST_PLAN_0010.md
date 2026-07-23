@@ -19,6 +19,8 @@ La revisión final del catálogo corrigió antes de cualquier ejecución la iden
 
 Una revisión posterior detectó acceso crudo a tablas protegidas dentro de intervalos del verificador ejecutados como `authenticated` o `service_role`, un baseline ACL predestructivo de rollback que todavía exigía el mapa completo post‑0009 y la pérdida de resultados estables enviados por Edge con HTTP 403/409. El arnés quedó separado por fases: los roles cliente sólo invocan RPC aprobadas o escriben resultados sanitizados en `pg_temp`; toda postcondición cruda y toda regresión del trigger del ledger se ejecuta como owner después de `RESET ROLE`. El rollback distingue funciones preexistentes sin cambios, el mutador 0009 owner-only y las seis funciones 0010. La aplicación reutiliza el parser exacto también para el cuerpo JSON de `FunctionsHttpError`, sin activar el fallback 0009 ante errores Edge. No se ejecutaron PostgreSQL, preflight, Edge Function ni operaciones Auth Admin.
 
+La revisión de cierre aún local detectó dos cercos de presentación que rompían la idempotencia autoritativa: `canDeactivate`/`canReactivate` impedían que un `start` repetido llegara a `prepare` después de cambiar el estado, y `canRetryOrFinalize` impedía recuperar el replay final. La Server Action usa ahora esos indicadores sólo en el flujo legado o en presentación; con B.3a disponible valida la forma y deja que las RPC autoritativas resuelvan el mismo `request_id`, conflictos, operaciones no finales y replays. También se cerró la matriz etapa/error del ledger, el parser Edge exige snapshots exactos y SQLSTATE `42501` sólo implica pérdida de autoridad ante `sitaa_admin_access_denied`. El hallazgo previo de tipos internos `char` del catálogo y la reautorización posterior a locks permanecen cubiertos. 0010 continúa sin aplicar y B.3a permanece abierta.
+
 El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
 
 ## 1. Validación estática y local
@@ -99,6 +101,8 @@ Bajo roles reales debe probar:
 - cercado de resultado con `claimed_attempt_count`: un intento anterior recibe `sitaa_auth_operation_stale_attempt` sin cambiar ledger, auditoría ni timestamps, y el intento vigente puede continuar;
 - timestamps monotónicos con un único `clock_timestamp()` capturado después de los locks en cada mutación; `now()`/`current_timestamp` no son relojes autoritativos de lease;
 - UUID y timestamps de evidencia no reemplazables después de adquirir valor, fallo terminal imposible tras `auth_synchronized` y fallo reintentable de finalización que conserva la evidencia Auth original;
+- matriz exacta etapa/error: los cinco fallos de proveedor sólo antes de Auth, `database_finalize_pending` sólo en reactivación `auth_synchronized`, y fallo terminal sólo en la etapa inicial sin evidencia de éxito Auth;
+- rechazo `55000/sitaa_auth_operation_error_stage_conflict` para `database_finalize_pending` antes de Auth, cualquier fallo de proveedor después de `auth_synchronized` y cualquier fallo terminal posterior a Auth, sin mutar ledger ni auditoría;
 - selección de la operación más reciente antes de derivar el estado, de modo que un éxito posterior suprima un fallo terminal anterior;
 - rechazo explícito de resultado `NULL`, códigos `NULL`, código en éxito y códigos fuera de allowlist;
 - reintento por un segundo administrador exacto, con actor Auth igual al ejecutor real y actor B.2b igual a quien realizó la transición de perfil;
@@ -126,6 +130,9 @@ Type-check del paquete Edge con el mecanismo local soportado. Sin invocarlo cont
 - el adaptador Next.js conserva cuerpos estables válidos de HTTP 403/409 mediante `FunctionsHttpError.context.json()` leído una sola vez y el mismo parser exacto usado para HTTP 200;
 - cuerpos HTTP malformados y errores `FunctionsRelayError`, `FunctionsFetchError` o desconocidos fallan cerrados como `trusted_boundary_unavailable`, sin analizar `error.message`;
 - ningún error Edge, sea de negocio o transporte, activa el fallback 0009; éste depende únicamente de la ausencia explícita de la RPC de contexto B.3a.
+- `open`, `processing`, `retryable_failure`, `succeeded` y `terminal_failure` cumplen su combinación exacta de etapa, intento, flag reintentable y código; claim y persistencia de resultado añaden sus propias matrices discriminadas;
+- una fila `succeeded` con etapa, error o intento incompatibles produce `malformed_database_response/pending` y nunca una respuesta completada;
+- `sitaa_admin_access_denied` se traduce a pérdida de autorización; autoacción y Auth no confirmado conservan códigos controlados; `sitaa_service_boundary_required` y un `42501` genérico fallan como límite confiable o contrato de base, nunca como pérdida de B.1.
 
 ## 5. Matriz Auth hospedada desechable — obligatoria
 
@@ -156,6 +163,8 @@ Usar un proyecto desechable, un objetivo sintético sin datos reales y dos sesio
 
 También verificar recuperación después de timeout de `processing`, dos solicitudes concurrentes al mismo objetivo y request ID repetido con payload distinto. El fallo `terminal_failure` se prueba sólo como estado sintético y transaccional del modelo SQL. El adaptador hospedado provisional debe producir únicamente `retryable_failure`; esta matriz no exige ni acepta una salida terminal hospedada. Una categoría terminal hospedada sólo podrá introducirse después de contar con evidencia empírica en un proyecto desechable, una clasificación estable del proveedor y un camino de recuperación del operador aprobado. Registrar versiones SDK/runtime, tiempos UTC, respuestas sanitizadas y resultado observado; nunca tokens o credenciales.
 
+El replay de aplicación debe repetir exactamente el mismo `start` tras perder la respuesta en tres puntos: operación ya completada, perfil suspendido antes de que el formulario reciba `operation_id` y operación reintentable. En los tres casos la solicitud debe llegar a Edge y a `prepare`, recuperar la misma operación y no producir `state_conflict` local. El mismo `request_id` con motivo distinto debe fallar como conflicto y otro `request_id` contra una operación no final debe informar operación en curso. En `retry`, una operación que pasó a éxito o fallo terminal entre render y acción debe alcanzar el claim y devolver el replay final; un lease fresco debe permanecer pendiente, mientras ID o transición discrepantes se rechazan localmente.
+
 ### Pruebas multisesión reservadas y no ejecutadas
 
 En una base desechable, dos sesiones deben usar simultáneamente el mismo `request_id` y payload normalizado. La primera adquiere el advisory lock; la segunda espera y, al continuar, devuelve exactamente el mismo `operation_id` en vez de una violación UNIQUE. Repetir con payload distinto y exigir `sitaa_auth_operation_request_id_conflict`.
@@ -185,6 +194,8 @@ El parser debe aceptar únicamente matrices discriminadas:
 - `rejected`: código exacto de solicitud, autenticación o preparación y `operationId = null`.
 
 Debe rechazar llaves adicionales, códigos/estados desconocidos, UUID ausente donde corresponda y cualquier cruce entre código y estado. La Server Action exige además que `deactivate` termine en `account_deactivated` y `reactivate` en `account_reactivated`; un `state = completed` aislado nunca autoriza redirección.
+
+`canRetryOrFinalize` guía el botón del formulario, pero no autoriza ni bloquea la Server Action. Del mismo modo, `canDeactivate` y `canReactivate` sólo cercan la compatibilidad 0009 cuando la RPC B.3a está explícitamente ausente.
 
 ## 6. Smoke tests de producción
 

@@ -91,6 +91,8 @@ function edgeMessage(code: string) {
     operation_processing: "La operación está siendo procesada. Actualiza la página antes de intentar nuevamente.",
     operation_unavailable: "La operación coordinada ya no está disponible.",
     authorization_lost: "Tu autorización administrativa cambió antes de completar la operación.",
+    self_forbidden: "No puedes desactivar ni reactivar tu propia cuenta administrativa.",
+    auth_unconfirmed: "La cuenta de acceso no tiene un correo confirmado y no puede reactivarse.",
     request_id_conflict: "El identificador de la solicitud ya corresponde a otra operación.",
     pending_target: "Una cuenta con registro pendiente debe completar su propio registro.",
     operation_in_progress: "Ya existe una operación coordinada no final para esta cuenta.",
@@ -144,7 +146,7 @@ export async function submitAccountLifecycleTransition(
 
     if (values.mode === "retry") {
       if (!context.b3aAvailable || context.currentOperationId !== values.operation_id
-        || context.operationCode !== values.transition || !context.canRetryOrFinalize) {
+        || context.operationCode !== values.transition) {
         return state(values, "error", "La operación ya no puede reintentarse desde este estado.");
       }
       const result = await runAdminAccountAuthLifecycle({ mode: "retry", operationId: values.operation_id });
@@ -160,15 +162,6 @@ export async function submitAccountLifecycleTransition(
         edgeMessage(result.code),
       );
     } else {
-      const allowed = values.transition === "deactivate" ? context.canDeactivate : context.canReactivate;
-      if (!allowed) {
-        const kind = context.denialCode === "self_forbidden" ? "self_forbidden"
-          : context.denialCode === "pending_target" ? "pending_target"
-          : context.denialCode === "last_admin" ? "last_admin"
-          : context.denialCode === "invalid_identity" ? "invalid_identity"
-          : context.denialCode === "auth_unconfirmed" ? "auth_unconfirmed" : "state_conflict";
-        return mappedActionError(new AdminAccountLifecycleDataError(kind), values);
-      }
       if (context.b3aAvailable) {
         const result = await runAdminAccountAuthLifecycle({
           mode: "start", targetProfileId: values.target_profile_id,
@@ -192,6 +185,17 @@ export async function submitAccountLifecycleTransition(
           );
         }
       } else {
+        const allowed = values.transition === "deactivate"
+          ? context.canDeactivate
+          : context.canReactivate;
+        if (!allowed) {
+          const kind = context.denialCode === "self_forbidden" ? "self_forbidden"
+            : context.denialCode === "pending_target" ? "pending_target"
+            : context.denialCode === "last_admin" ? "last_admin"
+            : context.denialCode === "invalid_identity" ? "invalid_identity"
+            : context.denialCode === "auth_unconfirmed" ? "auth_unconfirmed" : "state_conflict";
+          return mappedActionError(new AdminAccountLifecycleDataError(kind), values);
+        }
         await transitionAdminAccountLifecycleLegacyBeforeB3a({
           targetProfileId: values.target_profile_id,
           transition: values.transition as AdminAccountLifecycleTransition,

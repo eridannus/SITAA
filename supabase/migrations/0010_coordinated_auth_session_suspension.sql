@@ -354,6 +354,30 @@ create table public.admin_auth_operations (
       or status='terminal_failure' and last_error_code is not null
       or status in ('open','processing') and last_error_code is null
       or status='retryable_failure' and last_error_code is not null)
+    and (
+      status in ('open','processing')
+        and (
+          operation_code='reactivate' and completed_stage in ('prepared','auth_synchronized')
+          or operation_code='deactivate' and completed_stage='profile_suspended'
+        )
+      or status='retryable_failure'
+        and (
+          completed_stage=case when operation_code='reactivate' then 'prepared' else 'profile_suspended' end
+            and auth_synchronized_at is null
+            and last_error_code in (
+              'auth_temporarily_unavailable','auth_rate_limited','auth_user_not_found',
+              'auth_update_rejected','unsupported_auth_contract'
+            )
+          or operation_code='reactivate' and completed_stage='auth_synchronized'
+            and auth_audit_event_id is not null and auth_synchronized_at is not null
+            and last_error_code='database_finalize_pending'
+        )
+      or status='terminal_failure'
+        and completed_stage=case when operation_code='reactivate' then 'prepared' else 'profile_suspended' end
+        and auth_synchronized_at is null
+        and last_error_code in ('auth_user_not_found','auth_update_rejected','unsupported_auth_contract')
+      or status='succeeded' and completed_stage='completed'
+    )
   ),
   constraint admin_auth_operations_timestamp_check check (
     updated_at>=requested_at
@@ -470,6 +494,24 @@ begin
       raise exception 'sitaa_auth_operation_invalid_claim' using errcode='23514';
     end if;
   elsif writer='record' then
+    if new.status='retryable_failure' and not (
+         new.completed_stage=case when new.operation_code='reactivate' then 'prepared' else 'profile_suspended' end
+           and new.auth_synchronized_at is null
+           and new.last_error_code in (
+             'auth_temporarily_unavailable','auth_rate_limited','auth_user_not_found',
+             'auth_update_rejected','unsupported_auth_contract'
+           )
+         or new.operation_code='reactivate' and new.completed_stage='auth_synchronized'
+           and new.auth_audit_event_id is not null and new.auth_synchronized_at is not null
+           and new.last_error_code='database_finalize_pending'
+       )
+       or new.status='terminal_failure' and not (
+         new.completed_stage=case when new.operation_code='reactivate' then 'prepared' else 'profile_suspended' end
+         and new.auth_synchronized_at is null
+         and new.last_error_code in ('auth_user_not_found','auth_update_rejected','unsupported_auth_contract')
+       ) then
+      raise exception 'sitaa_auth_operation_error_stage_conflict' using errcode='55000';
+    end if;
     if old.status<>'processing'
        or row(old.id,old.request_id,old.requested_by_profile_id,old.target_profile_id,
               old.operation_code,old.reason,old.attempt_count,old.profile_audit_event_id,
@@ -480,9 +522,9 @@ begin
               new.requested_at,new.processing_started_at)
        or not (
          new.status='retryable_failure' and new.completed_stage=old.completed_stage
-           and new.completed_by_profile_id is null and new.completed_at is null
-           and new.auth_audit_event_id is not distinct from old.auth_audit_event_id
-           and new.auth_synchronized_at is not distinct from old.auth_synchronized_at
+            and new.completed_by_profile_id is null and new.completed_at is null
+            and new.auth_audit_event_id is not distinct from old.auth_audit_event_id
+            and new.auth_synchronized_at is not distinct from old.auth_synchronized_at
          or new.status='terminal_failure'
            and old.completed_stage in ('prepared','profile_suspended')
            and old.auth_audit_event_id is null and old.auth_synchronized_at is null
@@ -783,13 +825,26 @@ begin
   if claimed_attempt_count<>operation_row.attempt_count then
     raise exception 'sitaa_auth_operation_stale_attempt' using errcode='55000';
   end if;
-  if requested_result='terminal_failure'
-     and (
-       operation_row.completed_stage='auth_synchronized'
-       or operation_row.auth_audit_event_id is not null
-       or operation_row.auth_synchronized_at is not null
+  if requested_result='retryable_failure' and not (
+       operation_row.completed_stage=case when operation_row.operation_code='reactivate' then 'prepared' else 'profile_suspended' end
+         and operation_row.auth_audit_event_id is null
+         and operation_row.auth_synchronized_at is null
+         and stable_error_code in (
+           'auth_temporarily_unavailable','auth_rate_limited','auth_user_not_found',
+           'auth_update_rejected','unsupported_auth_contract'
+         )
+       or operation_row.operation_code='reactivate'
+         and operation_row.completed_stage='auth_synchronized'
+         and operation_row.auth_audit_event_id is not null
+         and operation_row.auth_synchronized_at is not null
+         and stable_error_code='database_finalize_pending'
+     )
+     or requested_result='terminal_failure' and not (
+       operation_row.completed_stage=case when operation_row.operation_code='reactivate' then 'prepared' else 'profile_suspended' end
+       and operation_row.auth_synchronized_at is null
+       and stable_error_code in ('auth_user_not_found','auth_update_rejected','unsupported_auth_contract')
      ) then
-    raise exception 'sitaa_auth_operation_terminal_after_sync' using errcode='55000';
+    raise exception 'sitaa_auth_operation_error_stage_conflict' using errcode='55000';
   end if;
   operation_timestamp:=greatest(clock_timestamp(),operation_row.updated_at);
   perform set_config('sitaa.b3a_writer','record',true);
@@ -1083,11 +1138,11 @@ begin
   end if;
   if exists (
     select 1 from (values
-      ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
+      ('guard_admin_auth_operation_b3a()','b4f997c0089a103737539c380c0c05d1'),
       ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
       ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','2d8d580677411110fb9255fcced4c715'),
       ('claim_admin_auth_operation_b3a(uuid,uuid)','f100545d885836bdfcc6c6f71063f709'),
-      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','97eaf8df0cf10dcd9ddc623feaaceede'),
+      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','0aa2e5f2d1399b086b7223dc7193c61a'),
       ('finalize_admin_account_auth_reactivation_b3a(uuid)','496707f95d11ca6d9b75c1b3f43a3c6b')
     ) expected(signature,body_hash)
     left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)

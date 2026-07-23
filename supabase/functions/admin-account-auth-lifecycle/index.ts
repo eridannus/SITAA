@@ -16,6 +16,13 @@ const ERROR_VALUES = new Set([
   "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
   "auth_update_rejected", "unsupported_auth_contract", "database_finalize_pending",
 ]);
+const PRE_AUTH_ERROR_VALUES = new Set<StableErrorCode>([
+  "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
+  "auth_update_rejected", "unsupported_auth_contract",
+]);
+const TERMINAL_ERROR_VALUES = new Set<StableErrorCode>([
+  "auth_user_not_found", "auth_update_rejected", "unsupported_auth_contract",
+]);
 
 type OperationCode = "deactivate" | "reactivate";
 type OperationStatus = "open" | "processing" | "retryable_failure" | "succeeded" | "terminal_failure";
@@ -44,6 +51,9 @@ type ClaimedOperation = OperationSnapshot & { claimed: boolean };
 type RecordResultOutcome =
   | { kind: "ok"; operation: OperationSnapshot }
   | { kind: "authorization_lost" }
+  | { kind: "self_forbidden" }
+  | { kind: "auth_unconfirmed" }
+  | { kind: "database_contract_rejected" }
   | { kind: "stale_attempt" }
   | { kind: "state_conflict" }
   | { kind: "malformed_response" }
@@ -82,6 +92,43 @@ function exactSingleRow(data: unknown, fields: readonly string[]): Record<string
   return keys.length === fields.length && keys.every((key) => fields.includes(key)) ? data[0] : null;
 }
 
+function initialStage(operationCode: OperationCode): OperationStage {
+  return operationCode === "deactivate" ? "profile_suspended" : "prepared";
+}
+
+function hasExactSnapshotState(snapshot: OperationSnapshot) {
+  const isInitialStage = snapshot.completedStage === initialStage(snapshot.operationCode);
+  const isPostAuthReactivation = snapshot.operationCode === "reactivate"
+    && snapshot.completedStage === "auth_synchronized";
+  if (snapshot.status === "open") {
+    return isInitialStage && snapshot.attemptCount === 0
+      && !snapshot.retryable && snapshot.lastErrorCode === null;
+  }
+  if (snapshot.status === "processing") {
+    return (isInitialStage || isPostAuthReactivation) && snapshot.attemptCount > 0
+      && !snapshot.retryable && snapshot.lastErrorCode === null;
+  }
+  if (snapshot.status === "retryable_failure") {
+    const preAuthFailure = isInitialStage
+      && snapshot.lastErrorCode !== null
+      && PRE_AUTH_ERROR_VALUES.has(snapshot.lastErrorCode);
+    const finalizationFailure = isPostAuthReactivation
+      && snapshot.lastErrorCode === "database_finalize_pending";
+    return snapshot.attemptCount > 0 && snapshot.retryable
+      && (preAuthFailure || finalizationFailure);
+  }
+  if (snapshot.status === "succeeded") {
+    return snapshot.completedStage === "completed" && snapshot.attemptCount > 0
+      && !snapshot.retryable && snapshot.lastErrorCode === null;
+  }
+  return snapshot.status === "terminal_failure"
+    && isInitialStage
+    && snapshot.attemptCount > 0
+    && !snapshot.retryable
+    && snapshot.lastErrorCode !== null
+    && TERMINAL_ERROR_VALUES.has(snapshot.lastErrorCode);
+}
+
 function parseSnapshot(
   data: unknown,
   fields: readonly string[],
@@ -108,7 +155,7 @@ function parseSnapshot(
     || (expected?.targetProfileId !== undefined && row.target_profile_id !== expected.targetProfileId)
     || (expected?.operationCode !== undefined && row.operation_code !== expected.operationCode)
     || (expected?.attemptCount !== undefined && row.attempt_count !== expected.attemptCount)) return null;
-  return {
+  const snapshot: OperationSnapshot = {
     operationId: row.operation_id,
     targetProfileId: row.target_profile_id,
     operationCode: row.operation_code,
@@ -119,6 +166,7 @@ function parseSnapshot(
     lastErrorCode: row.last_error_code as StableErrorCode | null,
     updatedAt: row.updated_at,
   };
+  return hasExactSnapshotState(snapshot) ? snapshot : null;
 }
 
 const PREPARATION_FIELDS = [
@@ -135,8 +183,16 @@ const FINALIZATION_FIELDS = [
 function parseClaim(data: unknown, expected: { operationId: string }): ClaimedOperation | null {
   const snapshot = parseSnapshot(data, CLAIM_FIELDS, expected);
   const row = exactSingleRow(data, CLAIM_FIELDS);
-  return snapshot && row && typeof row.claimed === "boolean"
-    ? { ...snapshot, claimed: row.claimed }
+  if (!snapshot || !row || typeof row.claimed !== "boolean") return null;
+  if (row.claimed) {
+    return snapshot.status === "processing" && snapshot.attemptCount > 0
+      ? { ...snapshot, claimed: true }
+      : null;
+  }
+  return snapshot.status === "succeeded"
+      || snapshot.status === "terminal_failure"
+      || snapshot.status === "processing"
+    ? { ...snapshot, claimed: false }
     : null;
 }
 
@@ -152,9 +208,17 @@ function parseFinalization(data: unknown, expected: OperationSnapshot) {
     && isTimestamp(row.completed_at);
 }
 
-function databaseCondition(error: { code?: string; message?: string } | null) {
+function databaseCondition(
+  error: { code?: string; message?: string } | null,
+  operationKnown: boolean,
+) {
   const text = `${error?.code ?? ""} ${error?.message ?? ""}`.toLowerCase();
-  if (text.includes("sitaa_admin_access_denied") || error?.code === "42501") return "authorization_lost";
+  if (text.includes("sitaa_admin_access_denied")) return "authorization_lost";
+  if (text.includes("sitaa_account_lifecycle_self_forbidden")) return "self_forbidden";
+  if (text.includes("sitaa_account_lifecycle_auth_unconfirmed")) return "auth_unconfirmed";
+  if (text.includes("sitaa_service_boundary_required") || error?.code === "42501") {
+    return operationKnown ? "database_contract_rejected" : "trusted_boundary_unavailable";
+  }
   if (text.includes("sitaa_auth_operation_unavailable")) return "operation_unavailable";
   if (text.includes("sitaa_auth_operation_request_id_conflict")) return "request_id_conflict";
   if (text.includes("sitaa_account_lifecycle_pending_target")) return "pending_target";
@@ -163,25 +227,46 @@ function databaseCondition(error: { code?: string; message?: string } | null) {
   return "database_contract_rejected";
 }
 
+function isPermissionCondition(error: { code?: string; message?: string } | null) {
+  const text = `${error?.code ?? ""} ${error?.message ?? ""}`.toLowerCase();
+  return error?.code === "42501"
+    || text.includes("sitaa_admin_access_denied")
+    || text.includes("sitaa_account_lifecycle_self_forbidden")
+    || text.includes("sitaa_account_lifecycle_auth_unconfirmed")
+    || text.includes("sitaa_service_boundary_required");
+}
+
 function recordResultCondition(error: { code?: string; message?: string } | null):
   Exclude<RecordResultOutcome["kind"], "ok" | "malformed_response"> {
   const text = `${error?.code ?? ""} ${error?.message ?? ""}`.toLowerCase();
-  if (text.includes("sitaa_admin_access_denied") || error?.code === "42501") {
+  if (text.includes("sitaa_admin_access_denied")) {
     return "authorization_lost";
+  }
+  if (text.includes("sitaa_account_lifecycle_self_forbidden")) return "self_forbidden";
+  if (text.includes("sitaa_account_lifecycle_auth_unconfirmed")) return "auth_unconfirmed";
+  if (text.includes("sitaa_service_boundary_required") || error?.code === "42501") {
+    return "database_contract_rejected";
   }
   if (text.includes("sitaa_auth_operation_stale_attempt")) return "stale_attempt";
   if (text.includes("sitaa_auth_operation_not_processing")
     || text.includes("sitaa_auth_operation_stage_conflict")
-    || text.includes("sitaa_auth_operation_terminal_after_sync")) return "state_conflict";
+    || text.includes("sitaa_auth_operation_error_stage_conflict")) return "state_conflict";
   return "unavailable";
 }
 
 function finalResponse(operation: OperationSnapshot) {
-  if (operation.status === "succeeded") {
+  if (operation.status === "succeeded"
+    && operation.completedStage === "completed"
+    && operation.lastErrorCode === null
+    && !operation.retryable) {
     return response(200, operation.operationCode === "deactivate" ? "account_deactivated" : "account_reactivated", "completed", operation.operationId);
   }
-  if (operation.status === "terminal_failure") {
-    return response(200, operation.lastErrorCode ?? "operation_terminal_failure", "terminal_failure", operation.operationId);
+  if (operation.status === "terminal_failure"
+    && operation.completedStage === initialStage(operation.operationCode)
+    && operation.lastErrorCode !== null
+    && TERMINAL_ERROR_VALUES.has(operation.lastErrorCode)
+    && !operation.retryable) {
+    return response(200, operation.lastErrorCode, "terminal_failure", operation.operationId);
   }
   return null;
 }
@@ -207,12 +292,30 @@ async function recordResult(
     operationCode: operation.operationCode,
     attemptCount: operation.attemptCount,
   });
-  return parsed ? { kind: "ok", operation: parsed } : { kind: "malformed_response" };
+  if (!parsed) return { kind: "malformed_response" };
+  const expected = requestedResult === "auth_succeeded"
+    ? parsed.status === (operation.operationCode === "deactivate" ? "succeeded" : "processing")
+      && parsed.completedStage === (operation.operationCode === "deactivate" ? "completed" : "auth_synchronized")
+      && parsed.lastErrorCode === null
+    : requestedResult === "retryable_failure"
+      ? parsed.status === "retryable_failure"
+        && parsed.completedStage === operation.completedStage
+        && parsed.lastErrorCode === stableErrorCode
+      : parsed.status === "terminal_failure"
+        && parsed.completedStage === initialStage(operation.operationCode)
+        && parsed.lastErrorCode === stableErrorCode;
+  return expected ? { kind: "ok", operation: parsed } : { kind: "malformed_response" };
 }
 
 function recordFailureResponse(outcome: Exclude<RecordResultOutcome, { kind: "ok" }>, operationId: string) {
   if (outcome.kind === "authorization_lost") {
     return response(403, "authorization_lost", "pending", operationId);
+  }
+  if (outcome.kind === "self_forbidden" || outcome.kind === "auth_unconfirmed") {
+    return response(409, outcome.kind, "pending", operationId);
+  }
+  if (outcome.kind === "database_contract_rejected") {
+    return response(409, "database_contract_rejected", "pending", operationId);
   }
   if (outcome.kind === "stale_attempt" || outcome.kind === "state_conflict") {
     return response(200, "state_conflict", "pending", operationId);
@@ -235,8 +338,9 @@ async function finalizeReactivation(
   if (!finalized.error && parseFinalization(finalized.data, operation)) {
     return response(200, "account_reactivated", "completed", operation.operationId);
   }
-  if (finalized.error && databaseCondition(finalized.error) === "authorization_lost") {
-    return response(403, "authorization_lost", "pending", operation.operationId);
+  if (finalized.error && isPermissionCondition(finalized.error)) {
+    const code = databaseCondition(finalized.error, true);
+    return response(code === "authorization_lost" ? 403 : 409, code, "pending", operation.operationId);
   }
 
   // Una carrera de finalización puede haber concluido la operación. Consultar
@@ -245,8 +349,9 @@ async function finalizeReactivation(
     requested_operation_id: operation.operationId,
     caller_profile_id: actorProfileId,
   });
-  if (replay.error && databaseCondition(replay.error) === "authorization_lost") {
-    return response(403, "authorization_lost", "pending", operation.operationId);
+  if (replay.error && isPermissionCondition(replay.error)) {
+    const code = databaseCondition(replay.error, true);
+    return response(code === "authorization_lost" ? 403 : 409, code, "pending", operation.operationId);
   }
   const replayed = replay.error ? null : parseClaim(replay.data, { operationId: operation.operationId });
   const replayResponse = replayed ? finalResponse(replayed) : null;
@@ -331,8 +436,13 @@ async function main(request: Request): Promise<Response> {
       request_id: body.requestId,
     });
     if (preparedRpc.error) {
-      const code = databaseCondition(preparedRpc.error);
-      return response(preparedRpc.error.code === "42501" ? 403 : 409, code, "rejected");
+      const code = databaseCondition(preparedRpc.error, false);
+      const pending = code === "trusted_boundary_unavailable";
+      return response(
+        code === "authorization_lost" ? 403 : pending ? 503 : 409,
+        code,
+        pending ? "pending" : "rejected",
+      );
     }
     operation = parseSnapshot(preparedRpc.data, PREPARATION_FIELDS, {
       targetProfileId: body.targetProfileId,
@@ -357,7 +467,8 @@ async function main(request: Request): Promise<Response> {
     caller_profile_id: actorProfileId,
   });
   if (claimRpc.error) {
-    return response(claimRpc.error.code === "42501" ? 403 : 200, databaseCondition(claimRpc.error), "pending", operationId);
+    const code = databaseCondition(claimRpc.error, true);
+    return response(code === "authorization_lost" ? 403 : 200, code, "pending", operationId);
   }
   const claim = parseClaim(claimRpc.data, { operationId });
   if (!claim || (operation && (claim.targetProfileId !== operation.targetProfileId

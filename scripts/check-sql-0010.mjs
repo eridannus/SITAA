@@ -671,6 +671,90 @@ const mutableAuthorizationOrders = [
 for (const [label, body, markers] of mutableAuthorizationOrders) {
   assertOrderedMarkers(body, markers, `orden ${label}`);
 }
+const guardBody = extractFunctionBody(sources.migration, "guard_admin_auth_operation_b3a");
+const recordBody = extractFunctionBody(sources.migration, "record_admin_auth_operation_result_b3a");
+const evidenceConstraint = sliceBetween(
+  sources.migration,
+  "constraint admin_auth_operations_evidence_check check (",
+  "constraint admin_auth_operations_timestamp_check check (",
+  "matriz CHECK de evidencia",
+);
+for (const body of [guardBody, recordBody, evidenceConstraint]) {
+  assert.match(body, /database_finalize_pending/);
+  assert.match(body, /operation_code='reactivate'[\s\S]*completed_stage='auth_synchronized'/);
+  assert.match(body, /auth_synchronized_at is not null[\s\S]*database_finalize_pending/);
+  assert.match(body, /auth_temporarily_unavailable[\s\S]*auth_rate_limited[\s\S]*auth_user_not_found[\s\S]*auth_update_rejected[\s\S]*unsupported_auth_contract/);
+}
+for (const body of [guardBody, recordBody]) {
+  assert.match(body, /sitaa_auth_operation_error_stage_conflict/);
+}
+
+const preAuthResultCodes = new Set([
+  "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
+  "auth_update_rejected", "unsupported_auth_contract",
+]);
+const terminalResultCodes = new Set([
+  "auth_user_not_found", "auth_update_rejected", "unsupported_auth_contract",
+]);
+function acceptsStageError({ operationCode, stage, result, code, authEvidence }) {
+  const initialStage = operationCode === "reactivate" ? "prepared" : "profile_suspended";
+  if (result === "retryable_failure") {
+    return stage === initialStage && !authEvidence && preAuthResultCodes.has(code)
+      || operationCode === "reactivate" && stage === "auth_synchronized"
+        && authEvidence && code === "database_finalize_pending";
+  }
+  if (result === "terminal_failure") {
+    return stage === initialStage && !authEvidence && terminalResultCodes.has(code);
+  }
+  return result === "auth_succeeded" && code === null;
+}
+for (const operationCode of ["deactivate", "reactivate"]) {
+  const initialStage = operationCode === "deactivate" ? "profile_suspended" : "prepared";
+  for (const code of preAuthResultCodes) {
+    assert.equal(acceptsStageError({
+      operationCode, stage: initialStage, result: "retryable_failure", code, authEvidence: false,
+    }), true);
+  }
+  assert.equal(acceptsStageError({
+    operationCode, stage: initialStage, result: "retryable_failure",
+    code: "database_finalize_pending", authEvidence: false,
+  }), false);
+}
+assert.equal(acceptsStageError({
+  operationCode: "reactivate", stage: "auth_synchronized", result: "retryable_failure",
+  code: "database_finalize_pending", authEvidence: true,
+}), true);
+const forbiddenStageErrorFixtures = [
+  ...[...preAuthResultCodes].map((code) => ({
+    operationCode: "reactivate", stage: "auth_synchronized",
+    result: "retryable_failure", code, authEvidence: true,
+  })),
+  {
+    operationCode: "deactivate", stage: "auth_synchronized",
+    result: "retryable_failure", code: "database_finalize_pending", authEvidence: true,
+  },
+  ...[...terminalResultCodes].map((code) => ({
+    operationCode: "reactivate", stage: "auth_synchronized",
+    result: "terminal_failure", code, authEvidence: true,
+  })),
+  ...["deactivate", "reactivate"].map((operationCode) => ({
+    operationCode,
+    stage: operationCode === "deactivate" ? "profile_suspended" : "prepared",
+    result: "terminal_failure",
+    code: "database_finalize_pending",
+    authEvidence: false,
+  })),
+];
+for (const fixture of forbiddenStageErrorFixtures) {
+  assert.equal(acceptsStageError(fixture), false,
+    `Cruce etapa/error prohibido aceptado: ${JSON.stringify(fixture)}`);
+}
+assert.match(
+  sources.verify,
+  /0010_verify_deactivate_pre_auth_finalize_code_unexpected[\s\S]*0010_verify_reactivate_pre_auth_finalize_code_unexpected/,
+);
+assert.match(sources.verify, /0010_verify_post_auth_provider_code_unexpected/);
+assert.match(sources.verify, /0010_verify_post_auth_terminal_code_unexpected/);
 for (const [fixture, markers, label] of [
   [
     `sitaa_service_boundary_required ${exactB1CallerCheck} pg_advisory_xact_lock for update operation_row.status in ('succeeded','terminal_failure')`,
@@ -756,7 +840,7 @@ for (const field of [
     `${field} debe ser inmutable una vez establecido`,
   );
 }
-assert.match(sources.migration, /sitaa_auth_operation_terminal_after_sync/);
+assert.match(sources.migration, /sitaa_auth_operation_error_stage_conflict/);
 assert.match(sources.verify, /0010_verify_restore_failure_rejected_results_mutated_state/);
 assert.match(sources.verify, /0010_verify_auth_audit_replacement_unexpected/);
 assert.match(sources.verify, /0010_verify_profile_audit_replacement_unexpected/);
@@ -855,6 +939,10 @@ for (const marker of [
   "0010_verify_null_retryable_code_unexpected",
   "0010_verify_null_terminal_code_unexpected",
   "0010_verify_success_error_code_unexpected",
+  "0010_verify_deactivate_pre_auth_finalize_code_unexpected",
+  "0010_verify_reactivate_pre_auth_finalize_code_unexpected",
+  "0010_verify_post_auth_provider_code_unexpected",
+  "0010_verify_post_auth_terminal_code_unexpected",
   "0010_verify_auth_synchronized_immediate_recovery_failed",
   "0010_verify_stale_attempt_unexpected",
   "0010_verify_terminal_after_sync_unexpected",

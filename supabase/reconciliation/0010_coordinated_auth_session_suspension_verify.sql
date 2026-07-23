@@ -150,11 +150,11 @@ begin
   end loop;
   if exists (
     select 1 from (values
-      ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
+      ('guard_admin_auth_operation_b3a()','b4f997c0089a103737539c380c0c05d1'),
       ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
       ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','2d8d580677411110fb9255fcced4c715'),
       ('claim_admin_auth_operation_b3a(uuid,uuid)','f100545d885836bdfcc6c6f71063f709'),
-      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','97eaf8df0cf10dcd9ddc623feaaceede'),
+      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','0aa2e5f2d1399b086b7223dc7193c61a'),
       ('finalize_admin_account_auth_reactivation_b3a(uuid)','496707f95d11ca6d9b75c1b3f43a3c6b')
     ) expected(signature,body_hash)
     left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
@@ -841,6 +841,15 @@ begin
   if claim.claimed or claim.status<>'processing' or claim.attempt_count<>1 then
     raise exception '0010_verify_fresh_processing_contract_failed';
   end if;
+  begin
+    perform public.record_admin_auth_operation_result_b3a(
+      op,pg_temp.case_id('admin_a'),claim.attempt_count,
+      'retryable_failure','database_finalize_pending'
+    );
+    raise exception '0010_verify_deactivate_pre_auth_finalize_code_unexpected';
+  exception when sqlstate '55000' then
+    if sqlerrm<>'sitaa_auth_operation_error_stage_conflict' then raise; end if;
+  end;
   select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'retryable_failure','auth_temporarily_unavailable');
   if result.status<>'retryable_failure' or result.completed_stage<>'profile_suspended'
      or result.updated_at<claim.updated_at then raise exception '0010_verify_retryable_failed'; end if;
@@ -1129,6 +1138,15 @@ begin
     raise exception '0010_verify_null_terminal_code_unexpected'; exception when invalid_parameter_value then null; end;
   begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'auth_succeeded','auth_temporarily_unavailable');
     raise exception '0010_verify_success_error_code_unexpected'; exception when invalid_parameter_value then null; end;
+  begin
+    perform public.record_admin_auth_operation_result_b3a(
+      op,pg_temp.case_id('admin_a'),claim.attempt_count,
+      'retryable_failure','database_finalize_pending'
+    );
+    raise exception '0010_verify_reactivate_pre_auth_finalize_code_unexpected';
+  exception when sqlstate '55000' then
+    if sqlerrm<>'sitaa_auth_operation_error_stage_conflict' then raise; end if;
+  end;
   select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'auth_succeeded',null);
   if result.status<>'processing' or result.completed_stage<>'auth_synchronized' then raise exception '0010_verify_auth_restore_stage_failed'; end if;
 end;
@@ -1247,6 +1265,7 @@ do $restore_failure_rejected_results$
 declare
   op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
   recovered_attempt integer:=(select attempt_count from pg_temp.sitaa_0010_rpc_observations where label='restore_failure_recovered_claim');
+  invalid_error_code text;
 begin
   begin
     perform public.record_admin_auth_operation_result_b3a(
@@ -1259,6 +1278,35 @@ begin
     insert into pg_temp.sitaa_0010_expected_error_outcomes
     values('stale_attempt',sqlstate,sqlerrm);
   end;
+
+  foreach invalid_error_code in array array[
+    'auth_temporarily_unavailable','auth_rate_limited','auth_user_not_found',
+    'auth_update_rejected','unsupported_auth_contract'
+  ] loop
+    begin
+      perform public.record_admin_auth_operation_result_b3a(
+        op,pg_temp.case_id('admin_b'),recovered_attempt,
+        'retryable_failure',invalid_error_code
+      );
+      raise exception '0010_verify_post_auth_provider_code_unexpected:%',invalid_error_code;
+    exception when sqlstate '55000' then
+      if sqlerrm<>'sitaa_auth_operation_error_stage_conflict' then raise; end if;
+    end;
+  end loop;
+
+  foreach invalid_error_code in array array[
+    'auth_user_not_found','auth_update_rejected','unsupported_auth_contract'
+  ] loop
+    begin
+      perform public.record_admin_auth_operation_result_b3a(
+        op,pg_temp.case_id('admin_b'),recovered_attempt,
+        'terminal_failure',invalid_error_code
+      );
+      raise exception '0010_verify_post_auth_terminal_code_unexpected:%',invalid_error_code;
+    exception when sqlstate '55000' then
+      if sqlerrm<>'sitaa_auth_operation_error_stage_conflict' then raise; end if;
+    end;
+  end loop;
 
   begin
     perform public.record_admin_auth_operation_result_b3a(
@@ -1282,7 +1330,7 @@ begin
         'sitaa_auth_operation_stale_attempt'
      or (select observed_sqlstate from pg_temp.sitaa_0010_expected_error_outcomes where label='terminal_after_sync')<>'55000'
      or (select observed_message from pg_temp.sitaa_0010_expected_error_outcomes where label='terminal_after_sync')<>
-        'sitaa_auth_operation_terminal_after_sync'
+        'sitaa_auth_operation_error_stage_conflict'
      or (select operation_hash from pg_temp.sitaa_0010_restore_failure_baseline) is distinct from
         (select md5(row_to_json(operation)::text)
          from public.admin_auth_operations operation

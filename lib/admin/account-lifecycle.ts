@@ -53,7 +53,11 @@ function mappedError(error: RpcError): AdminAccountLifecycleDataError {
   if (hasCode(text, "sitaa_account_lifecycle_last_admin_forbidden")) return new AdminAccountLifecycleDataError("last_admin");
   if (hasCode(text, "sitaa_account_lifecycle_invalid_reason")) return new AdminAccountLifecycleDataError("invalid_reason");
   if (hasCode(text, "sitaa_auth_operation_final")) return new AdminAccountLifecycleDataError("terminal_failure");
-  if (error.code === "42501" || hasCode(text, "sitaa_admin_access_denied")) return new AdminAccountLifecycleDataError("forbidden");
+  if (hasCode(text, "sitaa_admin_access_denied")) return new AdminAccountLifecycleDataError("forbidden");
+  if (hasCode(text, "sitaa_service_boundary_required")) {
+    return new AdminAccountLifecycleDataError("trusted_boundary_unavailable");
+  }
+  if (error.code === "42501") return new AdminAccountLifecycleDataError("unavailable");
   return new AdminAccountLifecycleDataError("unavailable");
 }
 
@@ -89,13 +93,13 @@ const STABLE_ERROR_CODES = new Set<AdminAuthOperationStableCode>([
 const EDGE_COMPLETED_CODES = new Set(["account_deactivated", "account_reactivated"]);
 const EDGE_TERMINAL_CODES = new Set([
   "auth_user_not_found", "auth_update_rejected", "unsupported_auth_contract",
-  "operation_terminal_failure",
 ]);
 const EDGE_PENDING_WITH_OPERATION_CODES = new Set([
   "auth_temporarily_unavailable",
   "auth_rate_limited", "auth_user_not_found", "auth_update_rejected",
   "unsupported_auth_contract", "database_finalize_pending",
   "operation_processing", "operation_unavailable", "authorization_lost",
+  "self_forbidden", "auth_unconfirmed",
   "state_conflict", "database_contract_rejected", "malformed_database_response",
   "result_persistence_failed",
 ]);
@@ -106,6 +110,7 @@ const EDGE_REJECTED_CODES = new Set([
   "method_not_allowed", "invalid_content_type", "request_too_large",
   "authentication_required", "invalid_json", "invalid_request", "invalid_reason",
   "invalid_mode", "authorization_lost", "request_id_conflict", "pending_target",
+  "self_forbidden", "auth_unconfirmed",
   "operation_in_progress", "state_conflict", "database_contract_rejected",
 ]);
 
