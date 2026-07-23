@@ -192,6 +192,12 @@ La Fase A de identidad Google y los nombres estructurados de 0006 están aplicad
 
 Una corrección exitosa conserva UUID de perfil, email, vínculo Auth, clase/estado de cuenta, ciclo de vida, asignaciones y toda la historia operativa. Inserta exactamente un evento append-only en `admin_audit_events` con `action_code = account_identity_corrected`, `outcome = success`, razón normalizada y metadata que contiene sólo el arreglo ordenado `changed_fields`.
 
+## Ledger B.3a preparado por 0010
+
+`admin_auth_operations` coordina sin falsa atomicidad una transición de perfil y su sincronización con Auth. Su identidad inmutable es `request_id`, actor solicitante, objetivo, operación y motivo. Usa estados `open|processing|retryable_failure|succeeded|terminal_failure` y etapas monotónicas `prepared|profile_suspended|auth_synchronized|completed`; conserva conteo de intentos, categorías de error allowlisted, referencias a auditoría y timestamps consistentes. Un índice parcial permite como máximo una operación no final por objetivo. RLS está habilitado sin políticas y no existe acceso directo de cliente o `service_role`.
+
+El ledger no almacena email, metadata Auth, tokens, respuestas del proveedor ni errores crudos. `admin_audit_events` conserva separadamente la evidencia del ciclo de perfil y la sincronización Auth. Este modelo está sólo en la migración local 0010 y no pertenece todavía al snapshot vivo post‑0009.
+
 ## Ciclo de vida administrativo implementado por 0009
 
 0009 no añade columnas. Reutiliza `profiles.account_status`, `is_active`, `activated_at` y `deactivated_at`: desactivar pasa de `active` a `inactive`, conserva `activated_at` y fija `deactivated_at`; reactivar realiza la transición inversa y limpia `deactivated_at`. Asignaciones, actividades, responsabilidades, participantes, asistencia, Auth e historia permanecen sin cambios. Cada éxito añade un único evento `account_deactivated` o `account_reactivated` con motivo normalizado y metadata limitada a `changed_fields`. Al reactivar sólo recuperan efecto las asignaciones que continúan activas, vigentes, válidas y compatibles; B.2b no las repara ni revoca sesiones físicas.

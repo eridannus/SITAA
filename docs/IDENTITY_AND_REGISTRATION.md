@@ -89,6 +89,8 @@ Durante el cierre se separaron administrativamente una cuenta técnica interna y
 
 Fase B.1, B.2a y B.2b están cerradas. Permanecen abiertas B.3, roles V2/Fase C, paneles y filtros posteriores, retiro del acceso académico transitorio de `technical_admin` y check-in abierto.
 
+La preparación B.3a no cambia la identidad canónica, el registro Google ni el vínculo uno a uno Auth/perfil. Coordina únicamente suspensión/restauración de acceso para cuentas ya existentes; no crea cuentas técnicas, invitaciones, recuperación, cambio de correo, borrado de Auth ni roles. Una cuenta en reactivación permanece inactiva hasta confirmar Auth y volver a validar su identidad.
+
 ## Corrección administrativa implementada en B.2a
 
 El autoservicio autenticado continúa limitado a `first_names`, `paternal_surname` y `maternal_surname` propios. B.2a implementa mediante 0008 una RPC distinta para que un administrador B.1 exacto corrija la identidad estable de otra cuenta activa o inactiva con motivo y auditoría. La capacidad fue verificada, probada y reconciliada contra el snapshot `2026-07-22T01:46:13Z`.

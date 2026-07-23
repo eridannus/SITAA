@@ -1,0 +1,3 @@
+[functions.admin-account-auth-lifecycle]
+verify_jwt = true
+

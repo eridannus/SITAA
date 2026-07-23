@@ -220,3 +220,14 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Los smoke tests aprobaron autoridad exacta, desactivación/reactivación institucional, barrera operativa sobre sesión existente, preservación de identidad/historia, auditoría minimizada y denegaciones. La matriz manual multisesión no fue ejecutada y permanece limitada a un entorno desechable.
 - Snapshot post-0009: `2026-07-22T23:32:46Z`, estado `SUCCESS`, 18/165/80/43/11/54/25/18/51 y privilegios 137/267/6/445. El delta es +3 funciones, +5 grants de rutina y +5 ACL; no existe deriva inexplicada.
 - Cierre: 0001–0009 son inmutables, B.2b está cerrada, `0010` es el siguiente número disponible y B.3/Fase C permanecen pendientes.
+
+## 0010_coordinated_auth_session_suspension.sql — preparación local, no aplicada
+
+- Fecha de preparación: 2026-07-22.
+- Añade localmente `admin_auth_operations`, su estado controlado, cinco RPC B.3a y un trigger owner-only; no modifica cuerpos 0001–0009.
+- Retira únicamente el futuro `EXECUTE` directo de `authenticated` sobre `transition_admin_account_lifecycle_b2b(uuid,text,text)`; el contexto 0009 permanece disponible.
+- Incluye preflight de sólo lectura, verificador transaccional sin Auth Admin, rollback protegido, Edge Function autenticada, adaptador Auth aislado y `TEST_PLAN_0010.md`.
+- La aplicación mantiene un fallback 0009 temporal únicamente cuando la ausencia del contrato B.3a se confirma explícitamente; después de 0010, cualquier fallo del límite confiable falla cerrado.
+- La restauración usa el valor tipado `ban_duration = 'none'`, pero no se ha comprobado contra Supabase hospedado. No se ha ejecutado SQL, preflight, verificador, Edge Function, Auth Admin ni prueba desechable.
+- El snapshot vivo continúa siendo post‑0009 (`2026-07-22T23:32:46Z`); no se regeneró ni se editó.
+- Estado: preparación local abierta. No crear 0011 ni describir B.3a como aplicada o cerrada.

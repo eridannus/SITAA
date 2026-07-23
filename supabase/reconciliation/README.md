@@ -88,3 +88,9 @@ Los artefactos `0009_admin_account_lifecycle_transitions_{preflight,verify,rollb
 El primer preflight remoto 0009 devolvió 26 filas, terminó con `ROLLBACK` y no fue aprobado por cuatro falsos positivos. Un diagnóstico separado de sólo lectura confirmó los contratos post-0008. Tras alinear las comparaciones canónicas, el preflight corregido devolvió nuevamente 26 filas, dejó sus 19 bloqueos en cero y terminó con `ROLLBACK`; quedó aprobado. La aplicación compatible se desplegó antes de intentar la migración.
 
 Los intentos 1 y 2 fallaron antes del DDL: primero por el `EXISTS` exterior sin cerrar y después por concatenar `pg_default_acl.defaclobjtype` (`pg_catalog."char"`) sin `::text`. Ambas transacciones se descartaron sin persistencia. El intento 3 aprobó preflight, DDL, ACL, guarda post-DDL y `COMMIT`; el verificador final aprobó con `ROLLBACK`, los smoke tests aprobaron y el informe `0009_post_apply_reconciliation.md` confirmó el snapshot `2026-07-22T23:32:46Z` sin deriva inexplicada. 0009 es inmutable, B.2b está cerrada, 0010 es el siguiente número y B.3/Fase C permanecen pendientes.
+
+## Preparación local 0010
+
+`0010_coordinated_auth_session_suspension_{preflight,verify,rollback}.sql` acompaña la migración local B.3a. El preflight es de sólo lectura y compara el contrato post‑0009; el verificador usa fixtures sintéticas y simula resultados Auth sin invocar Auth Admin; el rollback sólo es elegible mientras no exista ninguna operación ni evento B.3a real. Ninguno de estos archivos ha sido ejecutado.
+
+El snapshot autoritativo continúa siendo post‑0009 y no debe incorporar 0010 hasta después de una aplicación controlada, verificación, prueba desechable Auth y nueva reconciliación. La Edge Function no se despliega ni se invoca durante la preparación local. No se debe crear 0011 mientras 0010 permanezca abierta.

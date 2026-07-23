@@ -156,6 +156,27 @@ export type AdminIdentityCorrectionErrorKind =
 
 export type AdminAccountLifecycleTransition = "deactivate" | "reactivate";
 
+export type AdminAuthOperationStatus =
+  | "open"
+  | "processing"
+  | "retryable_failure"
+  | "succeeded"
+  | "terminal_failure";
+
+export type AdminAuthOperationStage =
+  | "prepared"
+  | "profile_suspended"
+  | "auth_synchronized"
+  | "completed";
+
+export type AdminAuthOperationStableCode =
+  | "auth_temporarily_unavailable"
+  | "auth_rate_limited"
+  | "auth_user_not_found"
+  | "auth_update_rejected"
+  | "unsupported_auth_contract"
+  | "database_finalize_pending";
+
 export type AdminAccountLifecycleDenialCode =
   | "self_forbidden"
   | "pending_target"
@@ -177,12 +198,39 @@ export interface AdminAccountLifecycleContext {
   currentOrFutureAssignmentCount: number;
   openResponsibilityCount: number;
   openParticipationCount: number;
+  b3aAvailable: boolean;
+  openOperationId: string | null;
+  operationCode: AdminAccountLifecycleTransition | null;
+  operationStatus: AdminAuthOperationStatus | null;
+  completedStage: AdminAuthOperationStage | null;
+  attemptCount: number;
+  retryable: boolean;
+  lastErrorCode: AdminAuthOperationStableCode | null;
+  operationUpdatedAt: string | null;
+  canRetryOrFinalize: boolean;
 }
 
 export interface AdminAccountLifecycleInput {
   targetProfileId: string;
   transition: AdminAccountLifecycleTransition;
   reason: string;
+  requestId: string;
+}
+
+export type AdminAccountAuthLifecycleEdgeInput =
+  | {
+      mode: "start";
+      targetProfileId: string;
+      transition: AdminAccountLifecycleTransition;
+      reason: string;
+      requestId: string;
+    }
+  | { mode: "retry"; operationId: string };
+
+export interface AdminAccountAuthLifecycleEdgeResult {
+  code: string;
+  state: "completed" | "pending" | "terminal_failure";
+  operationId: string | null;
 }
 
 export interface AdminAccountLifecycleResult {
@@ -206,4 +254,7 @@ export type AdminAccountLifecycleErrorKind =
   | "auth_unconfirmed"
   | "last_admin"
   | "invalid_reason"
+  | "operation_pending"
+  | "terminal_failure"
+  | "trusted_boundary_unavailable"
   | "unavailable";

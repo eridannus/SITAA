@@ -48,7 +48,7 @@ Si un cambio altera el alcance, el modelo de datos, los permisos o la arquitectu
 
 ## Estado actual
 
-La aplicación y las migraciones `0001`–`0009` existen, están aplicadas, verificadas, reconciliadas e inmutables. El snapshot vivo `2026-07-22T23:32:46Z` coincide con la cadena completa sin deriva inexplicada. `0006_structured_person_names.sql` mantiene `full_name` como compatibilidad derivada; 0007 cerró Fase B.1, 0008 cerró Fase B.2a y 0009 cerró Fase B.2b dentro de sus alcances aprobados. `0010` es el siguiente número disponible. B.3, incluida la revocación física coordinada de sesiones, y Fase C permanecen pendientes. No modificar ninguna migración aplicada ni conectarse a Supabase sin autorización expresa.
+La aplicación y las migraciones `0001`–`0009` existen, están aplicadas, verificadas, reconciliadas e inmutables. El snapshot vivo `2026-07-22T23:32:46Z` coincide con la cadena completa sin deriva inexplicada. `0006_structured_person_names.sql` mantiene `full_name` como compatibilidad derivada; 0007 cerró Fase B.1, 0008 cerró Fase B.2a y 0009 cerró Fase B.2b dentro de sus alcances aprobados. `0010_coordinated_auth_session_suspension.sql` está preparado sólo localmente, no aplicado, y B.3a permanece abierta hasta validar PostgreSQL, desplegar el límite confiable y completar la prueba Auth desechable. No crear 0011 ni modificar migraciones aplicadas sin autorización expresa.
 
 Todo acceso a datos de otras cuentas y toda mutación administrativa u operativa debe tener autorización explícita en la base de datos. No se debe confiar en controles ocultos, en el estado del JWT ni en una comprobación exclusiva de la aplicación.
 
@@ -57,3 +57,5 @@ La Fase A está implementada y operativa: usa Google OAuth para registro públic
 - Usar "sólo" con tilde cuando significa "solamente"; usar "solo" sin tilde únicamente cuando significa "sin compañía".
 
 La migración `0009_admin_account_lifecycle_transitions.sql` implementa desactivación/reactivación administrativa B.2b con motivo, auditoría y protección del último administrador exacto. Está aplicada, verificada y reconciliada; la desactivación activa la barrera operativa 0008 sin borrar identidad, asignaciones o historia, pero no revoca físicamente sesiones ni usa Auth Admin. Toda operación Auth confiable permanece para B.3 y toda mutación de roles para Fase C.
+
+La preparación B.3a confina `service_role` y Auth Admin a `supabase/functions/admin-account-auth-lifecycle/`. Nunca crear clientes privilegiados en Next.js, navegador, acciones, rutas o variables públicas. No afirmar revocación inmediata de JWT, fallo de refresh o restauración hospedada hasta ejecutar y documentar la matriz desechable de `docs/TEST_PLAN_0010.md`.

@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3 y Fase C siguen pendientes.
+**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3a está preparada sólo localmente mediante 0010, todavía abierta y sin aplicación ni evidencia Auth hospedada; B.3b y Fase C siguen pendientes.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -38,9 +38,15 @@ La primera ejecución del verificador pasó los controles estáticos y comenzó 
 
 Implementada mediante 0009: desactivación y reactivación del estado operativo en `profiles`, con auditoría y sin mutar Auth, roles ni historia. `pending_registration` no puede activarse administrativamente y continúa en el flujo propio de registro.
 
-### B.3 — Cuentas técnicas y operaciones Auth
+### B.3a — Suspensión/restauración coordinada preparada
 
-Pendiente: alta e invitación de cuentas técnicas, reenvío de confirmaciones, recuperación, revocación coordinada de sesiones y otras operaciones `auth.admin`. Sólo podrán ejecutarse en backend confiable; nunca habrá `service_role` en el navegador. Los administradores nunca verán ni establecerán contraseñas.
+0010 prepara un ledger idempotente y una única Edge Function autenticada. Desactivar deja primero el perfil inactivo; reactivar sólo vuelve a activar el perfil después de sincronizar Auth y revalidar la autoridad B.1. Un fallo conserva la última etapa confirmada y permite reintento por una autoridad exacta, sin repetir el evento de ciclo ya persistido. La barrera 0008 niega operaciones aunque un JWT emitido siga vigente.
+
+Esta preparación no está aplicada, desplegada ni probada contra Auth hospedado. No garantiza revocación inmediata de JWT o refresh tokens. `service_role` queda confinado al paquete Edge; la aplicación Next.js no obtiene un cliente privilegiado.
+
+### B.3b — Otras operaciones Auth pendientes
+
+Alta e invitación de cuentas técnicas, reenvío de confirmaciones, recuperación y otras operaciones `auth.admin` quedan fuera de 0010. Los administradores nunca ven ni establecen contraseñas.
 
 ### Fase C — Roles y delegación
 
@@ -89,5 +95,7 @@ La cuenta propia, los registros pendientes y la última autoridad B.1 exacta no 
 La reactivación exige identidad coherente, Auth confirmado y, para cuentas institucionales, un programa existente y activo bloqueado con `FOR SHARE`. El orden es: advisory de ciclo, `role_assignments` en `SHARE`, Auth objetivo, perfiles ordenados por UUID, segunda autorización, programa institucional, validación, actualización y auditoría. La matriz manual de concurrencia debe ejecutarse sólo en un entorno desechable y aún está pendiente. La desactivación aplica la barrera operativa existente sin borrar historia ni afirmar revocación física de sesiones. Al reactivar, sólo recuperan efecto asignaciones todavía activas, vigentes, válidas y compatibles.
 
 La precedencia de denegación del contexto es determinista: cuenta propia, registro pendiente, ciclo de vida inválido, último administrador, identidad inválida y finalmente Auth no confirmado. La mutación vuelve a validar todo bajo locks y es la autoridad final.
+
+La aplicación compatible consulta primero el contexto B.3a. Sólo si PostgreSQL reporta explícitamente que esa firma no existe usa el camino directo 0009 aislado. Cuando B.3a está disponible, toda falla de Edge Function se cierra sin fallback privilegiado de Next.js. La interfaz distingue perfil suspendido, sincronización pendiente, Auth sincronizado y operación completa, y conserva el mismo `request_id` durante una corrección de formulario o reintento.
 
 El primer preflight remoto de 0009 no fue aprobado por cuatro falsos positivos del arnés; un diagnóstico de sólo lectura confirmó el estado post-0008. La reejecución corregida dejó los 19 bloqueos en cero y terminó con `ROLLBACK`. Después de desplegar la aplicación compatible, los intentos 1 y 2 fallaron antes del DDL por el `EXISTS` exterior sin cerrar y por el cast faltante de `pg_default_acl.defaclobjtype`; ambas transacciones se descartaron. El intento 3 aprobó la guarda atómica y terminó con `COMMIT`. El verificador final aprobó con `ROLLBACK` sin persistir fixtures, los smoke tests aprobaron y el snapshot `2026-07-22T23:32:46Z` quedó reconciliado sin deriva inexplicada. 0009 es inmutable, B.2b está cerrada y B.3/Fase C permanecen pendientes.

@@ -117,3 +117,7 @@ Quince minutos después del término de la actividad, SITAA marca como `absent` 
 ## Autoridad implementada para ciclo de cuenta B.2b
 
 La transición administrativa 0009 exige la asignación exacta `technical_admin` + alcance `system` + área `technical`, activa y vigente, sobre un perfil activo. No basta ser creador, responsable, administrador histórico o tener una variante de alcance. La autoridad no puede cambiar su propio estado, activar un registro pendiente ni desactivar la última cuenta que conserve esa autoridad. Desactivar suspende permisos operativos mediante la barrera 0008 sin borrar Auth, perfil, roles o historia. Reactivar recupera sólo la autorización de asignaciones todavía activas, vigentes, válidas y compatibles; las vencidas, futuras, inactivas o malformadas no se reparan. La revocación física de sesiones permanece para B.3 y la administración de asignaciones para Fase C.
+
+## Autoridad preparada para coordinación Auth B.3a
+
+Las RPC públicas de contexto, preparación y finalización 0010 exigen la misma autoridad B.1 exacta. Las RPC de reclamo y resultado son exclusivamente owner/`service_role` y no convierten al rol de servicio en administrador funcional: verifican el actor autenticado previamente asociado con la operación o una autoridad B.1 exacta que recupera un intento. El perfil queda inactivo durante cualquier fallo parcial. Ningún usuario ordinario, objetivo, `anon` o cliente autenticado puede mutar directamente el ledger, reclamar, registrar resultados o invocar la mutación B.2b después de 0010.

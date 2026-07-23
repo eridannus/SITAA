@@ -153,6 +153,16 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - La aplicación compatible fue desplegada. Los intentos 1 y 2 de 0009 fallaron antes del DDL, respectivamente, por un paréntesis faltante y por concatenar sin `::text` el tipo interno `pg_catalog."char"` de `pg_default_acl.defaclobjtype`; ambas transacciones se descartaron sin persistencia. El intento 3 aprobó preflight embebido, DDL, ACL, guarda atómica y `COMMIT`. El verificador final aprobó con `ROLLBACK`, los smoke tests funcionales aprobaron y el snapshot `2026-07-22T23:32:46Z` quedó reconciliado sin deriva inexplicada. 0009 es inmutable y B.2b está cerrada. La matriz manual multisesión no se ejecutó y permanece limitada a un entorno desechable.
 - La desactivación activa inmediatamente la barrera operativa 0008 aun cuando un JWT siga vigente, pero no elimina ni modifica Auth, identidad, asignaciones, actividades, responsabilidades, participaciones, asistencia o historia. La reactivación no repara asignaciones vencidas, futuras, inactivas, malformadas o incompatibles. B.3 conserva la revocación física de sesiones y las operaciones `auth.admin`; Fase C conserva la mutación de roles.
 
+### Preparación B.3a: límite Auth confiable
+
+- `service_role` y el cliente Auth Admin sólo pueden existir dentro de `supabase/functions/admin-account-auth-lifecycle/`; no se permiten en navegador, Next.js, Server Actions, Route Handlers, variables públicas o `.env.example`.
+- La Edge Function exige JWT, deriva el actor de `auth.getUser()` y nunca acepta un actor en JSON. Un cliente de usuario prepara/finaliza; el cliente privilegiado sólo reclama/registra operaciones y llama `auth.admin.updateUserById()`.
+- El ledger no tiene políticas RLS ni acceso directo, incluso para `service_role`; todas sus transiciones pasan por funciones `SECURITY DEFINER` revisadas. Los errores almacenados y devueltos pertenecen a una allowlist estable.
+- Desactivar confirma primero el perfil inactivo y mantiene la barrera 0008 aunque Auth falle. Reactivar mantiene el perfil inactivo hasta que Auth se restaura y el finalizador vuelve a validar toda la autoridad e identidad.
+- La suspensión provisional no se describe como revocación criptográfica de JWT. No se usa `auth.admin.signOut()` sin un JWT de la sesión objetivo y nunca se sustituye por el token del administrador.
+- Los tipos instalados permiten `ban_duration = 'none'` para levantar la suspensión y una duración larga para suspender. Su semántica hospedada, refresh tokens y sesiones existentes continúan sin verificar; `docs/TEST_PLAN_0010.md` exige un objetivo sintético y dos sesiones en un proyecto desechable.
+- Dos eventos exitosos son deliberados: B.2b acredita el cambio de perfil y B.3a la sincronización Auth. Ambos minimizan metadata y no contienen correo, tokens, proveedor o respuesta cruda.
+
 ## Validaciones previas al piloto
 
 - Revisión de privacidad y aviso correspondiente.

@@ -1,48 +1,33 @@
 # Supabase en SITAA
 
-Este directorio contiene la baseline reconciliada y el historial versionado de cambios de base de datos de SITAA.
+Este directorio contiene la baseline reconciliada, las migraciones incrementales, Edge Functions y artefactos de verificación de SITAA.
 
-## Baseline autoritativa
+## Cadena canónica
 
-`supabase/migrations/0001_baseline_current_schema.sql` representa el esquema vivo capturado el 16 de julio de 2026 mediante `pg_dump` y consultas de sólo lectura con `psql`. Sustituye el intento anterior basado en snapshots JSON incompletos, que nunca fue aplicado como migración administrada.
+`0001_baseline_current_schema.sql` representa la baseline histórica. `0002`–`0009` están aplicadas, verificadas, reconciliadas e inmutables. El snapshot canónico post‑0009 es `2026-07-22T23:32:46Z` y no presenta deriva inexplicada.
 
-La baseline incluye tablas, columnas, llaves y demás constraints, índices, triggers, funciones, configuración RLS, políticas y semillas de catálogos controlados. Está destinada a instalaciones nuevas. No debe ejecutarse a ciegas contra la base actual de producción/prototipo porque ese entorno ya contiene los objetos y datos por cambios manuales históricos.
+`0010_coordinated_auth_session_suspension.sql` está preparado sólo localmente para B.3a. No está aplicado; su preflight, verificador, rollback, Edge Function y prueba Auth desechable tampoco se han ejecutado. No crear 0011 mientras esta preparación siga abierta.
 
-El dump se obtuvo con `--no-privileges`, pero los grants y ACL vivos se capturan por separado en los cuatro artefactos especializados de reconciliación. La baseline conserva la estructura histórica y 0002 materializa el contrato mínimo de privilegios verificado.
+Toda migración nueva debe:
 
-## Estado de la cadena
+- iniciar una transacción explícita cuando el cambio sea transaccional;
+- validar la línea base viva antes del DDL y el resultado antes del `COMMIT`;
+- normalizar ACL de forma explícita;
+- incluir preflight, verificador y rollback cuando el riesgo lo requiera;
+- aplicarse manualmente después de revisión y de publicar una aplicación compatible;
+- regenerar y reconciliar el snapshot después de cambios significativos.
 
-- `0001_baseline_current_schema.sql`: baseline reconciliada.
-- `0002_database_security_and_integrity.sql`: aplicada y verificada en Supabase el 2026-07-16.
-- `0003_fix_draft_temporal_lifecycle.sql`: aplicada y verificada en Supabase el 2026-07-16.
-- `0004_identity_registration_foundation.sql`: aplicada y verificada; introduce Google OAuth y finalización institucional autenticada, sin intents.
-- `0005_fix_google_oauth_user_creation.sql`: aplicada y verificada; corrige la secuencia temprana de `email_confirmed_at` y endurece la verificación final.
-- `0006_structured_person_names.sql`: aplicada y verificada; formaliza nombres estructurados y conserva `full_name` derivado.
-- Snapshot posterior: `2026-07-18T04:05:40Z`, reconciliado contra 0001–0006 sin deriva inexplicada.
-- Siguiente número disponible: `0007`; este cierre no lo crea.
+No se reescriben migraciones aplicadas ni se ejecutan snapshots como migraciones.
 
-## Cierre de 0005
+## Preparación B.3a
 
-El preflight, la aplicación manual, el verificador transaccional y los smoke tests de Google fueron aprobados. El verificador terminó con `ROLLBACK` y retiró sólo fixtures sintéticos. El informe `reconciliation/0005_post_apply_reconciliation.md` documenta el snapshot posterior, la ausencia de deriva y la separación administrativa inicial de cuentas sin PII.
+0010 prepara `admin_auth_operations`, cinco RPC y un trigger owner-only. La Edge Function `admin-account-auth-lifecycle` es la única frontera permitida para `service_role` y Auth Admin. El navegador y Next.js nunca reciben el secreto. La función exige JWT y usa un cliente de usuario para RPC autenticadas y un cliente privilegiado, sin persistencia de sesión, sólo para claim/result y `auth.admin.updateUserById()`.
 
-El rollback de 0005 es exclusivamente de emergencia: no transforma datos, pero reintroduce el defecto prematuro de 0004. Nunca borra Auth users, profiles ni identidades Google.
+El adaptador aísla `ban_duration = '876000h'` para suspensión y `ban_duration = 'none'` para restauración, valores admitidos por los tipos instalados de `@supabase/auth-js` 2.110.1. Esta evidencia de tipos no demuestra su comportamiento en Supabase hospedado. No se afirma revocación inmediata de JWT, refresh tokens o restauración hasta aprobar `docs/TEST_PLAN_0010.md`.
 
-## Historial futuro
+No añadir `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY` ni equivalentes a `.env.example`, Vercel público, aplicación Next.js o navegador.
 
-Después de esta reconciliación:
-
-- `0001_baseline_current_schema.sql` no se reescribe, excepto para corregir un defecto comprobado de la baseline.
-- `0001`–`0006` no se reescriben, salvo para corregir un artefacto histórico comprobado y documentado.
-- Cada cambio posterior usa el siguiente número libre y continúa incrementalmente; las migraciones aplicadas no se reescriben.
-- Una migración se crea antes o junto con cualquier SQL aplicado a Supabase.
-- Si el SQL se aplica manualmente desde Supabase SQL Editor, el mismo archivo debe quedar comprometido en Git.
-- Los cambios de modelo, permisos o arquitectura también actualizan la documentación correspondiente.
-- La verificación y el rollback se versionan cuando el riesgo o el alcance lo requieren.
-- Después de cambios significativos se regenera el snapshot, se compara contra toda la cadena y se actualiza `docs/DATABASE_CHANGELOG.md`.
-
-0006 se aplicó después de que `reconciliation/0006_structured_person_names_preflight.sql` reportó cero categorías bloqueantes. La aplicación compatible fue desplegada y el verificador terminó con código 0 y `ROLLBACK`. Su corrección de arnés concede acceso sólo a fixtures `pg_temp`, por lo que no cambia privilegios de producción ni la migración aplicada.
-
-## Generación de snapshots
+## Snapshots
 
 En Windows:
 
@@ -50,19 +35,14 @@ En Windows:
 powershell -ExecutionPolicy Bypass -File scripts/pull-supabase-snapshot.ps1
 ```
 
-El entorno proporciona `SUPABASE_DB_URL` como secreto. El script prefiere `pg_dump` y `psql` nativos, genera todos los archivos en un directorio temporal y sólo publica el conjunto completo cuando termina correctamente. No imprime ni guarda la URI y no ejecuta escrituras remotas.
+El script requiere `SUPABASE_DB_URL`, prefiere `pg_dump`/`psql` nativos, usa consultas de sólo lectura y publica el conjunto únicamente si todos los artefactos terminan correctamente. Nunca imprime ni persiste la URI. Este comando no debe ejecutarse durante la preparación 0010 sin autorización expresa.
 
-Los resultados se almacenan en `supabase/reconciliation/live/`. Son artefactos para comparar el estado vivo y construir migraciones; no son migraciones para ejecutar directamente.
+Los resultados viven en `supabase/reconciliation/live/` y sirven como evidencia de reconciliación. Incluyen esquema, tablas, columnas, restricciones, índices, triggers, funciones, políticas, ACL, privilegios y semillas permitidas; no incluyen usuarios ni datos operativos.
 
-La reconciliación cerrada el 2026-07-18 comparó el snapshot `2026-07-18T04:05:40Z` contra `0001`–`0006`. No se detectó deriva inexplicada; los detalles están en `reconciliation/0006_post_apply_reconciliation.md`.
+## Seguridad
 
-## Reglas de seguridad
-
-- No incluir secretos, llaves `service_role`, tokens ni datos personales u operativos reales.
-- No ejecutar la baseline contra la base viva actual.
-- No crear cambios destructivos sin revisión explícita y respaldo adecuado.
-- No reparar historial remoto ni aplicar migraciones automáticamente desde el flujo de snapshots.
-
-## Migración 0009 preparada
-
-`0009_admin_account_lifecycle_transitions.sql` incluye preflight embebido, tres funciones y guarda post-DDL. Sus artefactos externos de preflight, verificación y rollback están en `reconciliation/`. No debe aplicarse hasta revisar `docs/TEST_PLAN_0009.md`, desplegar primero la aplicación compatible y confirmar manualmente el preflight. El snapshot vivo sigue representando post-0008.
+- No guardar secretos, tokens, PII ni datos operativos reales.
+- No ejecutar `db push`, `db reset`, repair automático ni escrituras desde el flujo de snapshot.
+- No desplegar/invocar una Edge Function ni usar Auth Admin como parte de una validación estática.
+- `service_role` no implica acceso directo al ledger B.3a; únicamente puede ejecutar las dos RPC de servicio aprobadas.
+- El rollback 0010 sólo es elegible antes de la primera operación o evento B.3a real.

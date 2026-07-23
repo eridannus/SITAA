@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { randomUUID } from "node:crypto";
 import { notFound, redirect } from "next/navigation";
 import { Alert } from "@/components/ui/alert";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -43,7 +44,7 @@ export default async function AccountLifecyclePage({ params, searchParams }: Pro
         <Link href={`/admin/accounts/${id}`} className="sitaa-text-action">← Volver al detalle</Link>
         <Alert tone={pending ? "warning" : "error"} className="mt-6 p-6">
           {pending
-            ? "La gestión del estado estará disponible cuando se aplique la migración 0009."
+            ? "La gestión del estado estará disponible cuando se aplique la migración correspondiente."
             : "No fue posible cargar la operación solicitada."}
         </Alert>
       </main>
@@ -56,7 +57,9 @@ export default async function AccountLifecyclePage({ params, searchParams }: Pro
     redirect(`/admin/accounts/${id}`);
   }
   const transition: AdminAccountLifecycleTransition = requested;
-  const allowed = transition === "deactivate" ? context.canDeactivate : context.canReactivate;
+  const allowed = context.b3aAvailable && context.openOperationId
+    ? context.operationCode === transition
+    : transition === "deactivate" ? context.canDeactivate : context.canReactivate;
   if (!allowed) redirect(`/admin/accounts/${id}`);
 
   return (
@@ -72,6 +75,7 @@ export default async function AccountLifecyclePage({ params, searchParams }: Pro
           detail={record.detail}
           context={context}
           transition={transition}
+          requestId={randomUUID()}
         />
       </div>
     </main>

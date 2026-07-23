@@ -11,6 +11,20 @@ export function getAdminAccountLifecyclePresentation(
   context: AdminAccountLifecycleContext | null,
 ): AdminAccountLifecyclePresentation {
   if (!context) return { action: null, showDependencyWarning: false };
+  if (
+    context.b3aAvailable === true &&
+    context.openOperationId &&
+    context.operationCode &&
+    context.operationStatus !== "terminal_failure"
+  ) {
+    return {
+      action: context.operationCode,
+      showDependencyWarning:
+        context.currentOrFutureAssignmentCount > 0 ||
+        context.openResponsibilityCount > 0 ||
+        context.openParticipationCount > 0,
+    };
+  }
   const canDeactivate = context.canDeactivate === true;
   const canReactivate = context.canReactivate === true;
   if (canDeactivate === canReactivate) {

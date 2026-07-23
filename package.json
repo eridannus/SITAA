@@ -4,14 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run check:text && npm run check:ui && npm run check:permissions && npm run check:lifecycle && npm run check:sql:0009 && next build",
+    "build": "npm run check:text && npm run check:ui && npm run check:permissions && npm run check:lifecycle && npm run check:auth-lifecycle && npm run check:sql:0009 && npm run check:sql:0010 && next build",
     "start": "next start",
     "lint": "eslint .",
     "check:text": "node scripts/check-text-integrity.mjs",
     "check:ui": "node scripts/check-ui-consistency.mjs",
     "check:permissions": "node scripts/check-activity-permissions.mjs",
     "check:lifecycle": "node scripts/check-account-lifecycle.mjs",
-    "check:sql:0009": "node scripts/check-sql-0009.mjs"
+    "check:sql:0009": "node scripts/check-sql-0009.mjs",
+    "check:auth-lifecycle": "node scripts/check-auth-lifecycle-b3a.mjs",
+    "check:sql:0010": "node scripts/check-sql-0010.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
