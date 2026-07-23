@@ -362,6 +362,22 @@ end $$;
 grant select on pg_temp.sitaa_0010_cases,pg_temp.sitaa_0010_context to authenticated,service_role;
 grant execute on function pg_temp.case_id(text),pg_temp.set_actor(text,text) to authenticated,service_role;
 
+create temporary table sitaa_0010_invalid_transition_baseline(
+  profile_hash text not null,
+  ledger_count bigint not null,
+  ledger_hash text not null,
+  lifecycle_count bigint not null,
+  lifecycle_hash text not null,
+  auth_count bigint not null,
+  auth_hash text not null
+) on commit drop;
+create temporary table sitaa_0010_invalid_transition_outcomes(
+  transition_label text primary key,
+  observed_sqlstate text not null,
+  observed_message text not null
+) on commit drop;
+grant select,insert on pg_temp.sitaa_0010_invalid_transition_outcomes to authenticated;
+
 select pg_temp.create_case('admin_a','technical');
 select pg_temp.create_case('admin_b','technical');
 select pg_temp.create_case('admin_malformed','technical');
@@ -435,54 +451,103 @@ end $$;
 reset role;
 
 -- La transición pública es total: NULL, vacío, desconocido y mayúsculas fallan sin efectos.
+insert into pg_temp.sitaa_0010_invalid_transition_baseline
+select
+  (select md5(row_to_json(profile_row)::text)
+   from public.profiles profile_row where profile_row.id=pg_temp.case_id('active_target')),
+  (select count(*) from public.admin_auth_operations),
+  (select md5(coalesce(string_agg(row_to_json(operation_row)::text,'|' order by operation_row.id),''))
+   from public.admin_auth_operations operation_row),
+  (select count(*) from public.admin_audit_events
+   where action_code in ('account_deactivated','account_reactivated')),
+  (select md5(coalesce(string_agg(row_to_json(audit_row)::text,'|' order by audit_row.id),''))
+   from public.admin_audit_events audit_row
+   where action_code in ('account_deactivated','account_reactivated')),
+  (select count(*) from public.admin_audit_events
+   where action_code in (
+     'account_auth_suspended','account_auth_restored',
+     'account_auth_suspension_failed','account_auth_restoration_failed'
+   )),
+  (select md5(coalesce(string_agg(row_to_json(audit_row)::text,'|' order by audit_row.id),''))
+   from public.admin_audit_events audit_row
+   where action_code in (
+     'account_auth_suspended','account_auth_restored',
+     'account_auth_suspension_failed','account_auth_restoration_failed'
+   ));
+
 select pg_temp.set_actor('admin_a'); set local role authenticated;
-do $invalid_transition_contract$
+do $invalid_transition_client_contract$
 declare
   transition_value text;
-  profile_hash_before text;
-  ledger_count_before bigint;
-  lifecycle_count_before bigint;
-  auth_count_before bigint;
+  transition_label text;
 begin
   foreach transition_value in array array[null::text,'','suspend','DEACTIVATE'] loop
-    select md5(row_to_json(profile_row)::text) into profile_hash_before
-    from public.profiles profile_row where profile_row.id=pg_temp.case_id('active_target');
-    select count(*) into ledger_count_before from public.admin_auth_operations;
-    select count(*) into lifecycle_count_before from public.admin_audit_events
-    where action_code in ('account_deactivated','account_reactivated');
-    select count(*) into auth_count_before from public.admin_audit_events
-    where action_code in (
-      'account_auth_suspended','account_auth_restored',
-      'account_auth_suspension_failed','account_auth_restoration_failed'
-    );
-
+    transition_label:=case
+      when transition_value is null then '<NULL>'
+      when transition_value='' then '<EMPTY>'
+      else transition_value
+    end;
     begin
       perform public.prepare_admin_account_auth_lifecycle_b3a(
         pg_temp.case_id('active_target'),transition_value,
         'Motivo sintético de transición inválida 0010',gen_random_uuid()
       );
-      raise exception '0010_verify_invalid_transition_unexpected';
-    exception when invalid_parameter_value then
-      if sqlerrm<>'sitaa_account_lifecycle_invalid_transition' or sqlstate<>'22023' then raise; end if;
+      insert into pg_temp.sitaa_0010_invalid_transition_outcomes
+      values(transition_label,'UNEXPECTED','0010_verify_invalid_transition_unexpected');
+    exception when others then
+      insert into pg_temp.sitaa_0010_invalid_transition_outcomes
+      values(transition_label,sqlstate,sqlerrm);
     end;
-
-    if profile_hash_before is distinct from
-         (select md5(row_to_json(profile_row)::text) from public.profiles profile_row
-          where profile_row.id=pg_temp.case_id('active_target'))
-       or ledger_count_before<>(select count(*) from public.admin_auth_operations)
-       or lifecycle_count_before<>(select count(*) from public.admin_audit_events
-          where action_code in ('account_deactivated','account_reactivated'))
-       or auth_count_before<>(select count(*) from public.admin_audit_events
-          where action_code in (
-            'account_auth_suspended','account_auth_restored',
-            'account_auth_suspension_failed','account_auth_restoration_failed'
-          )) then
-      raise exception '0010_verify_invalid_transition_mutated_state';
-    end if;
   end loop;
 end;
-$invalid_transition_contract$;
+$invalid_transition_client_contract$;
 reset role;
+
+do $invalid_transition_owner_postconditions$
+begin
+  if (select count(*) from pg_temp.sitaa_0010_invalid_transition_outcomes)<>4
+     or exists(
+       select 1 from pg_temp.sitaa_0010_invalid_transition_outcomes
+       where observed_sqlstate<>'22023'
+          or observed_message<>'sitaa_account_lifecycle_invalid_transition'
+     )
+     or exists(
+       (values ('<NULL>'),('<EMPTY>'),('suspend'),('DEACTIVATE'))
+       except
+       select transition_label from pg_temp.sitaa_0010_invalid_transition_outcomes
+     )
+     or (select profile_hash from pg_temp.sitaa_0010_invalid_transition_baseline) is distinct from
+        (select md5(row_to_json(profile_row)::text)
+         from public.profiles profile_row where profile_row.id=pg_temp.case_id('active_target'))
+     or (select ledger_count from pg_temp.sitaa_0010_invalid_transition_baseline)<>
+        (select count(*) from public.admin_auth_operations)
+     or (select ledger_hash from pg_temp.sitaa_0010_invalid_transition_baseline) is distinct from
+        (select md5(coalesce(string_agg(row_to_json(operation_row)::text,'|' order by operation_row.id),''))
+         from public.admin_auth_operations operation_row)
+     or (select lifecycle_count from pg_temp.sitaa_0010_invalid_transition_baseline)<>
+        (select count(*) from public.admin_audit_events
+         where action_code in ('account_deactivated','account_reactivated'))
+     or (select lifecycle_hash from pg_temp.sitaa_0010_invalid_transition_baseline) is distinct from
+        (select md5(coalesce(string_agg(row_to_json(audit_row)::text,'|' order by audit_row.id),''))
+         from public.admin_audit_events audit_row
+         where action_code in ('account_deactivated','account_reactivated'))
+     or (select auth_count from pg_temp.sitaa_0010_invalid_transition_baseline)<>
+        (select count(*) from public.admin_audit_events
+         where action_code in (
+           'account_auth_suspended','account_auth_restored',
+           'account_auth_suspension_failed','account_auth_restoration_failed'
+         ))
+     or (select auth_hash from pg_temp.sitaa_0010_invalid_transition_baseline) is distinct from
+        (select md5(coalesce(string_agg(row_to_json(audit_row)::text,'|' order by audit_row.id),''))
+         from public.admin_audit_events audit_row
+         where action_code in (
+           'account_auth_suspended','account_auth_restored',
+           'account_auth_suspension_failed','account_auth_restoration_failed'
+         )) then
+    raise exception '0010_verify_invalid_transition_contract_failed';
+  end if;
+end;
+$invalid_transition_owner_postconditions$;
 
 select pg_temp.set_actor('admin_malformed'); set local role authenticated;
 do $$ begin
@@ -505,10 +570,6 @@ begin
   if context_rows<>1 or context_row.b3a_available is distinct from true or context_row.target_profile_id<>pg_temp.case_id('active_target') then
     raise exception '0010_verify_context_cardinality_failed';
   end if;
-  begin perform public.claim_admin_auth_operation_b3a(gen_random_uuid(),pg_temp.case_id('admin_a')); raise exception '0010_verify_authenticated_claim_unexpected';
-  exception when insufficient_privilege then null; end;
-  begin perform public.record_admin_auth_operation_result_b3a(gen_random_uuid(),pg_temp.case_id('admin_a'),1,'retryable_failure','auth_temporarily_unavailable'); raise exception '0010_verify_authenticated_record_unexpected';
-  exception when insufficient_privilege then null; end;
 end;
 $context_and_acl$;
 reset role;
@@ -521,6 +582,17 @@ reset role;
 
 create temporary table sitaa_0010_results(label text primary key,operation_id uuid not null,request_id uuid not null) on commit drop;
 grant select,insert,update on pg_temp.sitaa_0010_results to authenticated,service_role;
+create temporary table sitaa_0010_rpc_observations(
+  label text primary key,
+  operation_id uuid not null,
+  status text not null,
+  completed_stage text not null,
+  attempt_count integer null,
+  claimed boolean null,
+  last_error_code text null,
+  updated_at timestamptz null
+) on commit drop;
+grant select,insert,update on pg_temp.sitaa_0010_rpc_observations to authenticated,service_role;
 
 -- Desactivación: perfil primero, idempotencia, reintento y un solo evento de ciclo.
 select pg_temp.set_actor('admin_a'); set local role authenticated;
@@ -529,17 +601,46 @@ declare request_uuid uuid:=gen_random_uuid(); first_result record; repeated reco
 begin
   select * into first_result from public.prepare_admin_account_auth_lifecycle_b3a(pg_temp.case_id('active_target'),'deactivate','Motivo sintético coordinado 0010',request_uuid);
   select * into repeated from public.prepare_admin_account_auth_lifecycle_b3a(pg_temp.case_id('active_target'),'deactivate','  Motivo   sintético coordinado 0010  ',request_uuid);
-  if first_result.operation_id<>repeated.operation_id or first_result.completed_stage<>'profile_suspended'
-     or (select account_status from public.profiles where id=pg_temp.case_id('active_target'))<>'inactive'
-     or (select count(*) from public.admin_audit_events where target_profile_id=pg_temp.case_id('active_target') and action_code='account_deactivated')<>1 then
+  if first_result.operation_id<>repeated.operation_id or first_result.completed_stage<>'profile_suspended' then
     raise exception '0010_verify_deactivation_prepare_or_idempotency_failed';
   end if;
   insert into pg_temp.sitaa_0010_results values('deactivate',first_result.operation_id,request_uuid);
+  insert into pg_temp.sitaa_0010_rpc_observations
+  values(
+    'deactivate_prepared',first_result.operation_id,first_result.status,
+    first_result.completed_stage,first_result.attempt_count,null,
+    first_result.last_error_code,first_result.updated_at
+  );
   begin perform public.prepare_admin_account_auth_lifecycle_b3a(pg_temp.case_id('active_target'),'deactivate','Payload incompatible 0010',request_uuid); raise exception '0010_verify_request_reuse_unexpected';
   exception when unique_violation then null; end;
 end;
 $deactivate_prepare$;
 reset role;
+
+do $deactivate_prepare_owner_postconditions$
+declare operation_row public.admin_auth_operations%rowtype;
+begin
+  select * into strict operation_row
+  from public.admin_auth_operations
+  where id=(select operation_id from pg_temp.sitaa_0010_results where label='deactivate');
+  if (select account_status from public.profiles where id=pg_temp.case_id('active_target'))<>'inactive'
+     or (select count(*) from public.admin_audit_events
+         where target_profile_id=pg_temp.case_id('active_target')
+           and action_code='account_deactivated')<>1
+     or operation_row.request_id<>(select request_id from pg_temp.sitaa_0010_results where label='deactivate')
+     or operation_row.requested_by_profile_id<>pg_temp.case_id('admin_a')
+     or operation_row.target_profile_id<>pg_temp.case_id('active_target')
+     or operation_row.operation_code<>'deactivate'
+     or operation_row.status<>'open'
+     or operation_row.completed_stage<>'profile_suspended'
+     or operation_row.attempt_count<>0
+     or operation_row.profile_audit_event_id is null
+     or operation_row.auth_audit_event_id is not null
+     or operation_row.reason<>'Motivo sintético coordinado 0010' then
+    raise exception '0010_verify_deactivation_prepare_owner_postconditions_failed';
+  end if;
+end;
+$deactivate_prepare_owner_postconditions$;
 
 do $writer_guard_and_one_open_target$
 declare
@@ -662,9 +763,8 @@ declare
   op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='deactivate');
   claim record;
   result record;
-  previous_updated_at timestamptz;
+  previous_updated_at timestamptz:=(select updated_at from pg_temp.sitaa_0010_rpc_observations where label='deactivate_prepared');
 begin
-  select updated_at into previous_updated_at from public.admin_auth_operations where id=op;
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
   if claim.completed_stage<>'profile_suspended' or claim.attempt_count<>1
      or claim.updated_at<previous_updated_at then raise exception '0010_verify_claim_failed'; end if;
@@ -679,14 +779,12 @@ begin
   if claim.attempt_count<>2 or claim.updated_at<result.updated_at then raise exception '0010_verify_retry_claim_failed'; end if;
   select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_b'),claim.attempt_count,'auth_succeeded',null);
   if result.status<>'succeeded' or result.completed_stage<>'completed'
-     or result.updated_at<claim.updated_at
-     or exists(
-       select 1 from public.admin_auth_operations
-       where id=op and (
-         auth_synchronized_at is null or completed_at is null
-         or auth_synchronized_at<>completed_at or completed_at<>updated_at
-       )
-     ) then raise exception '0010_verify_deactivation_completion_failed'; end if;
+     or result.updated_at<claim.updated_at then raise exception '0010_verify_deactivation_completion_failed'; end if;
+  insert into pg_temp.sitaa_0010_rpc_observations
+  values(
+    'deactivate_completed',op,result.status,result.completed_stage,
+    result.attempt_count,null,result.last_error_code,result.updated_at
+  );
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
   if claim.claimed or claim.status<>'succeeded' or claim.completed_stage<>'completed' then
     raise exception '0010_verify_final_operation_replay_failed';
@@ -694,6 +792,27 @@ begin
 end;
 $deactivate_service$;
 reset role;
+
+do $deactivate_service_owner_postconditions$
+declare operation_row public.admin_auth_operations%rowtype;
+begin
+  select * into strict operation_row
+  from public.admin_auth_operations
+  where id=(select operation_id from pg_temp.sitaa_0010_results where label='deactivate');
+  if operation_row.status<>'succeeded'
+     or operation_row.completed_stage<>'completed'
+     or operation_row.attempt_count<>2
+     or operation_row.auth_synchronized_at is null
+     or operation_row.completed_at is null
+     or operation_row.auth_synchronized_at<>operation_row.completed_at
+     or operation_row.completed_at<>operation_row.updated_at
+     or operation_row.profile_audit_event_id is null
+     or operation_row.auth_audit_event_id is null
+     or operation_row.completed_by_profile_id<>pg_temp.case_id('admin_b') then
+    raise exception '0010_verify_deactivation_service_owner_postconditions_failed';
+  end if;
+end;
+$deactivate_service_owner_postconditions$;
 
 select pg_temp.set_actor('admin_a'); set local role authenticated;
 do $succeeded_request_replay$
@@ -783,12 +902,14 @@ $retryable_request_replay$;
 reset role;
 select pg_temp.set_actor('admin_b','service_role'); set local role service_role;
 do $status_replay_complete$
-declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='status_replay');
+declare
+  op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='status_replay');
+  claim record;
 begin
-  perform public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
+  select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
   perform public.record_admin_auth_operation_result_b3a(
     op,pg_temp.case_id('admin_b'),
-    (select attempt_count from public.admin_auth_operations where id=op),
+    claim.attempt_count,
     'auth_succeeded',null
   );
 end;
@@ -899,11 +1020,28 @@ do $reactivate_prepare$
 declare request_uuid uuid:=gen_random_uuid(); prepared record;
 begin
   select * into prepared from public.prepare_admin_account_auth_lifecycle_b3a(pg_temp.case_id('inactive_target'),'reactivate','Motivo sintético de restauración 0010',request_uuid);
-  if prepared.completed_stage<>'prepared' or (select account_status from public.profiles where id=pg_temp.case_id('inactive_target'))<>'inactive' then raise exception '0010_verify_reactivation_preparation_failed'; end if;
+  if prepared.completed_stage<>'prepared' then raise exception '0010_verify_reactivation_preparation_failed'; end if;
   insert into pg_temp.sitaa_0010_results values('reactivate',prepared.operation_id,request_uuid);
 end;
 $reactivate_prepare$;
 reset role;
+
+do $reactivate_prepare_owner_postconditions$
+begin
+  if (select account_status from public.profiles where id=pg_temp.case_id('inactive_target'))<>'inactive'
+     or not exists(
+       select 1 from public.admin_auth_operations
+       where id=(select operation_id from pg_temp.sitaa_0010_results where label='reactivate')
+         and operation_code='reactivate'
+         and status='open'
+         and completed_stage='prepared'
+         and profile_audit_event_id is null
+         and auth_audit_event_id is null
+     ) then
+    raise exception '0010_verify_reactivation_prepare_owner_postconditions_failed';
+  end if;
+end;
+$reactivate_prepare_owner_postconditions$;
 
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
 do $reactivate_service$
@@ -923,23 +1061,59 @@ begin
   begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'auth_succeeded','auth_temporarily_unavailable');
     raise exception '0010_verify_success_error_code_unexpected'; exception when invalid_parameter_value then null; end;
   select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'auth_succeeded',null);
-  if result.status<>'processing' or result.completed_stage<>'auth_synchronized'
-     or (select account_status from public.profiles where id=pg_temp.case_id('inactive_target'))<>'inactive' then raise exception '0010_verify_auth_restore_stage_failed'; end if;
+  if result.status<>'processing' or result.completed_stage<>'auth_synchronized' then raise exception '0010_verify_auth_restore_stage_failed'; end if;
 end;
 $reactivate_service$;
 reset role;
+
+do $reactivate_service_owner_postconditions$
+begin
+  if (select account_status from public.profiles where id=pg_temp.case_id('inactive_target'))<>'inactive'
+     or not exists(
+       select 1 from public.admin_auth_operations
+       where id=(select operation_id from pg_temp.sitaa_0010_results where label='reactivate')
+         and status='processing'
+         and completed_stage='auth_synchronized'
+         and attempt_count=1
+         and profile_audit_event_id is null
+         and auth_audit_event_id is not null
+         and auth_synchronized_at is not null
+         and completed_at is null
+     ) then
+    raise exception '0010_verify_reactivation_service_owner_postconditions_failed';
+  end if;
+end;
+$reactivate_service_owner_postconditions$;
 
 select pg_temp.set_actor('admin_b'); set local role authenticated;
 do $reactivate_finalize$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='reactivate'); finalized record;
 begin
   select * into finalized from public.finalize_admin_account_auth_reactivation_b3a(op);
-  if finalized.status<>'succeeded' or finalized.completed_stage<>'completed'
-     or (select account_status from public.profiles where id=pg_temp.case_id('inactive_target'))<>'active'
-     or (select completed_by_profile_id from public.admin_auth_operations where id=op)<>pg_temp.case_id('admin_b') then raise exception '0010_verify_second_admin_finalization_failed'; end if;
+  if finalized.status<>'succeeded' or finalized.completed_stage<>'completed' then
+    raise exception '0010_verify_second_admin_finalization_failed';
+  end if;
 end;
 $reactivate_finalize$;
 reset role;
+
+do $reactivate_finalize_owner_postconditions$
+declare operation_row public.admin_auth_operations%rowtype;
+begin
+  select * into strict operation_row
+  from public.admin_auth_operations
+  where id=(select operation_id from pg_temp.sitaa_0010_results where label='reactivate');
+  if (select account_status from public.profiles where id=pg_temp.case_id('inactive_target'))<>'active'
+     or operation_row.status<>'succeeded'
+     or operation_row.completed_stage<>'completed'
+     or operation_row.completed_by_profile_id<>pg_temp.case_id('admin_b')
+     or operation_row.profile_audit_event_id is null
+     or operation_row.auth_audit_event_id is null
+     or operation_row.completed_at is null then
+    raise exception '0010_verify_reactivation_finalize_owner_postconditions_failed';
+  end if;
+end;
+$reactivate_finalize_owner_postconditions$;
 
 -- Éxito Auth seguido de fallo de finalización: el perfil sigue inactivo y el retry no repite Auth.
 select pg_temp.set_actor('admin_a'); set local role authenticated;
@@ -952,16 +1126,12 @@ end;
 $restore_failure_prepare$;
 reset role;
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
-do $restore_failure_auth$
+do $restore_failure_auth_stage$
 declare
   op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
   initial_claim record;
   result record;
   recovered_claim record;
-  operation_hash_before text;
-  audit_hash_before text;
-  auth_audit_id_before uuid;
-  replacement_audit_id uuid;
 begin
   select * into initial_claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
   select * into result from public.record_admin_auth_operation_result_b3a(
@@ -972,47 +1142,96 @@ begin
   if not recovered_claim.claimed or recovered_claim.completed_stage<>'auth_synchronized' or recovered_claim.attempt_count<>2 then
     raise exception '0010_verify_auth_synchronized_immediate_recovery_failed';
   end if;
-  select md5(row_to_json(operation)::text),operation.auth_audit_event_id
-  into operation_hash_before,auth_audit_id_before
-  from public.admin_auth_operations operation where operation.id=op;
-  select md5(coalesce(string_agg(row_to_json(audit_event)::text,'|' order by audit_event.id),''))
-  into audit_hash_before
-  from public.admin_audit_events audit_event;
+  insert into pg_temp.sitaa_0010_rpc_observations
+  values(
+    'restore_failure_recovered_claim',op,recovered_claim.status,
+    recovered_claim.completed_stage,recovered_claim.attempt_count,
+    recovered_claim.claimed,recovered_claim.last_error_code,recovered_claim.updated_at
+  );
+end;
+$restore_failure_auth_stage$;
+reset role;
 
+create temporary table sitaa_0010_restore_failure_baseline(
+  operation_hash text not null,
+  audit_hash text not null,
+  auth_audit_event_id uuid not null
+) on commit drop;
+insert into pg_temp.sitaa_0010_restore_failure_baseline
+select
+  md5(row_to_json(operation)::text),
+  (select md5(coalesce(string_agg(row_to_json(audit_event)::text,'|' order by audit_event.id),''))
+   from public.admin_audit_events audit_event),
+  operation.auth_audit_event_id
+from public.admin_auth_operations operation
+where operation.id=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
+
+create temporary table sitaa_0010_expected_error_outcomes(
+  label text primary key,
+  observed_sqlstate text not null,
+  observed_message text not null
+) on commit drop;
+grant select,insert on pg_temp.sitaa_0010_expected_error_outcomes to authenticated,service_role;
+
+select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
+do $restore_failure_rejected_results$
+declare
+  op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
+  recovered_attempt integer:=(select attempt_count from pg_temp.sitaa_0010_rpc_observations where label='restore_failure_recovered_claim');
+begin
   begin
     perform public.record_admin_auth_operation_result_b3a(
-      op,pg_temp.case_id('admin_a'),initial_claim.attempt_count,
+      op,pg_temp.case_id('admin_a'),recovered_attempt-1,
       'retryable_failure','database_finalize_pending'
     );
-    raise exception '0010_verify_stale_attempt_unexpected';
-  exception when sqlstate '55000' then
-    if sqlerrm<>'sitaa_auth_operation_stale_attempt' then raise; end if;
+    insert into pg_temp.sitaa_0010_expected_error_outcomes
+    values('stale_attempt','UNEXPECTED','0010_verify_stale_attempt_unexpected');
+  exception when others then
+    insert into pg_temp.sitaa_0010_expected_error_outcomes
+    values('stale_attempt',sqlstate,sqlerrm);
   end;
-  if operation_hash_before is distinct from
-       (select md5(row_to_json(operation)::text) from public.admin_auth_operations operation where operation.id=op)
-     or audit_hash_before is distinct from
-       (select md5(coalesce(string_agg(row_to_json(audit_event)::text,'|' order by audit_event.id),''))
-        from public.admin_audit_events audit_event) then
-    raise exception '0010_verify_stale_attempt_mutated_state';
-  end if;
 
   begin
     perform public.record_admin_auth_operation_result_b3a(
-      op,pg_temp.case_id('admin_b'),recovered_claim.attempt_count,
+      op,pg_temp.case_id('admin_b'),recovered_attempt,
       'terminal_failure','auth_update_rejected'
     );
-    raise exception '0010_verify_terminal_after_sync_unexpected';
-  exception when sqlstate '55000' then
-    if sqlerrm<>'sitaa_auth_operation_terminal_after_sync' then raise; end if;
+    insert into pg_temp.sitaa_0010_expected_error_outcomes
+    values('terminal_after_sync','UNEXPECTED','0010_verify_terminal_after_sync_unexpected');
+  exception when others then
+    insert into pg_temp.sitaa_0010_expected_error_outcomes
+    values('terminal_after_sync',sqlstate,sqlerrm);
   end;
-  if operation_hash_before is distinct from
-       (select md5(row_to_json(operation)::text) from public.admin_auth_operations operation where operation.id=op)
-     or audit_hash_before is distinct from
-       (select md5(coalesce(string_agg(row_to_json(audit_event)::text,'|' order by audit_event.id),''))
-        from public.admin_audit_events audit_event) then
-    raise exception '0010_verify_terminal_after_sync_mutated_state';
-  end if;
+end;
+$restore_failure_rejected_results$;
+reset role;
 
+do $restore_failure_rejected_owner_postconditions$
+begin
+  if (select observed_sqlstate from pg_temp.sitaa_0010_expected_error_outcomes where label='stale_attempt')<>'55000'
+     or (select observed_message from pg_temp.sitaa_0010_expected_error_outcomes where label='stale_attempt')<>
+        'sitaa_auth_operation_stale_attempt'
+     or (select observed_sqlstate from pg_temp.sitaa_0010_expected_error_outcomes where label='terminal_after_sync')<>'55000'
+     or (select observed_message from pg_temp.sitaa_0010_expected_error_outcomes where label='terminal_after_sync')<>
+        'sitaa_auth_operation_terminal_after_sync'
+     or (select operation_hash from pg_temp.sitaa_0010_restore_failure_baseline) is distinct from
+        (select md5(row_to_json(operation)::text)
+         from public.admin_auth_operations operation
+         where operation.id=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure'))
+     or (select audit_hash from pg_temp.sitaa_0010_restore_failure_baseline) is distinct from
+        (select md5(coalesce(string_agg(row_to_json(audit_event)::text,'|' order by audit_event.id),''))
+         from public.admin_audit_events audit_event) then
+    raise exception '0010_verify_restore_failure_rejected_results_mutated_state';
+  end if;
+end;
+$restore_failure_rejected_owner_postconditions$;
+
+do $restore_failure_auth_audit_replacement_owner$
+declare
+  op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
+  auth_audit_id_before uuid:=(select auth_audit_event_id from pg_temp.sitaa_0010_restore_failure_baseline);
+  replacement_audit_id uuid;
+begin
   insert into public.admin_audit_events(
     actor_profile_id,target_profile_id,action_code,outcome,reason,role_assignment_id,metadata
   ) values(
@@ -1033,8 +1252,7 @@ begin
     raise exception '0010_verify_auth_audit_replacement_changed_row';
   end if;
 end;
-$restore_failure_auth$;
-reset role;
+$restore_failure_auth_audit_replacement_owner$;
 update auth.users set email_confirmed_at=null where id=pg_temp.case_id('restore_failure_target');
 select pg_temp.set_actor('admin_a'); set local role authenticated;
 do $restore_failure_finalize$
@@ -1044,12 +1262,14 @@ begin
   exception when raise_exception then
     if sqlerrm<>'sitaa_account_lifecycle_auth_unconfirmed' then raise; end if;
   end;
-  if (select account_status from public.profiles where id=pg_temp.case_id('restore_failure_target'))<>'inactive' then
-    raise exception '0010_verify_failed_finalization_activated_profile';
-  end if;
 end;
 $restore_failure_finalize$;
 reset role;
+do $$ begin
+  if (select account_status from public.profiles where id=pg_temp.case_id('restore_failure_target'))<>'inactive' then
+    raise exception '0010_verify_failed_finalization_activated_profile';
+  end if;
+end $$;
 update auth.users set email_confirmed_at=now() where id=pg_temp.case_id('restore_failure_target');
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
 do $restore_failure_retry$
@@ -1057,18 +1277,14 @@ declare
   op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
   claim record;
   result record;
-  auth_audit_id_before uuid;
+  recovered_attempt integer:=(select attempt_count from pg_temp.sitaa_0010_rpc_observations where label='restore_failure_recovered_claim');
 begin
-  select auth_audit_event_id into auth_audit_id_before
-  from public.admin_auth_operations where id=op;
   select * into result from public.record_admin_auth_operation_result_b3a(
     op,pg_temp.case_id('admin_a'),
-    (select attempt_count from public.admin_auth_operations where id=op),
+    recovered_attempt,
     'retryable_failure','database_finalize_pending'
   );
-  if result.status<>'retryable_failure' or result.completed_stage<>'auth_synchronized'
-     or (select auth_audit_event_id from public.admin_auth_operations where id=op)
-        is distinct from auth_audit_id_before then
+  if result.status<>'retryable_failure' or result.completed_stage<>'auth_synchronized' then
     raise exception '0010_verify_finalize_retryable_failed';
   end if;
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
@@ -1076,18 +1292,38 @@ begin
 end;
 $restore_failure_retry$;
 reset role;
+do $$ begin
+  if (select auth_audit_event_id
+      from public.admin_auth_operations
+      where id=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure'))
+     is distinct from
+     (select auth_audit_event_id from pg_temp.sitaa_0010_restore_failure_baseline) then
+    raise exception '0010_verify_finalize_retryable_changed_auth_evidence';
+  end if;
+end $$;
 select pg_temp.set_actor('admin_b'); set local role authenticated;
 do $restore_failure_recovered$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure'); finalized record;
 begin
   select * into finalized from public.finalize_admin_account_auth_reactivation_b3a(op);
-  if finalized.status<>'succeeded' or finalized.completed_stage<>'completed'
-     or (select account_status from public.profiles where id=pg_temp.case_id('restore_failure_target'))<>'active' then
+  if finalized.status<>'succeeded' or finalized.completed_stage<>'completed' then
     raise exception '0010_verify_stranded_operation_recovery_failed';
   end if;
 end;
 $restore_failure_recovered$;
 reset role;
+do $$ begin
+  if (select account_status from public.profiles where id=pg_temp.case_id('restore_failure_target'))<>'active'
+     or not exists(
+       select 1 from public.admin_auth_operations
+       where id=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure')
+         and status='succeeded'
+         and completed_stage='completed'
+         and completed_by_profile_id=pg_temp.case_id('admin_b')
+     ) then
+    raise exception '0010_verify_stranded_operation_owner_postconditions_failed';
+  end if;
+end $$;
 
 -- La autoridad perdida antes de finalizar falla cerrada; otra autoridad exacta recupera.
 select pg_temp.set_actor('admin_a'); set local role authenticated;
@@ -1117,24 +1353,34 @@ begin
   exception when insufficient_privilege then
     if sqlerrm<>'sitaa_admin_access_denied' then raise; end if;
   end;
-  if (select account_status from public.profiles where id=pg_temp.case_id('authority_loss_target'))<>'inactive' then
-    raise exception '0010_verify_lost_authority_activated_profile';
-  end if;
 end;
 $authority_loss_denial$;
 reset role;
+do $$ begin
+  if (select account_status from public.profiles where id=pg_temp.case_id('authority_loss_target'))<>'inactive' then
+    raise exception '0010_verify_lost_authority_activated_profile';
+  end if;
+end $$;
 select pg_temp.set_actor('admin_b'); set local role authenticated;
 do $authority_loss_recovery$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss'); finalized record;
 begin
   select * into finalized from public.finalize_admin_account_auth_reactivation_b3a(op);
-  if finalized.status<>'succeeded' or finalized.completed_stage<>'completed'
-     or (select completed_by_profile_id from public.admin_auth_operations where id=op)<>pg_temp.case_id('admin_b') then
+  if finalized.status<>'succeeded' or finalized.completed_stage<>'completed' then
     raise exception '0010_verify_lost_authority_recovery_failed';
   end if;
 end;
 $authority_loss_recovery$;
 reset role;
+do $$ begin
+  if (select completed_by_profile_id
+      from public.admin_auth_operations
+      where id=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss'))
+     <>pg_temp.case_id('admin_b')
+     or (select account_status from public.profiles where id=pg_temp.case_id('authority_loss_target'))<>'active' then
+    raise exception '0010_verify_lost_authority_owner_postconditions_failed';
+  end if;
+end $$;
 
 do $final_state_machine$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='deactivate');

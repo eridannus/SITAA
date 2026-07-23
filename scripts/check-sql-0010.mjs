@@ -120,6 +120,111 @@ function assertLexicallyBalanced(source, label) {
   assert.equal(dollar, null, `${label}: cuerpo dollar-quoted sin cerrar`);
 }
 
+const roleIntervalPattern = /set\s+local\s+role\s+(authenticated|service_role)\s*;([\s\S]*?)reset\s+role\s*;/gi;
+const protectedTablePattern = /\b(?:public\.)?(admin_auth_operations|admin_audit_events|profiles|role_assignments|activities|activity_participants)\b|\bauth\.(users|identities)\b/gi;
+const b3aRpcPattern = /public\.(get_admin_account_auth_lifecycle_context_b3a|prepare_admin_account_auth_lifecycle_b3a|finalize_admin_account_auth_reactivation_b3a|claim_admin_auth_operation_b3a|record_admin_auth_operation_result_b3a|transition_admin_account_lifecycle_b2b)\b/gi;
+const allowedAclDenialBlocks = [
+  /begin\s+perform 1 from public\.admin_auth_operations;\s+raise exception '0010_verify_authenticated_table_read_unexpected';\s+exception when insufficient_privilege then null;\s+end;/gi,
+  /begin\s+perform 1 from public\.admin_auth_operations;\s+raise exception '0010_verify_service_table_read_unexpected';\s+exception when insufficient_privilege then null;\s+end;/gi,
+];
+
+function auditVerifierRoleIntervals(source, label, failOnUnauthorized = true) {
+  const counts = { authenticated: 0, service_role: 0 };
+  let protectedRawReferences = 0;
+  let allowlistedNegativeReferences = 0;
+  const unauthorized = [];
+  for (const interval of source.matchAll(roleIntervalPattern)) {
+    const role = interval[1];
+    counts[role] += 1;
+    const originalBody = interval[2];
+    protectedRawReferences += (originalBody.match(protectedTablePattern) ?? []).length;
+    let auditedBody = originalBody;
+    for (const allowlistPattern of allowedAclDenialBlocks) {
+      auditedBody = auditedBody.replace(allowlistPattern, (block) => {
+        allowlistedNegativeReferences += (block.match(protectedTablePattern) ?? []).length;
+        return "";
+      });
+    }
+    for (const reference of auditedBody.matchAll(protectedTablePattern)) {
+      unauthorized.push({
+        role,
+        reference: reference[0],
+        line: lineAtOffset(source, interval.index + reference.index),
+      });
+    }
+    const allowedRpcs = role === "authenticated"
+      ? new Set([
+        "get_admin_account_auth_lifecycle_context_b3a",
+        "prepare_admin_account_auth_lifecycle_b3a",
+        "finalize_admin_account_auth_reactivation_b3a",
+      ])
+      : new Set([
+        "claim_admin_auth_operation_b3a",
+        "record_admin_auth_operation_result_b3a",
+      ]);
+    for (const rpc of originalBody.matchAll(b3aRpcPattern)) {
+      const rpcName = rpc[1];
+      const exactLegacyDenial = role === "authenticated"
+        && rpcName === "transition_admin_account_lifecycle_b2b"
+        && originalBody.includes("0010_verify_direct_b2b_unexpected")
+        && originalBody.includes("exception when insufficient_privilege then null");
+      if (!allowedRpcs.has(rpcName) && !exactLegacyDenial) {
+        unauthorized.push({
+          role,
+          reference: `RPC ${rpcName}`,
+          line: lineAtOffset(source, interval.index + rpc.index),
+        });
+      }
+    }
+  }
+  if (failOnUnauthorized) {
+    assert.equal(
+      unauthorized.length,
+      0,
+      `${label}: referencias protegidas no autorizadas: ${unauthorized.map((entry) =>
+        `${entry.role}:${entry.reference}@${entry.line}`).join(", ")}`,
+    );
+  }
+  return { counts, protectedRawReferences, allowlistedNegativeReferences, unauthorized };
+}
+
+const rawAuthenticatedFixture = `
+set local role authenticated;
+select * from public.admin_auth_operations;
+reset role;`;
+const rawServiceFixture = `
+set local role service_role;
+select * from public.admin_auth_operations;
+reset role;`;
+const updateServiceFixture = `
+set local role service_role;
+update public.admin_auth_operations set status='succeeded';
+reset role;`;
+const wrongRoleRpcFixture = `
+set local role authenticated;
+select * from public.claim_admin_auth_operation_b3a(gen_random_uuid(),gen_random_uuid());
+reset role;`;
+const ownerPostconditionFixture = `
+set local role authenticated;
+select * from public.get_admin_account_auth_lifecycle_context_b3a(gen_random_uuid());
+reset role;
+select * from public.admin_auth_operations;`;
+const exactAclDenialFixture = `
+set local role authenticated;
+do $$ begin
+  begin perform 1 from public.admin_auth_operations; raise exception '0010_verify_authenticated_table_read_unexpected';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;`;
+assert.equal(auditVerifierRoleIntervals(rawAuthenticatedFixture, "fixture authenticated", false).unauthorized.length, 1);
+assert.equal(auditVerifierRoleIntervals(rawServiceFixture, "fixture service SELECT", false).unauthorized.length, 1);
+assert.equal(auditVerifierRoleIntervals(updateServiceFixture, "fixture service UPDATE", false).unauthorized.length, 1);
+assert.equal(auditVerifierRoleIntervals(wrongRoleRpcFixture, "fixture RPC por rol", false).unauthorized.length, 1);
+assert.equal(auditVerifierRoleIntervals(ownerPostconditionFixture, "fixture owner", false).unauthorized.length, 0);
+const allowedFixtureAudit = auditVerifierRoleIntervals(exactAclDenialFixture, "fixture ACL", false);
+assert.equal(allowedFixtureAudit.unauthorized.length, 0);
+assert.equal(allowedFixtureAudit.allowlistedNegativeReferences, 1);
+
 for (const [name, source] of Object.entries(sources)) {
   assertLexicallyBalanced(source, name);
   for (const body of extractDollarQuotedBodies(source, name)) {
@@ -264,7 +369,6 @@ assert.match(sources.rollback, /sitaa_0010_rollback_exact_contract_mismatch/);
 assert.match(sources.rollback, /with expected\(function_oid,grantee\)/);
 for (const canonicalHash of [
   "c2095a58fb96e7387513b4bebf33b95d",
-  "4ea1d04b7d1b1632fd5ce01a1dc83e05",
   "e1e24e4406a6b72e539a412396b58a83",
   "f33fd097dfc9ed8a316ad5a3accab896",
 ]) {
@@ -273,6 +377,43 @@ for (const canonicalHash of [
     `Rollback debe comprobar ${canonicalHash} antes de destruir y después de restaurar`,
   );
 }
+const predestructiveStart = sources.rollback.indexOf("do $predestructive$");
+const predestructiveEnd = sources.rollback.indexOf("$predestructive$;", predestructiveStart);
+const postRollbackStart = sources.rollback.indexOf("do $post_rollback$");
+const postRollbackEnd = sources.rollback.indexOf("$post_rollback$;", postRollbackStart);
+assert.ok(predestructiveStart >= 0 && predestructiveEnd > predestructiveStart);
+assert.ok(postRollbackStart >= 0 && postRollbackEnd > postRollbackStart);
+const predestructive = sources.rollback.slice(predestructiveStart, predestructiveEnd);
+const postRollback = sources.rollback.slice(postRollbackStart, postRollbackEnd);
+assert.match(predestructive, /count\(\*\)=135[\s\S]*5c2ce865124e0669c787d12fe4c46b59/);
+assert.match(
+  predestructive,
+  /p\.oid<>'public\.transition_admin_account_lifecycle_b2b\(uuid,text,text\)'::regprocedure[\s\S]*p\.proname not in/,
+);
+assert.doesNotMatch(predestructive, /count\(\*\)=137|4ea1d04b7d1b1632fd5ce01a1dc83e05/);
+assert.match(
+  predestructive,
+  /transition_admin_account_lifecycle_b2b\(uuid,text,text\)[\s\S]*acl\.grantee=p\.proowner[\s\S]*not acl\.is_grantable[\s\S]*<>1/,
+);
+assert.match(
+  predestructive,
+  /acl\.privilege_type<>'EXECUTE'[\s\S]*acl\.grantee<>p\.proowner[\s\S]*acl\.is_grantable/,
+);
+assert.match(postRollback, /count\(\*\)=137[\s\S]*4ea1d04b7d1b1632fd5ce01a1dc83e05/);
+assert.equal(sources.rollback.split("4ea1d04b7d1b1632fd5ce01a1dc83e05").length - 1, 1);
+
+function exactAclSetMatches(expected, actual) {
+  return expected.length === actual.length
+    && expected.every((entry) => actual.includes(entry))
+    && actual.every((entry) => expected.includes(entry));
+}
+const expectedOwnerOnlyMutationAcl = ["transition:postgres:EXECUTE:false"];
+assert.equal(exactAclSetMatches(expectedOwnerOnlyMutationAcl, expectedOwnerOnlyMutationAcl), true);
+assert.equal(
+  exactAclSetMatches(expectedOwnerOnlyMutationAcl, ["transition:authenticated:EXECUTE:false"]),
+  false,
+  "Una sustitución de grantee con igual cardinalidad debe rechazarse",
+);
 assert.match(sources.rollback, /sitaa_0010_rollback_canonical_acl_mismatch/);
 assert.match(sources.rollback, /sitaa_0010_rollback_post_0009_acl_mismatch/);
 assert.ok(
@@ -419,12 +560,12 @@ assert.match(
 );
 assert.match(
   sources.verify,
-  /sqlerrm<>'sitaa_account_lifecycle_invalid_transition' or sqlstate<>'22023'/,
+  /observed_sqlstate<>'22023'[\s\S]*observed_message<>'sitaa_account_lifecycle_invalid_transition'/,
   "El verificador debe exigir mensaje y SQLSTATE canónicos para transición inválida",
 );
 assert.match(
   sources.verify,
-  /0010_verify_invalid_transition_mutated_state/,
+  /0010_verify_invalid_transition_contract_failed/,
   "El verificador debe demostrar cero mutación tras cada transición inválida",
 );
 assert.match(sources.migration, /requested_result is null or requested_result not in/);
@@ -446,7 +587,7 @@ assert.match(
 );
 assert.match(edge, /claimed_attempt_count:\s*operation\.attemptCount/);
 assert.match(edge, /attemptCount:\s*operation\.attemptCount/);
-assert.match(sources.verify, /0010_verify_stale_attempt_mutated_state/);
+assert.match(sources.verify, /0010_verify_restore_failure_rejected_results_mutated_state/);
 assert.match(sources.verify, /sitaa_auth_operation_stale_attempt/);
 const stalePendingError = `sitaa_account_lifecycle_pending_target_${"forbidden"}`;
 assert.equal(
@@ -469,7 +610,7 @@ for (const field of [
   );
 }
 assert.match(sources.migration, /sitaa_auth_operation_terminal_after_sync/);
-assert.match(sources.verify, /0010_verify_terminal_after_sync_mutated_state/);
+assert.match(sources.verify, /0010_verify_restore_failure_rejected_results_mutated_state/);
 assert.match(sources.verify, /0010_verify_auth_audit_replacement_unexpected/);
 assert.match(sources.verify, /0010_verify_profile_audit_replacement_unexpected/);
 assert.doesNotMatch(sources.migration, /operation\.status<>'succeeded'[\s\S]{0,160}order by operation\.requested_at/,
@@ -544,6 +685,11 @@ assert.match(sources.verify, /set local role authenticated/);
 assert.match(sources.verify, /set local role service_role/);
 assert.match(sources.verify, /rollback;/);
 assert.doesNotMatch(sources.verify, /auth\.admin|updateUserById|SUPABASE_SERVICE_ROLE_KEY/);
+const verifierRoleAudit = auditVerifierRoleIntervals(sources.verify, "verificador 0010");
+assert.equal(verifierRoleAudit.counts.authenticated, 25);
+assert.equal(verifierRoleAudit.counts.service_role, 13);
+assert.equal(verifierRoleAudit.protectedRawReferences, 2);
+assert.equal(verifierRoleAudit.allowlistedNegativeReferences, 2);
 for (const marker of [
   "0010_verify_malformed_admin_unexpected",
   "0010_verify_inactive_admin_unexpected",
@@ -563,9 +709,8 @@ for (const marker of [
   "0010_verify_success_error_code_unexpected",
   "0010_verify_auth_synchronized_immediate_recovery_failed",
   "0010_verify_stale_attempt_unexpected",
-  "0010_verify_stale_attempt_mutated_state",
   "0010_verify_terminal_after_sync_unexpected",
-  "0010_verify_terminal_after_sync_mutated_state",
+  "0010_verify_restore_failure_rejected_results_mutated_state",
   "0010_verify_auth_audit_replacement_unexpected",
   "0010_verify_profile_audit_replacement_unexpected",
   "0010_verify_final_operation_replay_failed",
@@ -613,6 +758,11 @@ console.log("Validación total de transición, incluido NULL: OK");
 console.log("Orden de locks del rollback: ledger -> auditoría -> guarda completa: OK");
 console.log("Taxonomía provisional Auth sólo reintentable: OK");
 console.log("Cercado por claimed_attempt_count: OK");
+console.log(`Intervalos authenticated auditados: ${verifierRoleAudit.counts.authenticated}`);
+console.log(`Intervalos service_role auditados: ${verifierRoleAudit.counts.service_role}`);
+console.log(`Referencias protegidas encontradas: ${verifierRoleAudit.protectedRawReferences}`);
+console.log(`Referencias negativas allowlisted: ${verifierRoleAudit.allowlistedNegativeReferences}`);
+console.log(`Referencias no autorizadas: ${verifierRoleAudit.unauthorized.length}`);
 console.log("Auditoría de cuerpos dollar-quoted:");
 for (const [name, source] of Object.entries(sources)) {
   console.log(`  ${name}: ${extractDollarQuotedBodies(source, name).length}`);

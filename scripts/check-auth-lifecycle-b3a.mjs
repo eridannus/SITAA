@@ -45,6 +45,70 @@ assert.match(edge, /finalResponse\(operation\)/);
 assert.match(edge, /completedStage === "auth_synchronized"/);
 assert.match(data, /"completed", "pending", "rejected", "terminal_failure"/);
 assert.match(action, /result\.state === "rejected" \? "error" : "pending"/);
+assert.match(data, /FunctionsHttpError/);
+assert.match(data, /FunctionsRelayError/);
+assert.match(data, /FunctionsFetchError/);
+assert.match(data, /error instanceof FunctionsHttpError/);
+assert.equal((data.match(/await error\.context\.json\(\)/g) ?? []).length, 1);
+assert.match(data, /parseEdgeResult\(data\)/);
+assert.match(data, /parseEdgeResult\(httpBody\)/);
+assert.match(data, /error instanceof FunctionsRelayError \|\| error instanceof FunctionsFetchError/);
+const edgeInvocationStart = data.indexOf("export async function runAdminAccountAuthLifecycle");
+assert.ok(edgeInvocationStart >= 0);
+const edgeInvocationBody = data.slice(edgeInvocationStart);
+assert.doesNotMatch(edgeInvocationBody, /error\.message|error\.context\.text|error\.context\.headers/);
+assert.match(action, /if \(context\.b3aAvailable\)[\s\S]*runAdminAccountAuthLifecycle[\s\S]*else \{[\s\S]*transitionAdminAccountLifecycleLegacyBeforeB3a/);
+assert.match(action, /const nextValues = result\.operationId[\s\S]*: values/);
+
+const fixtureStates = new Set(["completed", "pending", "rejected", "terminal_failure"]);
+const fixtureCodes = new Set([
+  "account_deactivated", "request_id_conflict", "pending_target",
+  "authorization_lost", "trusted_boundary_unavailable",
+]);
+const fixtureUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const fixtureUuid = "11111111-1111-4111-8111-111111111111";
+function parseFixtureEdgeResult(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)
+    || Object.keys(value).some((key) => !["code", "state", "operationId"].includes(key))
+    || !fixtureCodes.has(value.code) || !fixtureStates.has(value.state)
+    || (value.operationId !== null && !fixtureUuidPattern.test(value.operationId))) return null;
+  return value;
+}
+function resolveFixtureInvocation({ data: fixtureData, errorKind, httpBody }) {
+  if (!errorKind) {
+    const parsed = parseFixtureEdgeResult(fixtureData);
+    if (!parsed) throw new Error("unavailable");
+    return parsed;
+  }
+  if (errorKind === "http") {
+    const parsed = parseFixtureEdgeResult(httpBody);
+    if (!parsed) throw new Error("trusted_boundary_unavailable");
+    return parsed;
+  }
+  throw new Error("trusted_boundary_unavailable");
+}
+for (const fixture of [
+  { data: { code: "account_deactivated", state: "completed", operationId: fixtureUuid },
+    expectedCode: "account_deactivated" },
+  { errorKind: "http", httpBody: { code: "request_id_conflict", state: "rejected", operationId: null },
+    expectedCode: "request_id_conflict" },
+  { errorKind: "http", httpBody: { code: "pending_target", state: "rejected", operationId: null },
+    expectedCode: "pending_target" },
+  { errorKind: "http", httpBody: { code: "authorization_lost", state: "rejected", operationId: fixtureUuid },
+    expectedCode: "authorization_lost" },
+]) {
+  assert.equal(resolveFixtureInvocation(fixture).code, fixture.expectedCode);
+}
+assert.throws(
+  () => resolveFixtureInvocation({
+    errorKind: "http",
+    httpBody: { code: "request_id_conflict", state: "rejected", operationId: null, detail: "raw" },
+  }),
+  /trusted_boundary_unavailable/,
+);
+for (const errorKind of ["relay", "fetch", "unknown"]) {
+  assert.throws(() => resolveFixtureInvocation({ errorKind }), /trusted_boundary_unavailable/);
+}
 
 for (const secret of ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY", "sb_secret_"]) {
   assert.equal(envExample.includes(secret), false, `${secret} no puede aparecer en .env.example`);
@@ -88,3 +152,5 @@ assert.match(migration, /revoke all on function public\.transition_admin_account
 assert.doesNotMatch(`${edge}\n${adapter}\n${action}\n${data}`, /immediate access-token invalidation|global sign-out|revoca(?:r|ción) criptográficamente/i);
 
 console.log("Límite confiable Auth B.3a: OK");
+console.log("Resultados Edge 200/403/409 preservados mediante el parser exacto: OK");
+console.log("Errores HTTP malformados, Relay, Fetch y desconocidos fallan cerrados: OK");

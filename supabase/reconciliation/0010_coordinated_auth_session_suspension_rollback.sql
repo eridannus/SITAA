@@ -33,8 +33,8 @@ begin
          from pg_proc p
          join pg_namespace namespace_definition on namespace_definition.oid=p.pronamespace
          join pg_language language_definition on language_definition.oid=p.prolang
-         where namespace_definition.nspname='public'
-           and p.proname not in (
+          where namespace_definition.nspname='public'
+            and p.proname not in (
              'guard_admin_auth_operation_b3a',
              'get_admin_account_auth_lifecycle_context_b3a',
              'prepare_admin_account_auth_lifecycle_b3a',
@@ -53,9 +53,10 @@ begin
            acl.privilege_type||':'||acl.is_grantable::text
          from pg_proc p
          join pg_namespace namespace_definition on namespace_definition.oid=p.pronamespace
-         cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
-         where namespace_definition.nspname='public'
-           and p.proname not in (
+          cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+          where namespace_definition.nspname='public'
+            and p.oid<>'public.transition_admin_account_lifecycle_b2b(uuid,text,text)'::regprocedure
+            and p.proname not in (
              'guard_admin_auth_operation_b3a',
              'get_admin_account_auth_lifecycle_context_b3a',
              'prepare_admin_account_auth_lifecycle_b3a',
@@ -64,8 +65,8 @@ begin
              'record_admin_auth_operation_result_b3a'
            )
        )
-       select count(*)=137
-          and md5(coalesce(string_agg(value,'|' order by value),''))='4ea1d04b7d1b1632fd5ce01a1dc83e05'
+       select count(*)=135
+          and md5(coalesce(string_agg(value,'|' order by value),''))='5c2ce865124e0669c787d12fe4c46b59'
        from entries
      )
      or not (
@@ -307,7 +308,28 @@ begin
      ) then
     raise exception 'sitaa_0010_rollback_function_acl_mismatch' using errcode='55000';
   end if;
-  if has_function_privilege('authenticated','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE') then
+  if has_function_privilege('authenticated','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE')
+     or has_function_privilege('anon','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE')
+     or has_function_privilege('service_role','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE')
+     or has_function_privilege('PUBLIC','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE')
+     or (select count(*)
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+         where p.oid='public.transition_admin_account_lifecycle_b2b(uuid,text,text)'::regprocedure
+           and acl.privilege_type='EXECUTE'
+           and acl.grantee=p.proowner
+           and not acl.is_grantable)<>1
+     or exists(
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+       where p.oid='public.transition_admin_account_lifecycle_b2b(uuid,text,text)'::regprocedure
+         and (
+           acl.privilege_type<>'EXECUTE'
+           or acl.grantee<>p.proowner
+           or acl.is_grantable
+         )
+     ) then
     raise exception 'sitaa_0010_rollback_legacy_acl_already_restored' using errcode='55000';
   end if;
   if not exists (

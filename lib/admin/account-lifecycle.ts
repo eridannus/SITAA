@@ -1,4 +1,9 @@
 import "server-only";
+import {
+  FunctionsFetchError,
+  FunctionsHttpError,
+  FunctionsRelayError,
+} from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   AdminAccountAuthLifecycleEdgeInput,
@@ -253,8 +258,24 @@ export async function runAdminAccountAuthLifecycle(
 ): Promise<AdminAccountAuthLifecycleEdgeResult> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.functions.invoke("admin-account-auth-lifecycle", { body: input });
-  if (error) throw new AdminAccountLifecycleDataError("trusted_boundary_unavailable");
-  const result = parseEdgeResult(data);
-  if (!result) throw new AdminAccountLifecycleDataError("unavailable");
-  return result;
+  if (!error) {
+    const result = parseEdgeResult(data);
+    if (!result) throw new AdminAccountLifecycleDataError("unavailable");
+    return result;
+  }
+  if (error instanceof FunctionsHttpError) {
+    let httpBody: unknown;
+    try {
+      httpBody = await error.context.json();
+    } catch {
+      throw new AdminAccountLifecycleDataError("trusted_boundary_unavailable");
+    }
+    const result = parseEdgeResult(httpBody);
+    if (!result) throw new AdminAccountLifecycleDataError("trusted_boundary_unavailable");
+    return result;
+  }
+  if (error instanceof FunctionsRelayError || error instanceof FunctionsFetchError) {
+    throw new AdminAccountLifecycleDataError("trusted_boundary_unavailable");
+  }
+  throw new AdminAccountLifecycleDataError("trusted_boundary_unavailable");
 }

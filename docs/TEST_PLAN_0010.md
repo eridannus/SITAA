@@ -17,6 +17,8 @@ Una segunda revisión recibió un paquete desactualizado respecto del repositori
 
 La revisión final del catálogo corrigió antes de cualquier ejecución la identidad física de `request_id`: la restricción `admin_auth_operations_request_id_key` crea y usa el índice del mismo nombre, sin `UNIQUE USING INDEX` ni un índice duplicado. También hizo total la validación de transición, alineó el preflight embebido con toda la superficie bloqueante independiente y completó los mapas canónicos predestructivos y post-rollback. Estas correcciones siguen siendo exclusivamente locales y estáticas.
 
+Una revisión posterior detectó acceso crudo a tablas protegidas dentro de intervalos del verificador ejecutados como `authenticated` o `service_role`, un baseline ACL predestructivo de rollback que todavía exigía el mapa completo post‑0009 y la pérdida de resultados estables enviados por Edge con HTTP 403/409. El arnés quedó separado por fases: los roles cliente sólo invocan RPC aprobadas o escriben resultados sanitizados en `pg_temp`; toda postcondición cruda y toda regresión del trigger del ledger se ejecuta como owner después de `RESET ROLE`. El rollback distingue funciones preexistentes sin cambios, el mutador 0009 owner-only y las seis funciones 0010. La aplicación reutiliza el parser exacto también para el cuerpo JSON de `FunctionsHttpError`, sin activar el fallback 0009 ante errores Edge. No se ejecutaron PostgreSQL, preflight, Edge Function ni operaciones Auth Admin.
+
 El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
 
 ## 1. Validación estática y local
@@ -72,6 +74,14 @@ Después de publicar una aplicación compatible y aprobar el preflight:
 
 El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS sin políticas, triggers, firmas/argumentos/columnas de retorno, propiedades de función, ACL sin grant option y regresiones 0001–0009. Los cinco índices deben ser exactamente `admin_auth_operations_actor_requested_idx`, `admin_auth_operations_one_nonfinal_target_uidx`, `admin_auth_operations_pkey`, `admin_auth_operations_request_id_key` y `admin_auth_operations_target_status_idx`. La restricción única de `request_id` debe apuntar mediante `conindid` al índice `_key`, que debe ser único, válido, listo, no primario, no parcial, sin expresión y contener únicamente `request_id`; no puede existir otro índice de esa columna.
 
+La disciplina de roles del verificador es bloqueante:
+
+- `authenticated` sólo invoca contexto, preparación y finalización B.3a, además de las dos denegaciones ACL deliberadas y escrituras expresamente concedidas a superficies `pg_temp`;
+- `service_role` sólo invoca claim/result, la denegación directa deliberada y superficies `pg_temp`;
+- toda lectura de perfiles, Auth, asignaciones, ledger, auditoría, actividades, participantes, timestamps, hashes y UUID de evidencia ocurre después de `RESET ROLE`;
+- las mutaciones directas que prueban el trigger de `admin_auth_operations` se ejecutan como owner con `sitaa.b3a_writer` local y se limpian inmediatamente;
+- `scripts/check-sql-0010.mjs` debe auditar cada intervalo de rol, aceptar únicamente los dos bloques negativos exactos y reportar cero referencias no autorizadas.
+
 Bajo roles reales debe probar:
 
 - mutación 0009 directa denegada a `authenticated` con `42501`;
@@ -113,6 +123,9 @@ Type-check del paquete Edge con el mecanismo local soportado. Sin invocarlo cont
 - adaptador usa `updateUserById()`, no `signOut()` sin JWT objetivo;
 - respuestas/logs sólo con operación, fase, código y timestamp sanitizados;
 - ninguna razón, cabecera, JWT, cookie, correo, nombre o payload de proveedor en logs.
+- el adaptador Next.js conserva cuerpos estables válidos de HTTP 403/409 mediante `FunctionsHttpError.context.json()` leído una sola vez y el mismo parser exacto usado para HTTP 200;
+- cuerpos HTTP malformados y errores `FunctionsRelayError`, `FunctionsFetchError` o desconocidos fallan cerrados como `trusted_boundary_unavailable`, sin analizar `error.message`;
+- ningún error Edge, sea de negocio o transporte, activa el fallback 0009; éste depende únicamente de la ausencia explícita de la RPC de contexto B.3a.
 
 ## 5. Matriz Auth hospedada desechable — obligatoria
 
@@ -173,3 +186,4 @@ B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT
 
 El rollback 0010 sólo puede considerarse antes de la primera operación o evento B.3a real; después queda prohibido por diseño.
 Antes de revisar historia, el rollback adquiere `ACCESS EXCLUSIVE NOWAIT` primero sobre `admin_auth_operations` y después sobre `admin_audit_events`; mantiene ambos locks durante la guarda completa, las dos comprobaciones históricas y la eliminación controlada.
+Su guarda predestructiva exige 135 entradas y hash `5c2ce865124e0669c787d12fe4c46b59` para las funciones preexistentes sin el mutador 0009 ni las seis funciones 0010, una única entrada `EXECUTE` no delegable del owner para el mutador 0009 y la matriz exacta de las seis funciones 0010. El mapa completo post‑0009 de 137 entradas y hash `4ea1d04b7d1b1632fd5ce01a1dc83e05` se exige únicamente después de retirar 0010 y restaurar `authenticated` sobre el mutador 0009.
