@@ -340,6 +340,36 @@ function topLevelCategories(source, spaces) {
   return [...source.matchAll(pattern)].map((match) => match[1]);
 }
 
+function extractCategoryDefinition(source, category) {
+  const marker = `('${category}',`;
+  const start = source.indexOf(marker);
+  assert.ok(start >= 0, `No se encontró la categoría ${category}`);
+  let depth = 0;
+  let single = false;
+  for (let index = start; index < source.length; index += 1) {
+    const current = source[index];
+    if (current === "'") {
+      if (single && source[index + 1] === "'") {
+        index += 1;
+        continue;
+      }
+      single = !single;
+      continue;
+    }
+    if (single) continue;
+    if (current === "(") depth += 1;
+    if (current === ")") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  assert.fail(`No se pudo cerrar la categoría ${category}`);
+}
+
+function normalizedSql(source) {
+  return source.replace(/\s+/g, "");
+}
+
 const independentBlocking = sliceBetween(
   sources.preflight,
   "with blocking(category,aggregate_count) as (",
@@ -354,10 +384,58 @@ const embeddedBlocking = sliceBetween(
 );
 const independentCategories = topLevelCategories(independentBlocking, 2);
 const embeddedCategories = topLevelCategories(embeddedBlocking, 4);
+const independentInformational = sliceBetween(
+  sources.preflight,
+  "), informational(category,aggregate_count) as (",
+  ")\nselect category,'blocking'::text",
+  "superficie informativa independiente",
+);
+const informationalCategories = topLevelCategories(independentInformational, 2);
+assert.equal(independentCategories.length, 30, "El preflight debe conservar 30 categorías bloqueantes");
+assert.equal(informationalCategories.length, 4, "El preflight debe conservar 4 categorías informativas");
 assert.deepEqual(
   embeddedCategories,
   independentCategories,
   "El preflight embebido debe reproducir todas las categorías bloqueantes independientes y en el mismo orden",
+);
+const independentDangerousDefaultAcl = extractCategoryDefinition(
+  independentBlocking,
+  "dangerous_default_acl",
+);
+const embeddedDangerousDefaultAcl = extractCategoryDefinition(
+  embeddedBlocking,
+  "dangerous_default_acl",
+);
+assert.equal(
+  normalizedSql(embeddedDangerousDefaultAcl),
+  normalizedSql(independentDangerousDefaultAcl),
+  "dangerous_default_acl debe ser idéntica en preflight independiente y embebido",
+);
+for (const requiredContract of [
+  /current_user::text<>'postgres'/,
+  /session_user::text<>'postgres'/,
+  /d\.defaclrole='postgres'::regrole/,
+  /d\.defaclnamespace=0/,
+  /d\.defaclnamespace='public'::regnamespace/,
+  /d\.defaclobjtype::text in \('r','f'\)/,
+  /a\.grantee not in \(\s*0,'anon'::regrole,'authenticated'::regrole,'service_role'::regrole,'postgres'::regrole\s*\)/,
+]) {
+  assert.match(independentDangerousDefaultAcl, requiredContract);
+}
+assert.doesNotMatch(
+  independentDangerousDefaultAcl,
+  /\b(?:supabase_admin|storage|graphql|graphql_public)\b/,
+  "La categoría no debe enumerar propietarios ni esquemas ajenos",
+);
+assert.doesNotMatch(
+  independentDangerousDefaultAcl,
+  /defaclobjtype::text\s*(?:=|in)\s*\([^)]*'S'/,
+  "La categoría no debe consumir defaults de secuencia",
+);
+assert.doesNotMatch(
+  independentDangerousDefaultAcl,
+  /privilege_type/,
+  "Todo privilegio de un grantee inesperado debe bloquear, no sólo una lista parcial",
 );
 const independentCanonicalHashes = [...new Set(independentBlocking.match(/\b[a-f0-9]{32}\b/g) ?? [])];
 for (const hash of independentCanonicalHashes) {
@@ -373,6 +451,170 @@ assert.match(sources.migration, /^--[\s\S]*\nbegin;/);
 assert.match(sources.migration.trimEnd(), /commit;$/);
 assert.match(sources.preflight, /begin transaction read only;/);
 assert.match(sources.preflight.trimEnd(), /rollback;$/);
+for (const [artifact, source] of Object.entries(sources)) {
+  assert.doesNotMatch(
+    source,
+    /alter\s+default\s+privileges/i,
+    `${artifact}: 0010 no puede alterar privilegios predeterminados`,
+  );
+}
+assert.match(
+  sources.migration,
+  /set_config\('sitaa_0010\.default_acl_hash',[\s\S]*from pg_default_acl\),true\)/,
+  "La migración debe capturar el hash completo de pg_default_acl",
+);
+assert.match(
+  sources.migration,
+  /current_setting\('sitaa_0010\.default_acl_hash',true\) is distinct from[\s\S]*from pg_default_acl/,
+  "La guarda final debe comparar nuevamente el hash completo de pg_default_acl",
+);
+
+const ledgerCreate = sources.migration.indexOf("create table public.admin_auth_operations (");
+const ledgerRls = sources.migration.indexOf(
+  "alter table public.admin_auth_operations enable row level security;",
+  ledgerCreate,
+);
+const ledgerKnownRevoke = sources.migration.indexOf(
+  "revoke all on table public.admin_auth_operations from public,anon,authenticated,service_role;",
+  ledgerRls,
+);
+const ledgerDynamicRevoke = sources.migration.indexOf("do $normalize_ledger_acl$", ledgerKnownRevoke);
+const ledgerDynamicRevokeStatement = sources.migration.indexOf(
+  "execute format('revoke all privileges on table public.admin_auth_operations from %I',grantee_name);",
+  ledgerDynamicRevoke,
+);
+const ledgerDynamicRevokeEnd = sources.migration.indexOf(
+  "$normalize_ledger_acl$;",
+  ledgerDynamicRevoke,
+);
+const ledgerOwnerGrant = sources.migration.indexOf(
+  "grant all privileges on table public.admin_auth_operations to postgres;",
+  ledgerDynamicRevokeStatement,
+);
+const ledgerPostAcl = sources.migration.indexOf(
+  "and (select count(*) from aclexplode(table_definition.relacl) acl",
+  ledgerOwnerGrant,
+);
+const migrationCommit = sources.migration.lastIndexOf("commit;");
+for (const [previous, next, label] of [
+  [ledgerCreate, ledgerRls, "CREATE TABLE -> RLS"],
+  [ledgerRls, ledgerKnownRevoke, "RLS -> revocación conocida"],
+  [ledgerKnownRevoke, ledgerDynamicRevoke, "revocación conocida -> normalización dinámica"],
+  [ledgerDynamicRevoke, ledgerDynamicRevokeStatement, "inicio -> revocación dinámica"],
+  [ledgerDynamicRevokeStatement, ledgerDynamicRevokeEnd, "revocación dinámica -> cierre"],
+  [ledgerDynamicRevokeEnd, ledgerOwnerGrant, "normalización dinámica -> grant owner"],
+  [ledgerOwnerGrant, ledgerPostAcl, "grant owner -> guarda ACL"],
+  [ledgerPostAcl, migrationCommit, "guarda ACL -> COMMIT"],
+]) {
+  assert.ok(previous >= 0 && next > previous, `Orden ACL del ledger inválido: ${label}`);
+}
+const ledgerDynamicNormalization = sources.migration.slice(
+  ledgerDynamicRevoke,
+  ledgerDynamicRevokeEnd,
+);
+assert.match(
+  ledgerDynamicNormalization,
+  /aclexplode\(coalesce\(table_definition\.relacl,acldefault\('r',table_definition\.relowner\)\)\)/,
+);
+assert.match(
+  ledgerDynamicNormalization,
+  /acl\.grantee<>table_definition\.relowner and acl\.grantee<>0/,
+);
+const ledgerPostAclDefinition = sources.migration.slice(ledgerPostAcl, migrationCommit);
+assert.match(ledgerPostAclDefinition, /acl\.grantee=table_definition\.relowner[\s\S]*\)=8/);
+assert.match(ledgerPostAclDefinition, /count\(\*\) from aclexplode\(table_definition\.relacl\)\)=8/);
+
+const functionAclContracts = [
+  ["guard_admin_auth_operation_b3a()", null],
+  ["get_admin_account_auth_lifecycle_context_b3a(uuid)", "authenticated"],
+  ["prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)", "authenticated"],
+  ["finalize_admin_account_auth_reactivation_b3a(uuid)", "authenticated"],
+  ["claim_admin_auth_operation_b3a(uuid,uuid)", "service_role"],
+  ["record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)", "service_role"],
+];
+for (const [signature, approvedRole] of functionAclContracts) {
+  assert.ok(
+    sources.migration.includes(
+      `revoke all on function public.${signature} from public,anon,authenticated,service_role;`,
+    ),
+    `Falta revocación explícita de ${signature}`,
+  );
+  if (approvedRole) {
+    assert.ok(
+      sources.migration.includes(`grant execute on function public.${signature} to ${approvedRole};`),
+      `Falta grant aprobado de ${signature}`,
+    );
+  }
+}
+assert.match(
+  sources.migration,
+  /with expected\(function_oid,grantee\) as \([\s\S]*select \* from expected except select \* from actual[\s\S]*select \* from actual except select \* from expected/,
+);
+
+const normalizedDefaultAclGrantees = new Set([
+  "PUBLIC",
+  "anon",
+  "authenticated",
+  "service_role",
+  "postgres",
+]);
+function dangerousDefaultAclFixture(rows, currentUser = "postgres", sessionUser = "postgres") {
+  if (currentUser !== "postgres" || sessionUser !== "postgres") return 1;
+  return rows.filter((row) =>
+    row.owner === "postgres"
+      && (row.schema === "global" || row.schema === "public")
+      && (row.objectType === "r" || row.objectType === "f")
+      && !normalizedDefaultAclGrantees.has(row.grantee)).length;
+}
+function platformDefaultAclGroup(owner, schema) {
+  const rows = [];
+  for (const grantee of ["anon", "authenticated"]) {
+    rows.push({ owner, schema, objectType: "S", grantee, privilege: "UPDATE" });
+    for (const privilege of ["INSERT", "UPDATE", "DELETE", "TRUNCATE"]) {
+      rows.push({ owner, schema, objectType: "r", grantee, privilege });
+    }
+  }
+  return rows;
+}
+const currentPlatformDefaultAclFixture = [
+  ...platformDefaultAclGroup("postgres", "public"),
+  ...platformDefaultAclGroup("postgres", "storage"),
+  ...platformDefaultAclGroup("supabase_admin", "graphql"),
+  ...platformDefaultAclGroup("supabase_admin", "graphql_public"),
+  ...platformDefaultAclGroup("supabase_admin", "public"),
+];
+assert.equal(currentPlatformDefaultAclFixture.length, 50);
+assert.equal(dangerousDefaultAclFixture(currentPlatformDefaultAclFixture), 0);
+const customDefaultAclFixtures = [
+  {
+    label: "tabla postgres/global",
+    row: { owner: "postgres", schema: "global", objectType: "r", grantee: "custom_role", privilege: "SELECT" },
+  },
+  {
+    label: "tabla postgres/public",
+    row: { owner: "postgres", schema: "public", objectType: "r", grantee: "custom_role", privilege: "INSERT" },
+  },
+  {
+    label: "función postgres/global",
+    row: { owner: "postgres", schema: "global", objectType: "f", grantee: "custom_role", privilege: "EXECUTE" },
+  },
+  {
+    label: "función postgres/public",
+    row: { owner: "postgres", schema: "public", objectType: "f", grantee: "custom_role", privilege: "EXECUTE" },
+  },
+];
+for (const fixture of customDefaultAclFixtures) {
+  assert.equal(dangerousDefaultAclFixture([fixture.row]), 1, fixture.label);
+}
+assert.equal(
+  dangerousDefaultAclFixture([
+    { owner: "postgres", schema: "global", objectType: "S", grantee: "custom_role", privilege: "UPDATE" },
+  ]),
+  0,
+  "Un default de secuencia no aplica a 0010",
+);
+assert.equal(dangerousDefaultAclFixture([], "authenticated", "postgres"), 1);
+assert.equal(dangerousDefaultAclFixture([], "postgres", "authenticated"), 1);
 for (const category of [
   "post_0009_inventory_drift",
   "post_0009_function_signature_drift",
@@ -1000,6 +1242,15 @@ for (const [signature, bodyHash] of finalBodyHashes) console.log(`  ${bodyHash} 
 console.log("Alineación migración/verificador/rollback: OK");
 console.log("Alineación restricción/índice request_id mediante conindid: OK");
 console.log("Alineación preflight independiente/embebido: OK");
+console.log(`Categorías preflight conservadas: ${independentCategories.length} blocking + ${informationalCategories.length} informational`);
+console.log("dangerous_default_acl independiente/embebida: idéntica y acotada");
+console.log(`Fixture de plataforma default ACL: ${currentPlatformDefaultAclFixture.length} entradas -> 0 bloqueos`);
+console.log(`Fixtures custom-role default ACL rechazadas: ${customDefaultAclFixtures.length}`);
+console.log("Roles de ejecución distintos de postgres rechazados: current_user/session_user");
+console.log("Defaults postgres/global de tabla y función permanecen bloqueantes: OK");
+console.log("Defaults de secuencia excluidos del alcance 0010: OK");
+console.log("Hash completo de pg_default_acl preservado; ALTER DEFAULT PRIVILEGES ausente: OK");
+console.log("Orden de normalización ACL del ledger y mapas exactos de funciones: OK");
 console.log("Mapas canónicos predestructivos y post-rollback: OK");
 console.log("Validación total de transición, incluido NULL: OK");
 console.log("Orden de locks del rollback: ledger -> auditoría -> guarda completa: OK");

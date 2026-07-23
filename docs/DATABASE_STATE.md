@@ -1,6 +1,6 @@
 # Estado reconciliado de la base de datos
 
-**Actualización documental:** 2026-07-22.
+**Actualización documental:** 2026-07-23.
 **Snapshot vivo canónico:** `2026-07-22T23:32:46Z`, estado `SUCCESS`.
 
 La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Estas migraciones son inmutables. La comparación se realizó previamente contra `supabase/reconciliation/live/`; esta preparación B.3a no volvió a conectarse a Supabase, no ejecutó SQL y no regeneró el snapshot.
@@ -66,7 +66,11 @@ Las matrices manuales de concurrencia B.2a/B.2b siguen sin ejecutarse y no const
 
 La barrera 0008 sigue siendo el límite operativo inmediato. La coordinación no simula atomicidad entre PostgreSQL y Auth: desactivar primero bloquea el perfil y después intenta suspender Auth; reactivar primero restaura Auth y sólo entonces activa el perfil. El modelo SQL conserva estados recuperables y terminales sanitizados, pero el adaptador hospedado provisional emite únicamente fallos reintentables hasta verificar una taxonomía terminal y un camino de recuperación. Nunca se persisten errores crudos.
 
-No se ha ejecutado el preflight, la migración, el verificador, el rollback, la Edge Function ni Auth Admin. Tampoco se ha probado en un proyecto hospedado el efecto sobre JWT existentes, refresh tokens o la restauración con `ban_duration = 'none'`. La matriz desechable de `docs/TEST_PLAN_0010.md` es bloqueante antes de producción.
+El primer preflight remoto se ejecutó en una transacción de sólo lectura, devolvió sus 34 filas y terminó con `ROLLBACK` y código 0. No fue aprobado: 29 de 30 categorías bloqueantes fueron cero, pero `dangerous_default_acl` devolvió 50. El diagnóstico posterior, también de sólo lectura y cerrado con `ROLLBACK`/código 0, identificó cinco grupos estándar de diez filas: `postgres/public`, `postgres/storage`, `supabase_admin/graphql`, `supabase_admin/graphql_public` y `supabase_admin/public`. No cambió ningún objeto, dato o privilegio predeterminado.
+
+La categoría corregida exige ejecutor y sesión `postgres`; inspecciona sólo defaults creados por `postgres`, globales o de `public`, para tablas y funciones, y bloquea grantees fuera de la allowlist que 0010 normaliza expresamente. Los defaults de secuencia, otros esquemas y otros propietarios quedan fuera porque no pueden inicializar los objetos creados por 0010. La captura y comparación del hash completo de `pg_default_acl` permanece intacta. La reejecución corregida sigue pendiente.
+
+La migración, el verificador, el rollback, la Edge Function y Auth Admin no se han ejecutado. Tampoco se ha probado en un proyecto hospedado el efecto sobre JWT existentes, refresh tokens o la restauración con `ban_duration = 'none'`. La matriz desechable de `docs/TEST_PLAN_0010.md` es bloqueante antes de producción.
 
 ## Pendientes
 

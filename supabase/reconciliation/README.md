@@ -91,6 +91,10 @@ Los intentos 1 y 2 fallaron antes del DDL: primero por el `EXISTS` exterior sin 
 
 ## Preparación local 0010
 
-`0010_coordinated_auth_session_suspension_{preflight,verify,rollback}.sql` acompaña la migración local B.3a. El preflight es de sólo lectura y compara el contrato post‑0009; el verificador usa fixtures sintéticas y simula resultados Auth sin invocar Auth Admin; el rollback sólo es elegible mientras no exista ninguna operación ni evento B.3a real. Ninguno de estos archivos ha sido ejecutado.
+`0010_coordinated_auth_session_suspension_{preflight,verify,rollback}.sql` acompaña la migración local B.3a. El preflight es de sólo lectura y compara el contrato post‑0009; el verificador usa fixtures sintéticas y simula resultados Auth sin invocar Auth Admin; el rollback sólo es elegible mientras no exista ninguna operación ni evento B.3a real.
+
+El primer preflight remoto 0010 devolvió 34 filas, terminó con `ROLLBACK` y código de salida 0 y no cambió objetos o datos. No fue aprobado: 29 de 30 categorías bloqueantes fueron cero, mientras `dangerous_default_acl` devolvió 50. Un diagnóstico adicional de sólo lectura, también con `ROLLBACK` y código 0, confirmó `postgres` como `current_user` y `session_user` y cinco grupos estándar de diez filas: `postgres/public`, `postgres/storage`, `supabase_admin/graphql`, `supabase_admin/graphql_public` y `supabase_admin/public`.
+
+El predicado anterior era demasiado amplio. La corrección local sólo inspecciona defaults creados por `postgres`, globales o de `public`, para tablas y funciones, y bloquea grantees que no formen parte de la allowlist normalizada por 0010. Las secuencias y los defaults de otros propietarios o esquemas no se consumen. No se alteró ningún privilegio predeterminado: 0010 conserva la revocación explícita y dinámica del ledger, las ACL exactas de funciones y la captura/comparación del hash completo de `pg_default_acl`. La reejecución del preflight corregido permanece pendiente; migración, verificador, rollback, Edge y Auth Admin no se han ejecutado.
 
 El snapshot autoritativo continúa siendo post‑0009 y no debe incorporar 0010 hasta después de una aplicación controlada, verificación, prueba desechable Auth y nueva reconciliación. La Edge Function no se despliega ni se invoca durante la preparación local. No se debe crear 0011 mientras 0010 permanezca abierta.

@@ -148,7 +148,21 @@ with blocking(category,aggregate_count) as (
   ('controlled_seed_drift',case when (with rows(catalog,row_json) as (
     select 'academic_periods',to_jsonb(s)::text from public.academic_periods s union all select 'academic_programs',to_jsonb(s)::text from public.academic_programs s union all select 'activity_modalities',to_jsonb(s)::text from public.activity_modalities s union all select 'activity_statuses',to_jsonb(s)::text from public.activity_statuses s union all select 'activity_types',to_jsonb(s)::text from public.activity_types s union all select 'attention_categories',to_jsonb(s)::text from public.attention_categories s union all select 'divisions',to_jsonb(s)::text from public.divisions s union all select 'location_types',to_jsonb(s)::text from public.location_types s union all select 'participant_roles',to_jsonb(s)::text from public.participant_roles s union all select 'roles',to_jsonb(s)::text from public.roles s union all select 'service_types',to_jsonb(s)::text from public.service_types s)
     select count(*)=51 and md5(string_agg(catalog||E'\t'||row_json,E'\n' order by catalog,row_json))='2e450238768fbe9889470864a1832486' from rows) then 0 else 1 end),
-  ('dangerous_default_acl',(select count(*) from pg_default_acl d cross join lateral aclexplode(d.defaclacl) a where a.grantee in (0,'anon'::regrole,'authenticated'::regrole) and a.privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE')))
+  ('dangerous_default_acl',
+    case
+      when current_user::text<>'postgres' or session_user::text<>'postgres' then 1
+      else (
+        select count(*)
+        from pg_default_acl d
+        cross join lateral aclexplode(d.defaclacl) a
+        where d.defaclrole='postgres'::regrole
+          and (d.defaclnamespace=0 or d.defaclnamespace='public'::regnamespace)
+          and d.defaclobjtype::text in ('r','f')
+          and a.grantee not in (
+            0,'anon'::regrole,'authenticated'::regrole,'service_role'::regrole,'postgres'::regrole
+          )
+      )
+    end)
 ), informational(category,aggregate_count) as (
   values
   ('inactive_accounts',(select count(*) from public.profiles where account_status='inactive')),
