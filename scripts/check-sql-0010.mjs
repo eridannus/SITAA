@@ -32,6 +32,15 @@ const sources = Object.fromEntries(Object.entries(artifacts).map(([key, relative
 const edge = fs.readFileSync(path.join(root, "supabase/functions/admin-account-auth-lifecycle/index.ts"), "utf8");
 const adapter = fs.readFileSync(path.join(root, "supabase/functions/admin-account-auth-lifecycle/auth-admin-adapter.ts"), "utf8");
 
+function immutableTextSha256(text) {
+  const canonicalLfText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return crypto.createHash("sha256").update(canonicalLfText, "utf8").digest("hex");
+}
+
+function immutableTextArtifactSha256(filePath) {
+  return immutableTextSha256(fs.readFileSync(filePath, "utf8"));
+}
+
 function lineAtOffset(source, offset) {
   return source.slice(0, offset).split("\n").length;
 }
@@ -1215,21 +1224,57 @@ for (const marker of [
 
 const immutable = new Map([
   ["0001_baseline_current_schema.sql", "62c8e53d794716b22cef2bd1008aa6704f8541cfc660825d4d8a538891274dfd"],
-  ["0002_database_security_and_integrity.sql", "59a8bb986d84f58b4f13a9d990bf1dee59e06877fa635d95acf90538fd1ff949"],
+  ["0002_database_security_and_integrity.sql", "96329a10b93ad07a9da9d73764df78b4fba20bc0e1ba867685037ac6973fa536"],
   ["0003_fix_draft_temporal_lifecycle.sql", "059f0ee574015fc8f5a01631a7d6f894ffd429cfb3f790c9c858cd4cbe4d61e3"],
   ["0004_identity_registration_foundation.sql", "1a0ee8a54ecaa627c25b116189113ac84ef07b2f0f4ac60731dd64143cd0c6f5"],
   ["0005_fix_google_oauth_user_creation.sql", "89a7f8a9dce2df9e0466101c254a80a05493b93d7796bf772e6b46d7004663b5"],
   ["0006_structured_person_names.sql", "330dbd4d5a5fc5d508100ca09a3f4c989bd0e7a4ce4aadff2daaf4ab352db1f3"],
   ["0007_admin_account_directory_audit.sql", "967dccf8acabdd0955947cf42b97727e73072e1d5c7b0a8a2f574e126fce32d4"],
-  ["0008_operational_account_barrier_identity_correction.sql", "9e5f05ef02f81e62a31e19ad4c7a693f323c0a4936cbf816fd3757295fb11c17"],
+  ["0008_operational_account_barrier_identity_correction.sql", "b1b1917203d4243385daa4b85f45d17d5d75c64e9822bdf5372ff66c7b0bca9a"],
   ["0009_admin_account_lifecycle_transitions.sql", "c525998b028d5d0f8f7eed6803444b4a8e529e478c7846e8894227a65593b922"],
 ]);
 for (const [file, expected] of immutable) {
-  const digest = crypto.createHash("sha256").update(fs.readFileSync(path.join(root, "supabase/migrations", file))).digest("hex");
+  const digest = immutableTextArtifactSha256(path.join(root, "supabase/migrations", file));
   assert.equal(digest, expected, `Migración inmutable modificada: ${file}`);
 }
+
+const immutableHashRegressionBase = "begin;\n-- comentario base\nselect 1;\ncommit;\n";
+const immutableHashRegressionDigest = immutableTextSha256(immutableHashRegressionBase);
+assert.equal(
+  immutableTextSha256(immutableHashRegressionBase.replace(/\n/g, "\r\n")),
+  immutableHashRegressionDigest,
+  "Los finales CRLF deben producir el mismo hash canónico que LF",
+);
+assert.equal(
+  immutableTextSha256(immutableHashRegressionBase.replace(/\n/g, "\r")),
+  immutableHashRegressionDigest,
+  "Los CR solitarios deben producir el mismo hash canónico que LF",
+);
+for (const [label, mutated] of [
+  ["token SQL", immutableHashRegressionBase.replace("select 1", "select 2")],
+  ["espacio añadido", immutableHashRegressionBase.replace("select 1", "select  1")],
+  ["espacio retirado", immutableHashRegressionBase.replace("select 1", "select1")],
+  ["comentario añadido", immutableHashRegressionBase.replace("commit;", "-- comentario adicional\ncommit;")],
+  ["comentario retirado", immutableHashRegressionBase.replace("-- comentario base\n", "")],
+  ["salto final retirado", immutableHashRegressionBase.slice(0, -1)],
+  ["salto final añadido", `${immutableHashRegressionBase}\n`],
+  ["BOM añadido", `\uFEFF${immutableHashRegressionBase}`],
+]) {
+  assert.notEqual(
+    immutableTextSha256(mutated),
+    immutableHashRegressionDigest,
+    `La regresión debe detectar cambio de contenido: ${label}`,
+  );
+}
+
 assert.equal(fs.readdirSync(path.join(root, "supabase/migrations")).some((name) => /^0011_/.test(name)), false);
 assert.equal(coreArtifacts.length, 16);
+console.log("Immutable migration hashes:");
+console.log("- canonical EOL mode: LF");
+console.log(`- migrations audited: ${immutable.size}`);
+console.log("- LF/CRLF equivalence regression: OK");
+console.log("- lone CR/LF equivalence regression: OK");
+console.log("- content mutation rejection: OK");
 console.log("SHA-256 del paquete de revisión completo 0010:");
 for (const relative of coreArtifacts) {
   const digest = crypto.createHash("sha256")
