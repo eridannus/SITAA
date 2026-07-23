@@ -5,7 +5,7 @@
 Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción. En esta preparación:
 
 - 0010 no está aplicada;
-- el primer preflight PostgreSQL se ejecutó en modo de sólo lectura, terminó con `ROLLBACK` y no fue aprobado; el verificador no se ha ejecutado;
+- el primer preflight PostgreSQL fue rechazado y la reejecución corregida fue aprobada; ambas ejecuciones fueron de sólo lectura y terminaron con `ROLLBACK`; el verificador no se ha ejecutado;
 - la Edge Function no está desplegada ni se ha invocado;
 - no se ejecutó ninguna operación Auth Admin;
 - no se ha probado suspensión, refresh, JWT ni restauración en Supabase hospedado;
@@ -21,7 +21,9 @@ Una revisión posterior detectó acceso crudo a tablas protegidas dentro de inte
 
 La revisión de cierre aún local detectó dos cercos de presentación que rompían la idempotencia autoritativa: `canDeactivate`/`canReactivate` impedían que un `start` repetido llegara a `prepare` después de cambiar el estado, y `canRetryOrFinalize` impedía recuperar el replay final. La Server Action usa ahora esos indicadores sólo en el flujo legado o en presentación; con B.3a disponible valida la forma y deja que las RPC autoritativas resuelvan el mismo `request_id`, conflictos, operaciones no finales y replays. También se cerró la matriz etapa/error del ledger, el parser Edge exige snapshots exactos y SQLSTATE `42501` sólo implica pérdida de autoridad ante `sitaa_admin_access_denied`. El hallazgo previo de tipos internos `char` del catálogo y la reautorización posterior a locks permanecen cubiertos. 0010 continúa sin aplicar y B.3a permanece abierta.
 
-El primer preflight remoto 0010 devolvió 34 filas: 29 de las 30 categorías bloqueantes fueron cero y `dangerous_default_acl` devolvió 50. Terminó con `ROLLBACK` y código de salida 0, por lo que no cambió objetos ni datos, pero no fue aprobado. Un diagnóstico posterior, también de sólo lectura, con `ROLLBACK` y código 0, confirmó `current_user = postgres`, `session_user = postgres` y cinco grupos estándar de diez filas: `postgres/public`, `postgres/storage`, `supabase_admin/graphql`, `supabase_admin/graphql_public` y `supabase_admin/public`. El predicado era demasiado amplio porque mezclaba propietarios, esquemas y secuencias que 0010 no consume. La corrección local limita el bloqueo a defaults de `postgres`, globales o de `public`, para tablas o funciones, y sólo ante grantees que la normalización revisada no absorbe; la reejecución corregida sigue pendiente y no se alteró ningún privilegio predeterminado.
+El primer preflight remoto 0010 devolvió 34 filas: 29 de las 30 categorías bloqueantes fueron cero y `dangerous_default_acl` devolvió 50. Terminó con `ROLLBACK` y código de salida 0, por lo que no cambió objetos, filas o privilegios, pero no fue aprobado. Un diagnóstico posterior, también de sólo lectura, con `ROLLBACK` y código 0, confirmó `current_user = postgres`, `session_user = postgres` y cinco grupos estándar de diez filas: `postgres/public`, `postgres/storage`, `supabase_admin/graphql`, `supabase_admin/graphql_public` y `supabase_admin/public`. El predicado era demasiado amplio porque mezclaba propietarios, esquemas y secuencias que 0010 no consume; el diagnóstico no cambió ningún privilegio predeterminado.
+
+La reejecución corregida devolvió exactamente 34 filas: las 30 categorías bloqueantes quedaron en cero, incluido `dangerous_default_acl = 0`, y las cuatro categorías informativas fueron `active_exact_b1_administrators = 1`, `existing_b2b_lifecycle_events = 4`, `inactive_accounts = 0` e `inactive_accounts_with_active_or_future_assignments = 0`. Terminó con `ROLLBACK`, código de salida 0 y sin `ERROR`; no expuso UUID, filas operativas, PII, credenciales, tokens o secretos y no cambió objetos, filas o privilegios. Este segundo preflight quedó aprobado.
 
 El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
 
@@ -59,22 +61,26 @@ Si Deno o el runtime Edge local no está disponible, registrar esa ausencia y no
 
 ## 2. Preflight PostgreSQL
 
-La primera ejecución no fue aprobada por el falso positivo documentado. En una nueva ventana de mantenimiento revisada, reejecutar la versión corregida de `0010_coordinated_auth_session_suspension_preflight.sql`:
+La primera ejecución no fue aprobada por el falso positivo documentado. La segunda ejecución usó la versión corregida de `0010_coordinated_auth_session_suspension_preflight.sql` y quedó aprobada con esta evidencia:
 
-- debe devolver todas las categorías ordenadas;
-- toda categoría `blocking` debe tener conteo cero;
-- debe terminar con `ROLLBACK`;
-- no debe mostrar UUID, PII, secretos ni filas operativas.
+- 34 categorías ordenadas: 30 `blocking` y cuatro `informational`;
+- las 30 categorías bloqueantes en cero, incluido `dangerous_default_acl`;
+- conteos informativos exactos 1/4/0/0 para administradores B.1 activos, eventos B.2b, cuentas inactivas y cuentas inactivas con asignaciones activas o futuras;
+- `ROLLBACK`, código de salida 0 y ausencia de `ERROR`;
+- ausencia de UUID, PII, secretos, credenciales, tokens o filas operativas;
+- cero cambios en objetos, filas o privilegios.
 
-Validar inventario post‑0009 18/165/80/43/11/54/25/18/51, privilegios 137/267/6/445, firmas/cuerpos/metadata de las 54 funciones, ACL nominal exacto de funciones/tablas/secuencias, tres grants explícitos de columna de nombres propios, Auth/perfil, triggers, B.1, B.2a, B.2b, auditoría, semillas y ausencia de objetos 0010. Los hashes nominales se derivaron del snapshot vivo canónico post‑0009 ya versionado; no se regeneró ni modificó. `dangerous_default_acl` debe fallar si la sesión o el ejecutor no son `postgres`, o si un default global/de `public` de tablas o funciones creado por `postgres` concede a un grantee distinto de `PUBLIC`, `anon`, `authenticated`, `service_role` o el owner. No consume defaults de secuencia, otros propietarios ni otros esquemas. La migración no altera `pg_default_acl`: conserva la captura de su hash completo y exige igualdad exacta post-DDL. Guardar el resultado sanitizado antes de considerar la aplicación.
+La ejecución aprobada validó el inventario post‑0009 18/165/80/43/11/54/25/18/51, privilegios 137/267/6/445, firmas/cuerpos/metadata de las 54 funciones, ACL nominal exacto de funciones/tablas/secuencias, tres grants explícitos de columna de nombres propios, Auth/perfil, triggers, B.1, B.2a, B.2b, auditoría, semillas y ausencia de objetos 0010. Los hashes nominales se derivaron del snapshot vivo canónico post‑0009 ya versionado; no se regeneró ni modificó. `dangerous_default_acl` falla si la sesión o el ejecutor no son `postgres`, o si un default global/de `public` de tablas o funciones creado por `postgres` concede a un grantee distinto de `PUBLIC`, `anon`, `authenticated`, `service_role` o el owner. No consume defaults de secuencia, otros propietarios ni otros esquemas. La migración no altera `pg_default_acl`: conserva la captura de su hash completo y exige igualdad exacta post-DDL.
 
 ## 3. Migración y verificador transaccional
 
-Después de publicar una aplicación compatible y aprobar el preflight:
+El preflight corregido ya está aprobado. El siguiente orden operativo autorizado es:
 
-1. aplicar 0010 una sola vez y exigir `COMMIT` posterior a la guarda post‑DDL;
-2. ejecutar `0010_coordinated_auth_session_suspension_verify.sql`;
-3. exigir `ROLLBACK` final y comprobar que no persisten fixtures, operaciones, auditoría o grants temporales.
+1. publicar el commit de aplicación compatible y confirmar que su despliegue terminó correctamente;
+2. desplegar la Edge Function revisada;
+3. sólo entonces aplicar 0010 una sola vez y exigir `COMMIT` posterior a la guarda post‑DDL;
+4. ejecutar `0010_coordinated_auth_session_suspension_verify.sql`;
+5. exigir `ROLLBACK` final y comprobar que no persisten fixtures, operaciones, auditoría o grants temporales.
 
 El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS sin políticas, triggers, firmas/argumentos/columnas de retorno, propiedades de función, ACL sin grant option y regresiones 0001–0009. Los cinco índices deben ser exactamente `admin_auth_operations_actor_requested_idx`, `admin_auth_operations_one_nonfinal_target_uidx`, `admin_auth_operations_pkey`, `admin_auth_operations_request_id_key` y `admin_auth_operations_target_status_idx`. La restricción única de `request_id` debe apuntar mediante `conindid` al índice `_key`, que debe ser único, válido, listo, no primario, no parcial, sin expresión y contener únicamente `request_id`; no puede existir otro índice de esa columna.
 
