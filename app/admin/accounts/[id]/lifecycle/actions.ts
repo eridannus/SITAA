@@ -100,6 +100,7 @@ function edgeMessage(code: string) {
     operation_terminal_failure: "La operación terminó con una incidencia que requiere revisión técnica.",
     result_persistence_failed: "La sincronización necesita reconciliación antes de continuar.",
     trusted_boundary_unavailable: "El servicio confiable de sincronización Auth no está disponible.",
+    authentication_required: "Tu sesión ya no es válida. Inicia sesión nuevamente antes de reintentar.",
     unexpected_failure: "La operación quedó pendiente por una incidencia temporal del límite confiable.",
   };
   return messages[code] ?? "La operación de cuenta no pudo completarse.";
@@ -147,8 +148,12 @@ export async function submitAccountLifecycleTransition(
         return state(values, "error", "La operación ya no puede reintentarse desde este estado.");
       }
       const result = await runAdminAccountAuthLifecycle({ mode: "retry", operationId: values.operation_id });
-      if (result.state === "completed") completed = true;
-      else return state(
+      if (result.state === "completed"
+        && result.code === (values.transition === "deactivate" ? "account_deactivated" : "account_reactivated")) {
+        completed = true;
+      } else if (result.state === "completed") {
+        return state(values, "error", "La respuesta final no corresponde a la transición solicitada.");
+      } else return state(
         { ...values, mode: "retry", operation_id: result.operationId ?? values.operation_id },
         result.state === "terminal_failure" ? "terminal_failure"
           : result.state === "rejected" ? "error" : "pending",
@@ -170,8 +175,12 @@ export async function submitAccountLifecycleTransition(
           transition: values.transition as AdminAccountLifecycleTransition,
           reason, requestId: values.request_id,
         });
-        if (result.state === "completed") completed = true;
-        else {
+        if (result.state === "completed"
+          && result.code === (values.transition === "deactivate" ? "account_deactivated" : "account_reactivated")) {
+          completed = true;
+        } else if (result.state === "completed") {
+          return state(values, "error", "La respuesta final no corresponde a la transición solicitada.");
+        } else {
           const nextValues = result.operationId
             ? { ...values, mode: "retry" as const, operation_id: result.operationId }
             : values;

@@ -162,6 +162,30 @@ En una base desechable, dos sesiones deben usar simultáneamente el mismo `reque
 
 Otra pareja de sesiones debe iniciar la transacción de la sesión que espera antes de que el holder libere el lock. Al continuar, el waiter debe capturar tiempo de pared posterior al lock: `processing_started_at` no puede quedar retrodatado, la operación más reciente debe conservar el orden correcto y un lease recién adquirido no puede parecer vencido ni reclamarse prematuramente. Repetir la recuperación después de cinco minutos y la recuperación inmediata de `processing/auth_synchronized`. El verificador de una sola transacción cubre reutilización, conflicto, cercado de intentos y monotonicidad local, pero no demuestra espera real ni orden intersesión. Ninguna de estas pruebas se ejecutó durante este hardening.
 
+### Matriz de pérdida de autoridad tras espera — reservada y no ejecutada
+
+Estas pruebas requieren dos sesiones en una base PostgreSQL/Supabase desechable:
+
+| Escenario | Sesión A | Sesión B | Resultado exigido |
+| --- | --- | --- | --- |
+| Claim | Inicia `claim` con autoridad B.1 y espera el advisory lock. | Retiene el lock, desactiva A y confirma. | A recibe `42501/sitaa_admin_access_denied`; `attempt_count`, estado y timestamps quedan intactos. |
+| Persistencia de resultado | Con intento reclamado, inicia `record` y espera. | Adquiere primero el lock, desactiva A y confirma. | A recibe `42501`; no se inserta evento Auth ni cambia el ledger. |
+| Replay final | Solicita replay de una operación ya `succeeded` y espera. | Retiene el lock, desactiva A y confirma. | A recibe `42501`, nunca la fila final. |
+| Recuperación | Ya perdió autoridad y deja una operación varada. | Otra autoridad B.1 exacta reclama/finaliza. | Se recupera sin repetir trabajo Auth después de `auth_synchronized`. |
+
+El verificador transaccional sólo demuestra denegación determinista cuando el actor ya está inactivo/no es B.1 exacto al invocar, ausencia de mutación y recuperación por otro administrador. No prueba la espera intersesión.
+
+### Contrato exacto de respuestas Edge
+
+El parser debe aceptar únicamente matrices discriminadas:
+
+- `completed`: `account_deactivated` o `account_reactivated`, siempre con UUID;
+- `terminal_failure`: código terminal SQL permitido, siempre con UUID;
+- `pending`: código de una operación existente con UUID, o fallo previo a conocer la operación sólo para la allowlist que admite `null`;
+- `rejected`: código exacto de solicitud, autenticación o preparación y `operationId = null`.
+
+Debe rechazar llaves adicionales, códigos/estados desconocidos, UUID ausente donde corresponda y cualquier cruce entre código y estado. La Server Action exige además que `deactivate` termine en `account_deactivated` y `reactivate` en `account_reactivated`; un `state = completed` aislado nunca autoriza redirección.
+
 ## 6. Smoke tests de producción
 
 Sólo después de aprobar las fases anteriores y desplegar la Edge Function:

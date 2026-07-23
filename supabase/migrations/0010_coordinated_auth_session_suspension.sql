@@ -269,7 +269,7 @@ begin
   perform set_config('sitaa_0010.default_acl_hash',
     (select md5(coalesce(string_agg(defaclrole::text||':'||defaclnamespace::text||':'||defaclobjtype::text||':'||defaclacl::text,'|' order by defaclrole,defaclnamespace,defaclobjtype),'')) from pg_default_acl),true);
   perform set_config('sitaa_0010.prior_function_metadata_hash',
-    (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||pg_get_userbyid(p.proowner)||':'||l.lanname||':'||p.provolatile||':'||p.prosecdef::text||':'||coalesce(p.proconfig::text,''),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang where n.nspname='public'),true);
+    (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||pg_get_userbyid(p.proowner)||':'||l.lanname||':'||p.provolatile::text||':'||p.prosecdef::text||':'||coalesce(p.proconfig::text,''),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang where n.nspname='public'),true);
   perform set_config('sitaa_0010.prior_function_body_hash',
     (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'),true);
   perform set_config('sitaa_0010.prior_function_acl_hash',
@@ -697,12 +697,15 @@ as $function$
 declare
   operation_row public.admin_auth_operations%rowtype;
   operation_timestamp timestamptz;
+  operation_found boolean;
 begin
   if coalesce(auth.jwt()->>'role','')<>'service_role' then raise exception 'sitaa_service_boundary_required' using errcode='42501'; end if;
   if caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
   perform pg_advisory_xact_lock(1397310529,9002);
   select operation.* into operation_row from public.admin_auth_operations operation where operation.id=requested_operation_id for update;
-  if not found then raise exception 'sitaa_auth_operation_unavailable' using errcode='P0001'; end if;
+  operation_found:=found;
+  if caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
+  if not operation_found then raise exception 'sitaa_auth_operation_unavailable' using errcode='P0001'; end if;
   operation_timestamp:=greatest(clock_timestamp(),operation_row.updated_at);
   if operation_row.status in ('succeeded','terminal_failure') then
     return query select operation_row.id,operation_row.target_profile_id,operation_row.operation_code,
@@ -748,6 +751,7 @@ declare
   event_id uuid;
   action text;
   operation_timestamp timestamptz;
+  operation_found boolean;
 begin
   if coalesce(auth.jwt()->>'role','')<>'service_role' then raise exception 'sitaa_service_boundary_required' using errcode='42501'; end if;
   if caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
@@ -773,7 +777,9 @@ begin
   end if;
   perform pg_advisory_xact_lock(1397310529,9002);
   select operation.* into operation_row from public.admin_auth_operations operation where operation.id=requested_operation_id for update;
-  if not found or operation_row.status<>'processing' then raise exception 'sitaa_auth_operation_not_processing' using errcode='55000'; end if;
+  operation_found:=found;
+  if caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
+  if not operation_found or operation_row.status<>'processing' then raise exception 'sitaa_auth_operation_not_processing' using errcode='55000'; end if;
   if claimed_attempt_count<>operation_row.attempt_count then
     raise exception 'sitaa_auth_operation_stale_attempt' using errcode='55000';
   end if;
@@ -850,20 +856,22 @@ declare
   operation_row public.admin_auth_operations%rowtype;
   lifecycle_result record;
   operation_timestamp timestamptz;
+  operation_found boolean;
 begin
   if actor_id is null or not public.is_exact_b1_account_admin_profile_b2b(actor_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
   perform pg_advisory_xact_lock(1397310529,9002);
   select operation.* into operation_row from public.admin_auth_operations operation where operation.id=requested_operation_id for update;
-  if found and operation_row.operation_code='reactivate' and operation_row.status='succeeded' then
+  operation_found:=found;
+  if not public.is_exact_b1_account_admin_profile_b2b(actor_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
+  if operation_found and operation_row.operation_code='reactivate' and operation_row.status='succeeded' then
     return query select operation_row.id,operation_row.target_profile_id,operation_row.status,
       operation_row.completed_stage,operation_row.profile_audit_event_id,
       operation_row.auth_audit_event_id,operation_row.completed_at;
     return;
   end if;
-  if not found or operation_row.operation_code<>'reactivate' or operation_row.status<>'processing' or operation_row.completed_stage<>'auth_synchronized' then
+  if not operation_found or operation_row.operation_code<>'reactivate' or operation_row.status<>'processing' or operation_row.completed_stage<>'auth_synchronized' then
     raise exception 'sitaa_auth_operation_not_ready_to_finalize' using errcode='55000';
   end if;
-  if not public.is_exact_b1_account_admin_profile_b2b(actor_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
   select * into lifecycle_result from public.transition_admin_account_lifecycle_b2b(operation_row.target_profile_id,'reactivate',operation_row.reason);
   operation_timestamp:=greatest(clock_timestamp(),operation_row.updated_at);
   perform set_config('sitaa.b3a_writer','finalize',true);
@@ -995,7 +1003,7 @@ begin
                and attribute_definition.attnum=key_column.attnum)='request_id'
      )
      or (select count(*) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>2
-     or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
+     or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled::text||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
        'guard_admin_auth_operation_b3a:31:O:guard_admin_auth_operation_b3a()|guard_admin_auth_operation_truncate_b3a:34:O:guard_admin_auth_operation_b3a()'
      or exists (
        with expected(tgname,definition) as (
@@ -1078,9 +1086,9 @@ begin
       ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
       ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
       ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','2d8d580677411110fb9255fcced4c715'),
-      ('claim_admin_auth_operation_b3a(uuid,uuid)','7da7aec9b4ff17aa551a4cf820d5cfbd'),
-      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','6467440196296d77662eb4cce77d3226'),
-      ('finalize_admin_account_auth_reactivation_b3a(uuid)','b8223a508478e80edd340e231b66abeb')
+      ('claim_admin_auth_operation_b3a(uuid,uuid)','f100545d885836bdfcc6c6f71063f709'),
+      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','97eaf8df0cf10dcd9ddc623feaaceede'),
+      ('finalize_admin_account_auth_reactivation_b3a(uuid)','496707f95d11ca6d9b75c1b3f43a3c6b')
     ) expected(signature,body_hash)
     left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
     where p.oid is null or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash
@@ -1151,7 +1159,7 @@ begin
   if current_setting('sitaa_0010.default_acl_hash',true) is distinct from
        (select md5(coalesce(string_agg(defaclrole::text||':'||defaclnamespace::text||':'||defaclobjtype::text||':'||defaclacl::text,'|' order by defaclrole,defaclnamespace,defaclobjtype),'')) from pg_default_acl)
      or current_setting('sitaa_0010.prior_function_metadata_hash',true) is distinct from
-       (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||pg_get_userbyid(p.proowner)||':'||l.lanname||':'||p.provolatile||':'||p.prosecdef::text||':'||coalesce(p.proconfig::text,''),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang where n.nspname='public' and p.proname not in ('guard_admin_auth_operation_b3a','get_admin_account_auth_lifecycle_context_b3a','prepare_admin_account_auth_lifecycle_b3a','finalize_admin_account_auth_reactivation_b3a','claim_admin_auth_operation_b3a','record_admin_auth_operation_result_b3a'))
+       (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||pg_get_userbyid(p.proowner)||':'||l.lanname||':'||p.provolatile::text||':'||p.prosecdef::text||':'||coalesce(p.proconfig::text,''),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang where n.nspname='public' and p.proname not in ('guard_admin_auth_operation_b3a','get_admin_account_auth_lifecycle_context_b3a','prepare_admin_account_auth_lifecycle_b3a','finalize_admin_account_auth_reactivation_b3a','claim_admin_auth_operation_b3a','record_admin_auth_operation_result_b3a'))
      or current_setting('sitaa_0010.prior_function_body_hash',true) is distinct from
        (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname not in ('guard_admin_auth_operation_b3a','get_admin_account_auth_lifecycle_context_b3a','prepare_admin_account_auth_lifecycle_b3a','finalize_admin_account_auth_reactivation_b3a','claim_admin_auth_operation_b3a','record_admin_auth_operation_result_b3a'))
      or current_setting('sitaa_0010.prior_function_acl_hash',true) is distinct from

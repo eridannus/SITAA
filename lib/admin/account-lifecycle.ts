@@ -86,16 +86,27 @@ const STABLE_ERROR_CODES = new Set<AdminAuthOperationStableCode>([
   "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
   "auth_update_rejected", "unsupported_auth_contract", "database_finalize_pending",
 ]);
-const EDGE_STATES = new Set(["completed", "pending", "rejected", "terminal_failure"]);
-const EDGE_CODES = new Set([
-  "account_deactivated", "account_reactivated", "auth_temporarily_unavailable",
+const EDGE_COMPLETED_CODES = new Set(["account_deactivated", "account_reactivated"]);
+const EDGE_TERMINAL_CODES = new Set([
+  "auth_user_not_found", "auth_update_rejected", "unsupported_auth_contract",
+  "operation_terminal_failure",
+]);
+const EDGE_PENDING_WITH_OPERATION_CODES = new Set([
+  "auth_temporarily_unavailable",
   "auth_rate_limited", "auth_user_not_found", "auth_update_rejected",
   "unsupported_auth_contract", "database_finalize_pending",
   "operation_processing", "operation_unavailable", "authorization_lost",
-  "request_id_conflict", "pending_target", "operation_in_progress",
   "state_conflict", "database_contract_rejected", "malformed_database_response",
-  "operation_terminal_failure", "result_persistence_failed", "unexpected_failure",
-  "trusted_boundary_unavailable",
+  "result_persistence_failed",
+]);
+const EDGE_PENDING_WITHOUT_OPERATION_CODES = new Set([
+  "trusted_boundary_unavailable", "malformed_database_response", "unexpected_failure",
+]);
+const EDGE_REJECTED_CODES = new Set([
+  "method_not_allowed", "invalid_content_type", "request_too_large",
+  "authentication_required", "invalid_json", "invalid_request", "invalid_reason",
+  "invalid_mode", "authorization_lost", "request_id_conflict", "pending_target",
+  "operation_in_progress", "state_conflict", "database_contract_rejected",
 ]);
 
 function isUuid(value: unknown): value is string {
@@ -242,15 +253,30 @@ export async function transitionAdminAccountLifecycleLegacyBeforeB3a(
 }
 
 function parseEdgeResult(value: unknown): AdminAccountAuthLifecycleEdgeResult | null {
-  if (!isRecord(value) || Object.keys(value).some((key) => !["code", "state", "operationId"].includes(key))
-    || typeof value.code !== "string" || !EDGE_CODES.has(value.code)
-    || typeof value.state !== "string" || !EDGE_STATES.has(value.state)
-    || (value.operationId !== null && !isUuid(value.operationId))) return null;
-  return {
-    code: value.code,
-    state: value.state as AdminAccountAuthLifecycleEdgeResult["state"],
-    operationId: value.operationId as string | null,
-  };
+  if (!isRecord(value)
+    || Object.keys(value).length !== 3
+    || Object.keys(value).some((key) => !["code", "state", "operationId"].includes(key))
+    || typeof value.code !== "string" || typeof value.state !== "string") return null;
+  if (value.state === "completed" && EDGE_COMPLETED_CODES.has(value.code) && isUuid(value.operationId)) {
+    return value as AdminAccountAuthLifecycleEdgeResult;
+  }
+  if (value.state === "terminal_failure" && EDGE_TERMINAL_CODES.has(value.code)
+    && isUuid(value.operationId)) {
+    return value as AdminAccountAuthLifecycleEdgeResult;
+  }
+  if (value.state === "pending") {
+    if (isUuid(value.operationId) && EDGE_PENDING_WITH_OPERATION_CODES.has(value.code)) {
+      return value as AdminAccountAuthLifecycleEdgeResult;
+    }
+    if (value.operationId === null && EDGE_PENDING_WITHOUT_OPERATION_CODES.has(value.code)) {
+      return value as AdminAccountAuthLifecycleEdgeResult;
+    }
+  }
+  if (value.state === "rejected" && value.operationId === null
+    && EDGE_REJECTED_CODES.has(value.code)) {
+    return value as AdminAccountAuthLifecycleEdgeResult;
+  }
+  return null;
 }
 
 export async function runAdminAccountAuthLifecycle(

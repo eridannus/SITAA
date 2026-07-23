@@ -72,6 +72,7 @@ No se ha ejecutado el preflight, la migración, el verificador, el rollback, la 
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
 - B.3a permanece abierta hasta aplicar/verificar 0010, desplegar la Edge Function y aprobar la prueba Auth desechable y smoke tests.
+- El paquete local 0010 ya exige casts `::text` al serializar campos internos `char` de catálogo y revalida B.1 después de los locks en todas sus RPC mutables. Esta evidencia es estática: no equivale a preflight, aplicación ni verificación PostgreSQL.
 - B.3b, administración de roles/Fase C, retiro de A-02, paneles especializados, formularios dinámicos, reportes y exportaciones continúan pendientes.
 - No se debe crear 0011 mientras 0010 siga en preparación no aplicada.
 

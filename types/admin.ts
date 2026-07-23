@@ -228,11 +228,70 @@ export type AdminAccountAuthLifecycleEdgeInput =
     }
   | { mode: "retry"; operationId: string };
 
-export interface AdminAccountAuthLifecycleEdgeResult {
-  code: string;
-  state: "completed" | "pending" | "rejected" | "terminal_failure";
-  operationId: string | null;
-}
+export type AdminAccountAuthLifecycleCompletedCode =
+  | "account_deactivated"
+  | "account_reactivated";
+
+export type AdminAccountAuthLifecycleTerminalCode =
+  | "auth_user_not_found"
+  | "auth_update_rejected"
+  | "unsupported_auth_contract"
+  | "operation_terminal_failure";
+
+export type AdminAccountAuthLifecyclePendingCode =
+  | "auth_temporarily_unavailable"
+  | "auth_rate_limited"
+  | "auth_user_not_found"
+  | "auth_update_rejected"
+  | "unsupported_auth_contract"
+  | "database_finalize_pending"
+  | "operation_processing"
+  | "operation_unavailable"
+  | "authorization_lost"
+  | "state_conflict"
+  | "database_contract_rejected"
+  | "malformed_database_response"
+  | "result_persistence_failed"
+  | "trusted_boundary_unavailable"
+  | "unexpected_failure";
+
+export type AdminAccountAuthLifecycleRejectedCode =
+  | "method_not_allowed"
+  | "invalid_content_type"
+  | "request_too_large"
+  | "authentication_required"
+  | "invalid_json"
+  | "invalid_request"
+  | "invalid_reason"
+  | "invalid_mode"
+  | "authorization_lost"
+  | "request_id_conflict"
+  | "pending_target"
+  | "operation_in_progress"
+  | "state_conflict"
+  | "database_contract_rejected";
+
+export type AdminAccountAuthLifecycleEdgeResult =
+  | {
+      code: AdminAccountAuthLifecycleCompletedCode;
+      state: "completed";
+      operationId: string;
+    }
+  | {
+      code: AdminAccountAuthLifecycleTerminalCode;
+      state: "terminal_failure";
+      operationId: string;
+    }
+  | {
+      code: AdminAccountAuthLifecyclePendingCode;
+      state: "pending";
+      operationId: string | null;
+    }
+  | {
+      code: AdminAccountAuthLifecycleRejectedCode;
+      state: "rejected";
+      operationId: null;
+    };
 
 export interface AdminAccountLifecycleResult {
   targetProfileId: string;

@@ -96,7 +96,7 @@ begin
                and attribute_definition.attnum=key_column.attnum)='request_id'
      )
      or (select count(*) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>2
-     or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
+     or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled::text||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
        'guard_admin_auth_operation_b3a:31:O:guard_admin_auth_operation_b3a()|guard_admin_auth_operation_truncate_b3a:34:O:guard_admin_auth_operation_b3a()'
      or exists (
        with expected(tgname,definition) as (
@@ -153,9 +153,9 @@ begin
       ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
       ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
       ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','2d8d580677411110fb9255fcced4c715'),
-      ('claim_admin_auth_operation_b3a(uuid,uuid)','7da7aec9b4ff17aa551a4cf820d5cfbd'),
-      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','6467440196296d77662eb4cce77d3226'),
-      ('finalize_admin_account_auth_reactivation_b3a(uuid)','b8223a508478e80edd340e231b66abeb')
+      ('claim_admin_auth_operation_b3a(uuid,uuid)','f100545d885836bdfcc6c6f71063f709'),
+      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','97eaf8df0cf10dcd9ddc623feaaceede'),
+      ('finalize_admin_account_auth_reactivation_b3a(uuid)','496707f95d11ca6d9b75c1b3f43a3c6b')
     ) expected(signature,body_hash)
     left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
     where p.oid is null or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash
@@ -295,6 +295,73 @@ begin
 end;
 $static_contract$;
 
+do $authorization_order$
+declare
+  function_body text;
+  initial_authorization integer;
+  advisory_lock integer;
+  row_lock integer;
+  post_lock_authorization integer;
+  first_state_read integer;
+  first_mutation integer;
+begin
+  select p.prosrc into strict function_body
+  from pg_proc p where p.oid='public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure;
+  initial_authorization:=strpos(function_body,'actor_id is null or not public.is_exact_b1_account_admin_profile_b2b(actor_id)');
+  advisory_lock:=strpos(function_body,'pg_advisory_xact_lock');
+  post_lock_authorization:=strpos(function_body,'if not public.is_exact_b1_account_admin_profile_b2b(actor_id)');
+  row_lock:=strpos(function_body,'operation.request_id=$4 for update');
+  if not (initial_authorization>0 and advisory_lock>initial_authorization
+    and post_lock_authorization>advisory_lock and row_lock>post_lock_authorization) then
+    raise exception '0010_verify_prepare_authorization_order_mismatch';
+  end if;
+
+  select p.prosrc into strict function_body
+  from pg_proc p where p.oid='public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure;
+  initial_authorization:=strpos(function_body,'caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id)');
+  advisory_lock:=strpos(function_body,'pg_advisory_xact_lock');
+  row_lock:=strpos(function_body,'for update;');
+  post_lock_authorization:=row_lock+strpos(substr(function_body,row_lock+1),
+    'caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id)');
+  first_state_read:=strpos(function_body,'operation_row.status in (''succeeded'',''terminal_failure'')');
+  first_mutation:=strpos(function_body,'update public.admin_auth_operations');
+  if not (initial_authorization>0 and advisory_lock>initial_authorization and row_lock>advisory_lock
+    and post_lock_authorization>row_lock and first_state_read>post_lock_authorization
+    and first_mutation>first_state_read) then
+    raise exception '0010_verify_claim_authorization_order_mismatch';
+  end if;
+
+  select p.prosrc into strict function_body
+  from pg_proc p where p.oid='public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure;
+  initial_authorization:=strpos(function_body,'caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id)');
+  advisory_lock:=strpos(function_body,'pg_advisory_xact_lock');
+  row_lock:=strpos(function_body,'for update;');
+  post_lock_authorization:=row_lock+strpos(substr(function_body,row_lock+1),
+    'caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id)');
+  first_state_read:=strpos(function_body,'claimed_attempt_count<>operation_row.attempt_count');
+  first_mutation:=strpos(function_body,'insert into public.admin_audit_events');
+  if not (initial_authorization>0 and advisory_lock>initial_authorization and row_lock>advisory_lock
+    and post_lock_authorization>row_lock and first_state_read>post_lock_authorization
+    and first_mutation>first_state_read) then
+    raise exception '0010_verify_record_authorization_order_mismatch';
+  end if;
+
+  select p.prosrc into strict function_body
+  from pg_proc p where p.oid='public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure;
+  initial_authorization:=strpos(function_body,'actor_id is null or not public.is_exact_b1_account_admin_profile_b2b(actor_id)');
+  advisory_lock:=strpos(function_body,'pg_advisory_xact_lock');
+  row_lock:=strpos(function_body,'for update;');
+  post_lock_authorization:=strpos(function_body,'if not public.is_exact_b1_account_admin_profile_b2b(actor_id)');
+  first_state_read:=strpos(function_body,'operation_row.status=''succeeded''');
+  first_mutation:=strpos(function_body,'transition_admin_account_lifecycle_b2b');
+  if not (initial_authorization>0 and advisory_lock>initial_authorization and row_lock>advisory_lock
+    and post_lock_authorization>row_lock and first_state_read>post_lock_authorization
+    and first_mutation>first_state_read) then
+    raise exception '0010_verify_finalize_authorization_order_mismatch';
+  end if;
+end;
+$authorization_order$;
+
 create temporary table sitaa_0010_context(
   run_marker text not null,program_id uuid not null,division_id uuid not null,
   institutional_today date not null
@@ -390,6 +457,8 @@ select pg_temp.create_case('inactive_target','institutional','student','inactive
 select pg_temp.create_case('terminal_target','institutional','professor');
 select pg_temp.create_case('restore_failure_target','institutional','student','inactive');
 select pg_temp.create_case('authority_loss_target','institutional','professor','inactive');
+select pg_temp.create_case('authority_loss_claim_target','institutional','professor');
+select pg_temp.create_case('authority_loss_record_target','institutional','professor');
 select pg_temp.create_case('pending_target','institutional',null,'pending_registration');
 
 insert into public.role_assignments(user_id,role_code,scope_type,service_area,division_id,program_id,starts_at,ends_at,is_active,assigned_by) values
@@ -1332,19 +1401,74 @@ declare prepared record; request_uuid uuid:=gen_random_uuid();
 begin
   select * into prepared from public.prepare_admin_account_auth_lifecycle_b3a(pg_temp.case_id('authority_loss_target'),'reactivate','Motivo sintético por pérdida de autoridad 0010',request_uuid);
   insert into pg_temp.sitaa_0010_results values('authority_loss',prepared.operation_id,request_uuid);
+  request_uuid:=gen_random_uuid();
+  select * into prepared from public.prepare_admin_account_auth_lifecycle_b3a(pg_temp.case_id('authority_loss_claim_target'),'deactivate','Motivo sintético para denegación claim 0010',request_uuid);
+  insert into pg_temp.sitaa_0010_results values('authority_loss_claim',prepared.operation_id,request_uuid);
+  request_uuid:=gen_random_uuid();
+  select * into prepared from public.prepare_admin_account_auth_lifecycle_b3a(pg_temp.case_id('authority_loss_record_target'),'deactivate','Motivo sintético para denegación record 0010',request_uuid);
+  insert into pg_temp.sitaa_0010_results values('authority_loss_record',prepared.operation_id,request_uuid);
 end;
 $authority_loss_prepare$;
 reset role;
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
 do $authority_loss_auth$
-declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss'); claim record;
+declare
+  op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss');
+  record_op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss_record');
+  claim record;
 begin
+  select * into claim from public.claim_admin_auth_operation_b3a(record_op,pg_temp.case_id('admin_a'));
+  if not claim.claimed or claim.attempt_count<>1 then
+    raise exception '0010_verify_authority_loss_record_fixture_failed';
+  end if;
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
   perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'auth_succeeded',null);
 end;
 $authority_loss_auth$;
 reset role;
 update public.role_assignments set is_active=false where user_id=pg_temp.case_id('admin_a') and role_code='technical_admin' and scope_type='system' and service_area='technical';
+do $authority_loss_service_denials$
+declare
+  claim_op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss_claim');
+  record_op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss_record');
+  claim_before text;
+  record_before text;
+  audit_count_before bigint;
+begin
+  perform pg_temp.set_actor('admin_a','service_role');
+  select row_to_json(operation_row)::text into strict claim_before
+  from public.admin_auth_operations operation_row where operation_row.id=claim_op;
+  audit_count_before:=(select count(*) from public.admin_audit_events);
+  begin
+    perform public.claim_admin_auth_operation_b3a(claim_op,pg_temp.case_id('admin_a'));
+    raise exception '0010_verify_inactive_claim_unexpected';
+  exception when insufficient_privilege then
+    if sqlstate<>'42501' or sqlerrm<>'sitaa_admin_access_denied' then raise; end if;
+  end;
+  if claim_before is distinct from
+       (select row_to_json(operation_row)::text from public.admin_auth_operations operation_row where operation_row.id=claim_op)
+     or audit_count_before<>(select count(*) from public.admin_audit_events) then
+    raise exception '0010_verify_inactive_claim_mutated_state';
+  end if;
+
+  select row_to_json(operation_row)::text into strict record_before
+  from public.admin_auth_operations operation_row where operation_row.id=record_op;
+  audit_count_before:=(select count(*) from public.admin_audit_events);
+  begin
+    perform public.record_admin_auth_operation_result_b3a(
+      record_op,pg_temp.case_id('admin_a'),1,'auth_succeeded',null
+    );
+    raise exception '0010_verify_inactive_record_unexpected';
+  exception when insufficient_privilege then
+    if sqlstate<>'42501' or sqlerrm<>'sitaa_admin_access_denied' then raise; end if;
+  end;
+  if record_before is distinct from
+       (select row_to_json(operation_row)::text from public.admin_auth_operations operation_row where operation_row.id=record_op)
+     or audit_count_before<>(select count(*) from public.admin_audit_events) then
+    raise exception '0010_verify_inactive_record_mutated_state';
+  end if;
+end;
+$authority_loss_service_denials$;
 select pg_temp.set_actor('admin_a'); set local role authenticated;
 do $authority_loss_denial$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss');
@@ -1361,6 +1485,32 @@ do $$ begin
     raise exception '0010_verify_lost_authority_activated_profile';
   end if;
 end $$;
+do $authority_loss_service_recovery$
+declare
+  claim_op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss_claim');
+  record_op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss_record');
+  claimed record;
+  persisted record;
+  record_attempt integer;
+begin
+  perform pg_temp.set_actor('admin_b','service_role');
+  select * into claimed from public.claim_admin_auth_operation_b3a(claim_op,pg_temp.case_id('admin_b'));
+  select * into persisted from public.record_admin_auth_operation_result_b3a(
+    claim_op,pg_temp.case_id('admin_b'),claimed.attempt_count,'auth_succeeded',null
+  );
+  if persisted.status<>'succeeded' then
+    raise exception '0010_verify_inactive_claim_recovery_failed';
+  end if;
+  select attempt_count into strict record_attempt
+  from public.admin_auth_operations where id=record_op;
+  select * into persisted from public.record_admin_auth_operation_result_b3a(
+    record_op,pg_temp.case_id('admin_b'),record_attempt,'auth_succeeded',null
+  );
+  if persisted.status<>'succeeded' then
+    raise exception '0010_verify_inactive_record_recovery_failed';
+  end if;
+end;
+$authority_loss_service_recovery$;
 select pg_temp.set_actor('admin_b'); set local role authenticated;
 do $authority_loss_recovery$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss'); finalized record;
@@ -1372,15 +1522,25 @@ begin
 end;
 $authority_loss_recovery$;
 reset role;
-do $$ begin
+do $authority_loss_final_replay_postconditions$
+declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss');
+begin
+  perform pg_temp.set_actor('admin_a','authenticated');
+  begin
+    perform public.finalize_admin_account_auth_reactivation_b3a(op);
+    raise exception '0010_verify_inactive_final_replay_unexpected';
+  exception when insufficient_privilege then
+    if sqlstate<>'42501' or sqlerrm<>'sitaa_admin_access_denied' then raise; end if;
+  end;
   if (select completed_by_profile_id
       from public.admin_auth_operations
-      where id=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss'))
+      where id=op)
      <>pg_temp.case_id('admin_b')
      or (select account_status from public.profiles where id=pg_temp.case_id('authority_loss_target'))<>'active' then
     raise exception '0010_verify_lost_authority_owner_postconditions_failed';
   end if;
-end $$;
+end;
+$authority_loss_final_replay_postconditions$;
 
 do $final_state_machine$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='deactivate');

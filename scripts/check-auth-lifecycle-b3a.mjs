@@ -40,11 +40,21 @@ assert.equal((edge.match(/\.rpc\("record_admin_auth_operation_result_b3a"/g) ?? 
 assert.match(edge, /claimed_attempt_count:\s*operation\.attemptCount/);
 assert.match(edge, /attemptCount:\s*operation\.attemptCount/);
 assert.match(edge, /replayed\.claimed[\s\S]*replayed\.status !== "processing"[\s\S]*replayed\.completedStage !== "auth_synchronized"/);
-assert.match(edge, /if \(error\) return null;[\s\S]*parseSnapshot\(data, RESULT_FIELDS/);
+assert.match(edge, /if \(error\) return \{ kind: recordResultCondition\(error\) \}/);
+assert.match(edge, /kind: "authorization_lost"/);
+assert.match(edge, /kind: "stale_attempt"/);
+assert.match(edge, /kind: "state_conflict"/);
+assert.match(edge, /kind: "malformed_response"/);
+assert.match(edge, /kind: "unavailable"/);
 assert.match(edge, /finalResponse\(operation\)/);
 assert.match(edge, /completedStage === "auth_synchronized"/);
-assert.match(data, /"completed", "pending", "rejected", "terminal_failure"/);
+assert.match(data, /EDGE_COMPLETED_CODES/);
+assert.match(data, /EDGE_TERMINAL_CODES/);
+assert.match(data, /EDGE_PENDING_WITH_OPERATION_CODES/);
+assert.match(data, /EDGE_PENDING_WITHOUT_OPERATION_CODES/);
+assert.match(data, /EDGE_REJECTED_CODES/);
 assert.match(action, /result\.state === "rejected" \? "error" : "pending"/);
+assert.match(action, /result\.code === \(values\.transition === "deactivate" \? "account_deactivated" : "account_reactivated"\)/);
 assert.match(data, /FunctionsHttpError/);
 assert.match(data, /FunctionsRelayError/);
 assert.match(data, /FunctionsFetchError/);
@@ -60,19 +70,47 @@ assert.doesNotMatch(edgeInvocationBody, /error\.message|error\.context\.text|err
 assert.match(action, /if \(context\.b3aAvailable\)[\s\S]*runAdminAccountAuthLifecycle[\s\S]*else \{[\s\S]*transitionAdminAccountLifecycleLegacyBeforeB3a/);
 assert.match(action, /const nextValues = result\.operationId[\s\S]*: values/);
 
-const fixtureStates = new Set(["completed", "pending", "rejected", "terminal_failure"]);
-const fixtureCodes = new Set([
-  "account_deactivated", "request_id_conflict", "pending_target",
-  "authorization_lost", "trusted_boundary_unavailable",
+const fixtureCompletedCodes = new Set(["account_deactivated", "account_reactivated"]);
+const fixtureTerminalCodes = new Set([
+  "auth_user_not_found", "auth_update_rejected", "unsupported_auth_contract",
+  "operation_terminal_failure",
+]);
+const fixturePendingWithOperationCodes = new Set([
+  "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
+  "auth_update_rejected", "unsupported_auth_contract", "database_finalize_pending",
+  "operation_processing", "operation_unavailable", "authorization_lost",
+  "state_conflict", "database_contract_rejected", "malformed_database_response",
+  "result_persistence_failed",
+]);
+const fixturePendingWithoutOperationCodes = new Set([
+  "trusted_boundary_unavailable", "malformed_database_response", "unexpected_failure",
+]);
+const fixtureRejectedCodes = new Set([
+  "method_not_allowed", "invalid_content_type", "request_too_large",
+  "authentication_required", "invalid_json", "invalid_request", "invalid_reason",
+  "invalid_mode", "authorization_lost", "request_id_conflict", "pending_target",
+  "operation_in_progress", "state_conflict", "database_contract_rejected",
 ]);
 const fixtureUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fixtureUuid = "11111111-1111-4111-8111-111111111111";
 function parseFixtureEdgeResult(value) {
   if (typeof value !== "object" || value === null || Array.isArray(value)
+    || Object.keys(value).length !== 3
     || Object.keys(value).some((key) => !["code", "state", "operationId"].includes(key))
-    || !fixtureCodes.has(value.code) || !fixtureStates.has(value.state)
-    || (value.operationId !== null && !fixtureUuidPattern.test(value.operationId))) return null;
-  return value;
+    || typeof value.code !== "string" || typeof value.state !== "string") return null;
+  if (value.state === "completed" && fixtureCompletedCodes.has(value.code)
+    && fixtureUuidPattern.test(value.operationId)) return value;
+  if (value.state === "terminal_failure" && fixtureTerminalCodes.has(value.code)
+    && fixtureUuidPattern.test(value.operationId)) return value;
+  if (value.state === "pending") {
+    if (fixtureUuidPattern.test(value.operationId)
+      && fixturePendingWithOperationCodes.has(value.code)) return value;
+    if (value.operationId === null
+      && fixturePendingWithoutOperationCodes.has(value.code)) return value;
+  }
+  if (value.state === "rejected" && value.operationId === null
+    && fixtureRejectedCodes.has(value.code)) return value;
+  return null;
 }
 function resolveFixtureInvocation({ data: fixtureData, errorKind, httpBody }) {
   if (!errorKind) {
@@ -87,25 +125,57 @@ function resolveFixtureInvocation({ data: fixtureData, errorKind, httpBody }) {
   }
   throw new Error("trusted_boundary_unavailable");
 }
-for (const fixture of [
+function canRedirectFixture(result, transition) {
+  return result?.state === "completed"
+    && result.operationId !== null
+    && result.code === (transition === "deactivate" ? "account_deactivated" : "account_reactivated");
+}
+const validFixtures = [
   { data: { code: "account_deactivated", state: "completed", operationId: fixtureUuid },
-    expectedCode: "account_deactivated" },
+    transition: "deactivate", expectedCode: "account_deactivated" },
+  { data: { code: "account_reactivated", state: "completed", operationId: fixtureUuid },
+    transition: "reactivate", expectedCode: "account_reactivated" },
   { errorKind: "http", httpBody: { code: "request_id_conflict", state: "rejected", operationId: null },
-    expectedCode: "request_id_conflict" },
+    transition: "deactivate", expectedCode: "request_id_conflict" },
   { errorKind: "http", httpBody: { code: "pending_target", state: "rejected", operationId: null },
-    expectedCode: "pending_target" },
-  { errorKind: "http", httpBody: { code: "authorization_lost", state: "rejected", operationId: fixtureUuid },
-    expectedCode: "authorization_lost" },
-]) {
+    transition: "deactivate", expectedCode: "pending_target" },
+  { errorKind: "http", httpBody: { code: "authorization_lost", state: "pending", operationId: fixtureUuid },
+    transition: "deactivate", expectedCode: "authorization_lost" },
+  { data: { code: "operation_processing", state: "pending", operationId: fixtureUuid },
+    transition: "deactivate", expectedCode: "operation_processing" },
+  { data: { code: "trusted_boundary_unavailable", state: "pending", operationId: null },
+    transition: "deactivate", expectedCode: "trusted_boundary_unavailable" },
+  { data: { code: "operation_terminal_failure", state: "terminal_failure", operationId: fixtureUuid },
+    transition: "deactivate", expectedCode: "operation_terminal_failure" },
+  { errorKind: "http", httpBody: { code: "authentication_required", state: "rejected", operationId: null },
+    transition: "deactivate", expectedCode: "authentication_required" },
+];
+for (const fixture of validFixtures) {
   assert.equal(resolveFixtureInvocation(fixture).code, fixture.expectedCode);
 }
-assert.throws(
-  () => resolveFixtureInvocation({
-    errorKind: "http",
-    httpBody: { code: "request_id_conflict", state: "rejected", operationId: null, detail: "raw" },
-  }),
-  /trusted_boundary_unavailable/,
-);
+const invalidFixtures = [
+  { data: { code: "authorization_lost", state: "completed", operationId: fixtureUuid }, transition: "deactivate" },
+  { data: { code: "account_deactivated", state: "completed", operationId: null }, transition: "deactivate" },
+  { data: { code: "account_deactivated", state: "pending", operationId: fixtureUuid }, transition: "deactivate" },
+  { data: { code: "account_reactivated", state: "completed", operationId: fixtureUuid }, transition: "deactivate" },
+  { errorKind: "http", httpBody: { code: "request_id_conflict", state: "rejected", operationId: fixtureUuid }, transition: "deactivate" },
+  { data: { code: "operation_processing", state: "pending", operationId: null }, transition: "deactivate" },
+  { data: { code: "operation_terminal_failure", state: "terminal_failure", operationId: null }, transition: "deactivate" },
+  { data: { code: "unknown_code", state: "pending", operationId: fixtureUuid }, transition: "deactivate" },
+  { data: { code: "account_deactivated", state: "unknown_state", operationId: fixtureUuid }, transition: "deactivate" },
+  { errorKind: "http", httpBody: { code: "request_id_conflict", state: "rejected", operationId: null, detail: "raw" }, transition: "deactivate" },
+];
+for (const fixture of invalidFixtures) {
+  let parsed = null;
+  try {
+    parsed = resolveFixtureInvocation(fixture);
+  } catch {
+    // La falla cerrada del parser también impide cualquier redirección.
+  }
+  assert.equal(canRedirectFixture(parsed, fixture.transition), false);
+}
+assert.equal(validFixtures.filter((fixture) =>
+  canRedirectFixture(resolveFixtureInvocation(fixture), fixture.transition)).length, 2);
 for (const errorKind of ["relay", "fetch", "unknown"]) {
   assert.throws(() => resolveFixtureInvocation({ errorKind }), /trusted_boundary_unavailable/);
 }
@@ -152,5 +222,7 @@ assert.match(migration, /revoke all on function public\.transition_admin_account
 assert.doesNotMatch(`${edge}\n${adapter}\n${action}\n${data}`, /immediate access-token invalidation|global sign-out|revoca(?:r|ción) criptográficamente/i);
 
 console.log("Límite confiable Auth B.3a: OK");
-console.log("Resultados Edge 200/403/409 preservados mediante el parser exacto: OK");
+console.log(`Fixtures Edge válidos aceptados: ${validFixtures.length}`);
+console.log(`Fixtures Edge inválidos sin redirección: ${invalidFixtures.length}`);
+console.log("Contrato discriminado Edge y coincidencia transición/código: OK");
 console.log("Errores HTTP malformados, Relay, Fetch y desconocidos fallan cerrados: OK");

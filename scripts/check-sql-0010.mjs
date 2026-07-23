@@ -248,6 +248,55 @@ $preflight$;`;
 const correctedRegressionBody = extractDollarQuotedBodies(correctedDollarRegression, "regresión positiva")[0];
 assert.doesNotThrow(() => assertLexicallyBalanced(correctedRegressionBody.body, "regresión positiva:$preflight$"));
 
+const internalCatalogCharNames = [
+  "prokind", "provolatile", "proparallel", "relkind", "contype",
+  "confupdtype", "confdeltype", "confmatchtype", "tgenabled",
+  "defaclobjtype", "attidentity", "attgenerated", "typtype", "typcategory",
+];
+const internalCatalogCharPattern = new RegExp(
+  `(?:\\b[a-z_][a-z0-9_]*\\.)?(${internalCatalogCharNames.join("|")})\\b(\\s*::\\s*text)?`,
+  "gi",
+);
+function auditInternalCatalogCharConcatenation(source) {
+  const result = { expressionsAudited: 0, safeExplicitCasts: 0, unsafe: [] };
+  for (const match of source.matchAll(internalCatalogCharPattern)) {
+    const end = match.index + match[0].length;
+    const adjacentToConcat = source.slice(0, match.index).trimEnd().endsWith("||")
+      || source.slice(end).trimStart().startsWith("||");
+    if (!adjacentToConcat) continue;
+    result.expressionsAudited += 1;
+    if (match[2]) result.safeExplicitCasts += 1;
+    else result.unsafe.push({ expression: match[0], line: lineAtOffset(source, match.index) });
+  }
+  return result;
+}
+const unsafeCatalogRegression = [
+  "text_value || p.provolatile",
+  "text_value || ':' || tgenabled || ':'",
+  "defaclrole::text || defaclobjtype",
+].join("\n");
+const safeCatalogRegression = [
+  "text_value || p.provolatile::text",
+  "text_value || ':' || tgenabled::text || ':'",
+  "defaclrole::text || defaclobjtype::text",
+].join("\n");
+assert.equal(auditInternalCatalogCharConcatenation(unsafeCatalogRegression).unsafe.length, 3);
+assert.equal(auditInternalCatalogCharConcatenation(safeCatalogRegression).unsafe.length, 0);
+assert.equal(auditInternalCatalogCharConcatenation(safeCatalogRegression).safeExplicitCasts, 3);
+const internalCatalogCharAudit = { expressionsAudited: 0, safeExplicitCasts: 0, unsafe: [] };
+for (const [name, source] of Object.entries(sources)) {
+  const audit = auditInternalCatalogCharConcatenation(source);
+  internalCatalogCharAudit.expressionsAudited += audit.expressionsAudited;
+  internalCatalogCharAudit.safeExplicitCasts += audit.safeExplicitCasts;
+  internalCatalogCharAudit.unsafe.push(...audit.unsafe.map((entry) => ({ ...entry, artifact: name })));
+}
+assert.equal(
+  internalCatalogCharAudit.unsafe.length,
+  0,
+  `Concatenaciones inseguras de catálogo: ${internalCatalogCharAudit.unsafe.map((entry) =>
+    `${entry.artifact}:${entry.line}:${entry.expression}`).join(", ")}`,
+);
+
 function assertRequestIdCatalogContract(source, label) {
   const obsoleteIndexName = ["admin_auth_operations_request_id", "uidx"].join("_");
   assert.match(
@@ -553,6 +602,104 @@ assert.doesNotMatch(
   /\b(lower|btrim|trim)\s*\(\s*requested_transition/i,
   "La transición no debe normalizarse, recortarse ni convertirse a minúsculas",
 );
+
+function extractFunctionBody(source, name) {
+  const start = source.indexOf(`create function public.${name}`);
+  const bodyStart = source.indexOf("as $function$", start);
+  const bodyEnd = source.indexOf("$function$;", bodyStart + 1);
+  assert.ok(start >= 0 && bodyStart > start && bodyEnd > bodyStart, `No se pudo extraer cuerpo de ${name}`);
+  return source.slice(bodyStart + "as $function$".length, bodyEnd);
+}
+function assertOrderedMarkers(source, markers, label) {
+  let cursor = 0;
+  for (const marker of markers) {
+    const position = source.indexOf(marker, cursor);
+    assert.ok(position >= cursor, `${label}: falta o está fuera de orden: ${marker}`);
+    cursor = position + marker.length;
+  }
+}
+const exactB1CallerCheck =
+  "caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id)";
+const exactB1ActorCheck =
+  "actor_id is null or not public.is_exact_b1_account_admin_profile_b2b(actor_id)";
+const exactB1ActorRecheck =
+  "not public.is_exact_b1_account_admin_profile_b2b(actor_id)";
+const prepareOrder = [
+  exactB1ActorCheck,
+  "pg_advisory_xact_lock",
+  exactB1ActorRecheck,
+  "operation.request_id=$4 for update",
+];
+const claimOrder = [
+  "sitaa_service_boundary_required",
+  exactB1CallerCheck,
+  "pg_advisory_xact_lock",
+  "for update",
+  exactB1CallerCheck,
+  "operation_row.status in ('succeeded','terminal_failure')",
+  "operation_row.status='processing'",
+  "update public.admin_auth_operations",
+];
+const recordOrder = [
+  "sitaa_service_boundary_required",
+  exactB1CallerCheck,
+  "requested_result is null",
+  "claimed_attempt_count is null",
+  "pg_advisory_xact_lock",
+  "for update",
+  exactB1CallerCheck,
+  "claimed_attempt_count<>operation_row.attempt_count",
+  "insert into public.admin_audit_events",
+  "update public.admin_auth_operations",
+];
+const finalizeOrder = [
+  exactB1ActorCheck,
+  "pg_advisory_xact_lock",
+  "for update",
+  exactB1ActorRecheck,
+  "operation_row.status='succeeded'",
+  "sitaa_auth_operation_not_ready_to_finalize",
+  "transition_admin_account_lifecycle_b2b",
+  "update public.admin_auth_operations",
+];
+const mutableAuthorizationOrders = [
+  ["prepare", extractFunctionBody(sources.migration, "prepare_admin_account_auth_lifecycle_b3a"), prepareOrder],
+  ["claim", extractFunctionBody(sources.migration, "claim_admin_auth_operation_b3a"), claimOrder],
+  ["record", extractFunctionBody(sources.migration, "record_admin_auth_operation_result_b3a"), recordOrder],
+  ["finalize", extractFunctionBody(sources.migration, "finalize_admin_account_auth_reactivation_b3a"), finalizeOrder],
+];
+for (const [label, body, markers] of mutableAuthorizationOrders) {
+  assertOrderedMarkers(body, markers, `orden ${label}`);
+}
+for (const [fixture, markers, label] of [
+  [
+    `sitaa_service_boundary_required ${exactB1CallerCheck} pg_advisory_xact_lock for update operation_row.status in ('succeeded','terminal_failure')`,
+    claimOrder,
+    "segundo control ausente",
+  ],
+  [
+    `sitaa_service_boundary_required ${exactB1CallerCheck} ${exactB1CallerCheck} pg_advisory_xact_lock for update operation_row.status in ('succeeded','terminal_failure')`,
+    claimOrder,
+    "segundo control antes del lock",
+  ],
+  [
+    `sitaa_service_boundary_required ${exactB1CallerCheck} pg_advisory_xact_lock for update operation_row.status in ('succeeded','terminal_failure') ${exactB1CallerCheck}`,
+    claimOrder,
+    "replay antes del segundo control",
+  ],
+  [
+    `sitaa_service_boundary_required ${exactB1CallerCheck} requested_result is null claimed_attempt_count is null pg_advisory_xact_lock for update insert into public.admin_audit_events ${exactB1CallerCheck} claimed_attempt_count<>operation_row.attempt_count update public.admin_auth_operations`,
+    recordOrder,
+    "auditoría antes del segundo control",
+  ],
+  [
+    `${exactB1ActorCheck} pg_advisory_xact_lock for update update public.admin_auth_operations ${exactB1ActorRecheck} operation_row.status='succeeded' sitaa_auth_operation_not_ready_to_finalize transition_admin_account_lifecycle_b2b`,
+    finalizeOrder,
+    "DML antes del segundo control",
+  ],
+]) {
+  assert.throws(() => assertOrderedMarkers(fixture, markers, `regresión ${label}`));
+}
 assert.match(
   sources.verify,
   /foreach transition_value in array array\[null::text,'','suspend','DEACTIVATE'\] loop/,
@@ -625,7 +772,8 @@ for (const expected of sources.verify.matchAll(/sqlerrm<>'(sitaa_[^']+)'/g)) {
 assert.equal((edge.match(/\.rpc\("record_admin_auth_operation_result_b3a"/g) ?? []).length, 1,
   "Toda persistencia de resultado debe pasar por el helper validado único");
 assert.match(edge, /const \{ data, error \} = await client\.rpc\("record_admin_auth_operation_result_b3a"/);
-assert.match(edge, /if \(error\) return null;[\s\S]*parseSnapshot\(data, RESULT_FIELDS/);
+assert.match(edge, /if \(error\) return \{ kind: recordResultCondition\(error\) \};[\s\S]*parseSnapshot\(data, RESULT_FIELDS/);
+assert.match(edge, /recordFailureResponse/);
 assert.doesNotMatch(adapter, /result:\s*"terminal_failure"/,
   "El adaptador provisional no puede emitir fallos terminales");
 for (const retryableCode of ["auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
@@ -719,6 +867,17 @@ for (const marker of [
   "0010_verify_failed_finalization_activated_profile",
   "0010_verify_retry_repeated_auth_stage",
   "0010_verify_lost_authority_activated_profile",
+  "0010_verify_inactive_claim_unexpected",
+  "0010_verify_inactive_claim_mutated_state",
+  "0010_verify_inactive_record_unexpected",
+  "0010_verify_inactive_record_mutated_state",
+  "0010_verify_inactive_final_replay_unexpected",
+  "0010_verify_inactive_claim_recovery_failed",
+  "0010_verify_inactive_record_recovery_failed",
+  "0010_verify_prepare_authorization_order_mismatch",
+  "0010_verify_claim_authorization_order_mismatch",
+  "0010_verify_record_authorization_order_mismatch",
+  "0010_verify_finalize_authorization_order_mismatch",
   "0010_verify_preexisting_operational_history_changed",
   "0010_verify_delete_unexpected",
   "0010_verify_truncate_unexpected",
@@ -758,6 +917,12 @@ console.log("Validación total de transición, incluido NULL: OK");
 console.log("Orden de locks del rollback: ledger -> auditoría -> guarda completa: OK");
 console.log("Taxonomía provisional Auth sólo reintentable: OK");
 console.log("Cercado por claimed_attempt_count: OK");
+console.log(`Expresiones internal catalog-char auditadas: ${internalCatalogCharAudit.expressionsAudited}`);
+console.log(`Casts ::text explícitos seguros: ${internalCatalogCharAudit.safeExplicitCasts}`);
+console.log(`Concatenaciones internal catalog-char inseguras: ${internalCatalogCharAudit.unsafe.length}`);
+for (const [label] of mutableAuthorizationOrders) {
+  console.log(`Orden de autorización ${label}: OK`);
+}
 console.log(`Intervalos authenticated auditados: ${verifierRoleAudit.counts.authenticated}`);
 console.log(`Intervalos service_role auditados: ${verifierRoleAudit.counts.service_role}`);
 console.log(`Referencias protegidas encontradas: ${verifierRoleAudit.protectedRawReferences}`);
