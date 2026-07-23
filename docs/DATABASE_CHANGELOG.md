@@ -221,7 +221,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Snapshot post-0009: `2026-07-22T23:32:46Z`, estado `SUCCESS`, 18/165/80/43/11/54/25/18/51 y privilegios 137/267/6/445. El delta es +3 funciones, +5 grants de rutina y +5 ACL; no existe deriva inexplicada.
 - Cierre: 0001–0009 son inmutables, B.2b está cerrada, `0010` es el siguiente número disponible y B.3/Fase C permanecen pendientes.
 
-## 0010_coordinated_auth_session_suspension.sql — aplicada; verificación pendiente
+## 0010_coordinated_auth_session_suspension.sql — aplicada; verificador aprobado
 
 - Fecha de preparación: 2026-07-22.
 - Añade `admin_auth_operations`, su estado controlado, cinco RPC B.3a y un trigger owner-only; no modifica cuerpos 0001–0009.
@@ -247,4 +247,6 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - La aplicación compatible se desplegó correctamente; la Edge Function fue desplegada y figura `ACTIVE`, sin invocarse. 0010 se aplicó y su registro local termina en `COMMIT`. No se ejecutó Auth Admin ni una operación real B.3a.
 - El primer verificador hospedado terminó con código de salida 3 en `restore_failure_finalize`: el contrato real emitió `42501/sitaa_account_lifecycle_auth_unconfirmed`, pero el arnés usó `exception when raise_exception`, que sólo captura `P0001`. No alcanzó el `ROLLBACK` final y la desconexión de `psql` descartó la transacción abierta; el fallo corresponde al arnés, no a la migración aplicada.
 - Corrección posterior sin ejecución remota: `restore_failure_finalize` captura `insufficient_privilege` y exige SQLSTATE `42501` y mensaje estable exactos. El checker añade fixture negativa del handler anterior, fixture positiva del corregido y auditoría de los contratos `P0001`, `42501`, `22023`, `23505`, `23514` y `55000`.
-- Estado: B.3a permanece abierta. Falta reejecutar el verificador corregido hasta su `ROLLBACK` explícito, completar matriz Auth y smoke tests y reconciliar el snapshot post‑0010. No crear 0011 ni describir B.3a como cerrada.
+- Diagnóstico posterior al aborto: `ledger_exists = true`, seis funciones B.3a, cero filas del ledger y cero eventos de auditoría Auth B.3a; terminó con `ROLLBACK` y código 0. Confirmó que 0010 siguió aplicada y que ningún fixture, operación o evento sobrevivió.
+- Verificador corregido aprobado: completó todos los escenarios con el handler exacto `insufficient_privilege/42501`, imprimió exactamente un `ROLLBACK` final, terminó con código 0 y no produjo líneas `ERROR`. No persistió fixtures, privilegios temporales, operaciones ni auditoría.
+- Estado: el gate de verificación PostgreSQL está aprobado, pero B.3a permanece abierta. No hubo suspensión/restauración real, invocación Edge ni Auth Admin. Continúan pendientes la matriz Auth hospedada, smoke tests y reconciliación post‑0010; no crear 0011 ni describir B.3a como cerrada.

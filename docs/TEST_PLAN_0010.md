@@ -10,7 +10,7 @@ Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción
 - el primer verificador hospedado terminó con código de salida 3 en `restore_failure_finalize`: el arnés esperaba `P0001`, pero la función emitió correctamente `42501/sitaa_account_lifecycle_auth_unconfirmed`; no alcanzó el `ROLLBACK` final y la desconexión de `psql` descartó la transacción abierta;
 - no se ejecutó ninguna operación Auth Admin;
 - no se ha probado suspensión, refresh, JWT ni restauración en Supabase hospedado;
-- el verificador corregido, la matriz Auth desechable, los smoke tests y la reconciliación post‑0010 permanecen pendientes; B.3a sigue abierta.
+- el verificador corregido fue aprobado; la matriz Auth desechable, los smoke tests y la reconciliación post‑0010 permanecen pendientes, por lo que B.3a sigue abierta.
 
 La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador usaba un nombre obsoleto para el rechazo de objetivo pendiente, mientras la implementación emitía el contrato canónico `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
 
@@ -26,7 +26,11 @@ El primer preflight remoto 0010 devolvió 34 filas: 29 de las 30 categorías blo
 
 La reejecución corregida devolvió exactamente 34 filas: las 30 categorías bloqueantes quedaron en cero, incluido `dangerous_default_acl = 0`, y las cuatro categorías informativas fueron `active_exact_b1_administrators = 1`, `existing_b2b_lifecycle_events = 4`, `inactive_accounts = 0` e `inactive_accounts_with_active_or_future_assignments = 0`. Terminó con `ROLLBACK`, código de salida 0 y sin `ERROR`; no expuso UUID, filas operativas, PII, credenciales, tokens o secretos y no cambió objetos, filas o privilegios. Este segundo preflight quedó aprobado.
 
-El defecto del primer verificador fue exclusivamente del arnés: `sitaa_account_lifecycle_auth_unconfirmed` usa por contrato SQLSTATE `42501`, cuyo nombre de condición es `insufficient_privilege`, mientras `raise_exception` sólo captura `P0001`. El bloque corregido exige el SQLSTATE y el mensaje exactos. El checker estático incluye una fixture negativa con el handler anterior, una fixture positiva con el contrato corregido y una auditoría de las condiciones esperadas `P0001`, `42501`, `22023`, `23505`, `23514` y `55000`. La reejecución hospedada debe terminar explícitamente con el `ROLLBACK` final.
+El defecto del primer verificador fue exclusivamente del arnés: `sitaa_account_lifecycle_auth_unconfirmed` usa por contrato SQLSTATE `42501`, cuyo nombre de condición es `insufficient_privilege`, mientras `raise_exception` sólo captura `P0001`. El bloque corregido exige el SQLSTATE y el mensaje exactos. El checker estático incluye una fixture negativa con el handler anterior, una fixture positiva con el contrato corregido y una auditoría de las condiciones esperadas `P0001`, `42501`, `22023`, `23505`, `23514` y `55000`.
+
+El diagnóstico de sólo lectura posterior al aborto confirmó `ledger_exists = true`, seis funciones B.3a, cero filas en el ledger y cero eventos de auditoría Auth B.3a. Terminó con `ROLLBACK` y código de salida 0. Esto confirma que 0010 permaneció aplicada y que no sobrevivieron fixtures, operaciones ni auditoría del intento abortado.
+
+La reejecución corregida completó todos los escenarios con el handler exacto `insufficient_privilege/42501`, imprimió exactamente un `ROLLBACK` final, terminó con código de salida 0 y no produjo ninguna línea `ERROR`. El verificador PostgreSQL quedó aprobado y no persistió fixtures, privilegios temporales, operaciones o eventos de auditoría.
 
 El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
 
@@ -77,12 +81,11 @@ La ejecución aprobada validó el inventario post‑0009 18/165/80/43/11/54/25/1
 
 ## 3. Migración y verificador transaccional
 
-La aplicación compatible, la Edge Function y 0010 ya fueron desplegadas/aplicadas en ese orden; el registro local de la migración confirma el `COMMIT`. El siguiente orden operativo autorizado es:
+La aplicación compatible, la Edge Function y 0010 fueron desplegadas/aplicadas en ese orden; el registro local de la migración confirma el `COMMIT`. El verificador corregido también está aprobado con su `ROLLBACK` final explícito. El siguiente orden operativo autorizado es:
 
-1. ejecutar la versión corregida de `0010_coordinated_auth_session_suspension_verify.sql`;
-2. exigir su `ROLLBACK` final explícito y comprobar que no persisten fixtures, operaciones, auditoría o grants temporales;
-3. ejecutar la matriz Auth hospedada desechable y los smoke tests aprobados;
-4. generar y reconciliar el snapshot post‑0010.
+1. ejecutar la matriz Auth hospedada desechable;
+2. completar los smoke tests de producción aprobados;
+3. generar y reconciliar el snapshot post‑0010.
 
 El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS sin políticas, triggers, firmas/argumentos/columnas de retorno, propiedades de función, ACL sin grant option y regresiones 0001–0009. Los cinco índices deben ser exactamente `admin_auth_operations_actor_requested_idx`, `admin_auth_operations_one_nonfinal_target_uidx`, `admin_auth_operations_pkey`, `admin_auth_operations_request_id_key` y `admin_auth_operations_target_status_idx`. La restricción única de `request_id` debe apuntar mediante `conindid` al índice `_key`, que debe ser único, válido, listo, no primario, no parcial, sin expresión y contener únicamente `request_id`; no puede existir otro índice de esa columna.
 
@@ -209,7 +212,7 @@ Debe rechazar llaves adicionales, códigos/estados desconocidos, UUID ausente do
 
 ## 6. Smoke tests de producción
 
-Sólo después de aprobar el verificador corregido y la matriz Auth hospedada:
+Sólo después de aprobar la matriz Auth hospedada:
 
 - autoridad B.1 ve contexto y operación sanitizada;
 - desactivar bloquea SITAA de inmediato, conserva datos y muestra sincronización pendiente/completa con precisión;
@@ -225,7 +228,7 @@ B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT
 
 - no afirmar invalidación de JWT, refresh o restauración;
 - no usar la función en producción;
-- no describir el verificador como aprobado ni B.3a como cerrada;
+- describir el verificador PostgreSQL como aprobado, pero no B.3a como cerrada;
 - no crear 0011;
 - B.3b y Fase C permanecen fuera de alcance.
 

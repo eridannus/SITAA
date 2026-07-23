@@ -3,7 +3,7 @@
 **Actualización documental:** 2026-07-23.
 **Snapshot vivo canónico:** `2026-07-22T23:32:46Z`, estado `SUCCESS`.
 
-La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Esas migraciones son inmutables. `0010` también está aplicada, pero su verificador corregido y la reconciliación post‑0010 permanecen pendientes. El snapshot canónico bajo `supabase/reconciliation/live/` continúa representando post‑0009; esta corrección del arnés no volvió a conectarse a Supabase, no ejecutó SQL y no regeneró el snapshot.
+La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Esas migraciones son inmutables. `0010` también está aplicada y su verificador PostgreSQL corregido está aprobado, pero la reconciliación post‑0010 permanece pendiente. El snapshot canónico bajo `supabase/reconciliation/live/` continúa representando post‑0009; este cierre documental no volvió a conectarse a Supabase, no ejecutó SQL y no regeneró el snapshot.
 
 ## Cadena aplicada
 
@@ -16,7 +16,7 @@ La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Esa
 7. `0007_admin_account_directory_audit.sql`: directorio B.1 de sólo lectura y auditoría append-only.
 8. `0008_operational_account_barrier_identity_correction.sql`: barrera de cuenta activa y corrección de identidad B.2a.
 9. `0009_admin_account_lifecycle_transitions.sql`: desactivación/reactivación auditada B.2b.
-10. `0010_coordinated_auth_session_suspension.sql`: coordinación B.3a entre ciclo de vida SITAA y Auth; aplicada, con verificación hospedada pendiente.
+10. `0010_coordinated_auth_session_suspension.sql`: coordinación B.3a entre ciclo de vida SITAA y Auth; aplicada y con verificador PostgreSQL aprobado.
 
 ## Inventario vivo posterior a 0009
 
@@ -52,7 +52,7 @@ El delta frente a post‑0008 es exactamente el esperado por 0009: tres firmas, 
 
 Las matrices manuales de concurrencia B.2a/B.2b siguen sin ejecutarse y no constituyen evidencia de producción.
 
-## 0010 aplicada / verificación B.3a pendiente
+## 0010 aplicada / verificador PostgreSQL aprobado
 
 `0010_coordinated_auth_session_suspension.sql` fue aplicada y el registro local termina en `COMMIT`. Añade:
 
@@ -75,18 +75,22 @@ La segunda ejecución corregida quedó aprobada: devolvió exactamente 34 filas,
 
 La aplicación compatible se desplegó correctamente y la Edge Function está `ACTIVE`, sin invocaciones registradas para esta fase. El primer verificador hospedado terminó con código de salida 3 en `restore_failure_finalize`: la función devolvió correctamente `42501/sitaa_account_lifecycle_auth_unconfirmed`, pero el arnés intentaba capturarlo con `raise_exception`, condición reservada para `P0001`. No imprimió el `ROLLBACK` final; la desconexión de `psql` descartó la transacción abierta. No se ejecutó Auth Admin ni una operación real B.3a.
 
-La corrección usa `insufficient_privilege` y valida de forma conjunta SQLSTATE `42501` y el mensaje estable. Aún deben aprobarse la reejecución completa con `ROLLBACK` explícito, la matriz Auth hospedada, los smoke tests y el snapshot post‑0010. No se ha probado el efecto sobre JWT existentes, refresh tokens o la restauración con `ban_duration = 'none'`.
+El diagnóstico posterior al aborto confirmó que el ledger existe, hay seis funciones B.3a, el ledger tiene cero filas y existen cero eventos de auditoría Auth B.3a. Terminó con `ROLLBACK` y código de salida 0; no sobrevivió ningún fixture del primer intento.
+
+La reejecución usó `insufficient_privilege` y validó de forma conjunta SQLSTATE `42501` y el mensaje estable. Completó todos los escenarios, imprimió exactamente un `ROLLBACK` final, terminó con código de salida 0 y no produjo líneas `ERROR`. El verificador PostgreSQL quedó aprobado sin persistir fixtures, privilegios temporales, operaciones o auditoría.
+
+Aún deben aprobarse la matriz Auth hospedada, los smoke tests y el snapshot/reconciliación post‑0010. No se ha probado el efecto sobre JWT existentes, refresh tokens o la restauración con `ban_duration = 'none'`.
 
 ## Pendientes
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- B.3a permanece abierta hasta aprobar el verificador corregido, la prueba Auth desechable, los smoke tests y la reconciliación post‑0010.
-- El paquete 0010 exige casts `::text` al serializar campos internos `char` de catálogo y revalida B.1 después de los locks en todas sus RPC mutables. Su aplicación no sustituye la verificación hospedada pendiente.
+- B.3a permanece abierta hasta aprobar la prueba Auth desechable, los smoke tests y la reconciliación post‑0010.
+- El paquete 0010 exige casts `::text` al serializar campos internos `char` de catálogo y revalida B.1 después de los locks en todas sus RPC mutables. Su verificador PostgreSQL está aprobado, pero no demuestra por sí solo la semántica hospedada de Auth.
 - B.3b, administración de roles/Fase C, retiro de A-02, paneles especializados, formularios dinámicos, reportes y exportaciones continúan pendientes.
-- No se debe crear 0011 mientras 0010 siga sin verificación y reconciliación aprobadas.
+- No se debe crear 0011 mientras permanezcan abiertos los gates hospedados y la reconciliación post‑0010.
 
 ## Evidencia y rollback
 
 Los resultados de aplicación y verificación de 0009 están en `supabase/reconciliation/0009_post_apply_reconciliation.md` y archivos asociados. Los snapshots vivos no se editan manualmente.
 
-El rollback 0010 sólo es elegible antes de que exista la primera operación B.3a o evento Auth B.3a. Después de ese punto, la historia coordinada no puede eliminarse y cualquier corrección deberá usar una migración posterior revisada.
+El diagnóstico confirmó que todavía no existe ninguna operación real B.3a ni evento Auth B.3a, por lo que el rollback conserva su elegibilidad documental; no se ejecutó en este cierre. Después de la primera operación o evento real, la historia coordinada no puede eliminarse y el rollback queda prohibido por diseño.
