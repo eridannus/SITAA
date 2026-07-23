@@ -17,6 +17,7 @@ const coreArtifacts = [
   artifacts.rollback,
   "supabase/functions/admin-account-auth-lifecycle/index.ts",
   "supabase/functions/admin-account-auth-lifecycle/auth-admin-adapter.ts",
+  "supabase/config.toml",
   "scripts/check-auth-lifecycle-b3a.mjs",
   "scripts/check-sql-0010.mjs",
   "docs/TEST_PLAN_0010.md",
@@ -141,6 +142,79 @@ end;
 $preflight$;`;
 const correctedRegressionBody = extractDollarQuotedBodies(correctedDollarRegression, "regresión positiva")[0];
 assert.doesNotThrow(() => assertLexicallyBalanced(correctedRegressionBody.body, "regresión positiva:$preflight$"));
+
+function assertRequestIdCatalogContract(source, label) {
+  const obsoleteIndexName = ["admin_auth_operations_request_id", "uidx"].join("_");
+  assert.match(
+    source,
+    /constraint admin_auth_operations_request_id_key unique \(request_id\)/,
+    `${label}: request_id debe declararse como restricción UNIQUE dentro de CREATE TABLE`,
+  );
+  assert.equal(source.includes(obsoleteIndexName), false, `${label}: sobrevive el nombre de índice obsoleto`);
+  assert.doesNotMatch(
+    source,
+    /unique\s+using\s+index/i,
+    `${label}: no se permite acoplar nombres distintos mediante UNIQUE USING INDEX`,
+  );
+}
+
+const mismatchedRequestIdRegression = `
+create table public.admin_auth_operations (
+  request_id uuid not null,
+  constraint admin_auth_operations_request_id_key unique (request_id)
+);
+create unique index admin_auth_operations_request_id_source_idx
+  on public.admin_auth_operations(request_id);
+alter table public.admin_auth_operations
+  add constraint admin_auth_operations_request_id_second_key
+  unique using index admin_auth_operations_request_id_source_idx;`;
+assert.throws(
+  () => assertRequestIdCatalogContract(mismatchedRequestIdRegression, "regresión negativa request_id"),
+  /UNIQUE USING INDEX/,
+);
+assertRequestIdCatalogContract(sources.migration, "migration");
+
+function sliceBetween(source, startToken, endToken, label) {
+  const start = source.indexOf(startToken);
+  const end = source.indexOf(endToken, start + startToken.length);
+  assert.ok(start >= 0 && end > start, `No se pudo extraer ${label}`);
+  return source.slice(start, end);
+}
+
+function topLevelCategories(source, spaces) {
+  const pattern = new RegExp(`^${" ".repeat(spaces)}\\('([a-z0-9_]+)'\\s*,`, "gm");
+  return [...source.matchAll(pattern)].map((match) => match[1]);
+}
+
+const independentBlocking = sliceBetween(
+  sources.preflight,
+  "with blocking(category,aggregate_count) as (",
+  "), informational(category,aggregate_count) as (",
+  "superficie bloqueante independiente",
+);
+const embeddedBlocking = sliceBetween(
+  sources.migration,
+  "with canonical_blocking(category,aggregate_count) as (",
+  "select count(*) into mismatch_count",
+  "superficie bloqueante embebida",
+);
+const independentCategories = topLevelCategories(independentBlocking, 2);
+const embeddedCategories = topLevelCategories(embeddedBlocking, 4);
+assert.deepEqual(
+  embeddedCategories,
+  independentCategories,
+  "El preflight embebido debe reproducir todas las categorías bloqueantes independientes y en el mismo orden",
+);
+const independentCanonicalHashes = [...new Set(independentBlocking.match(/\b[a-f0-9]{32}\b/g) ?? [])];
+for (const hash of independentCanonicalHashes) {
+  assert.ok(embeddedBlocking.includes(hash), `Hash canónico presente sólo en preflight independiente: ${hash}`);
+}
+assert.ok(
+  sources.migration.indexOf("sitaa_0010_preflight_canonical_baseline_mismatch")
+    < sources.migration.indexOf("set_config('sitaa_0010.prior_"),
+  "La migración no puede capturar hashes transaccionales antes de aprobar el baseline canónico",
+);
+
 assert.match(sources.migration, /^--[\s\S]*\nbegin;/);
 assert.match(sources.migration.trimEnd(), /commit;$/);
 assert.match(sources.preflight, /begin transaction read only;/);
@@ -188,6 +262,23 @@ assert.match(sources.rollback, /grant execute on function public\.transition_adm
 assert.match(sources.rollback, /revoke all on function public\.guard_admin_auth_operation_b3a\(\)/);
 assert.match(sources.rollback, /sitaa_0010_rollback_exact_contract_mismatch/);
 assert.match(sources.rollback, /with expected\(function_oid,grantee\)/);
+for (const canonicalHash of [
+  "c2095a58fb96e7387513b4bebf33b95d",
+  "4ea1d04b7d1b1632fd5ce01a1dc83e05",
+  "e1e24e4406a6b72e539a412396b58a83",
+  "f33fd097dfc9ed8a316ad5a3accab896",
+]) {
+  assert.ok(
+    sources.rollback.split(canonicalHash).length - 1 >= 2,
+    `Rollback debe comprobar ${canonicalHash} antes de destruir y después de restaurar`,
+  );
+}
+assert.match(sources.rollback, /sitaa_0010_rollback_canonical_acl_mismatch/);
+assert.match(sources.rollback, /sitaa_0010_rollback_post_0009_acl_mismatch/);
+assert.ok(
+  sources.rollback.split("('profiles','first_names','postgres','authenticated','UPDATE',false)").length - 1 >= 4,
+  "Rollback debe comparar bidireccionalmente las ACL de columna antes y después",
+);
 assert.match(sources.migration, /with expected\(function_oid,grantee\)/, "La guarda 0010 debe comparar ACL exacta");
 assert.match(sources.verify, /with expected\(function_oid,grantee\)/, "El verificador debe comparar ACL exacta");
 assert.match(sources.migration, /sitaa_0010_post_ddl_function_body_mismatch/);
@@ -220,7 +311,7 @@ for (const constraint of [
 }
 for (const index of [
   "admin_auth_operations_pkey",
-  "admin_auth_operations_request_id_uidx",
+  "admin_auth_operations_request_id_key",
   "admin_auth_operations_target_status_idx",
   "admin_auth_operations_actor_requested_idx",
   "admin_auth_operations_one_nonfinal_target_uidx",
@@ -228,6 +319,34 @@ for (const index of [
   for (const artifact of ["migration", "verify", "rollback"]) {
     assert.ok(sources[artifact].includes(index), `Falta índice exacto en ${artifact}: ${index}`);
   }
+}
+const obsoleteRequestIndexName = ["admin_auth_operations_request_id", "uidx"].join("_");
+for (const artifact of ["migration", "verify", "rollback"]) {
+  assert.equal(
+    sources[artifact].includes(obsoleteRequestIndexName),
+    false,
+    `Sobrevive el índice request_id obsoleto en ${artifact}`,
+  );
+  assert.match(
+    sources[artifact],
+    /constraint_definition\.conindid='public\.admin_auth_operations_request_id_key'::regclass/,
+    `Falta verificar conindid de request_id en ${artifact}`,
+  );
+  assert.match(
+    sources[artifact],
+    /index_definition\.indisunique[\s\S]{0,180}index_definition\.indisvalid[\s\S]{0,180}index_definition\.indisready/,
+    `Falta verificar que el índice request_id sea único, válido y listo en ${artifact}`,
+  );
+  assert.match(
+    sources[artifact],
+    /not index_definition\.indisprimary[\s\S]{0,180}index_definition\.indpred is null[\s\S]{0,180}index_definition\.indexprs is null/,
+    `Falta descartar índice request_id primario, parcial o de expresión en ${artifact}`,
+  );
+  assert.match(
+    sources[artifact],
+    /index_definition\.indnkeyatts=1[\s\S]*?='request_id'/,
+    `Falta verificar la única clave request_id en ${artifact}`,
+  );
 }
 for (const trigger of [
   "guard_admin_auth_operation_b3a",
@@ -283,6 +402,31 @@ const prepareEnd = sources.migration.indexOf("$function$;", sources.migration.in
 const prepareBody = sources.migration.slice(prepareStart, prepareEnd);
 assert.ok(prepareBody.indexOf("pg_advisory_xact_lock") < prepareBody.indexOf("operation.request_id=$4 for update"),
   "El lock de ciclo debe preceder la consulta autoritativa request_id");
+assert.match(
+  prepareBody,
+  /if requested_transition is null\s+or requested_transition not in \('deactivate','reactivate'\) then\s+raise exception 'sitaa_account_lifecycle_invalid_transition'\s+using errcode='22023';/,
+  "La transición pública debe rechazar NULL y sólo aceptar valores exactos en minúsculas",
+);
+assert.doesNotMatch(
+  prepareBody,
+  /\b(lower|btrim|trim)\s*\(\s*requested_transition/i,
+  "La transición no debe normalizarse, recortarse ni convertirse a minúsculas",
+);
+assert.match(
+  sources.verify,
+  /foreach transition_value in array array\[null::text,'','suspend','DEACTIVATE'\] loop/,
+  "El verificador debe cubrir NULL, vacío, desconocido y mayúsculas",
+);
+assert.match(
+  sources.verify,
+  /sqlerrm<>'sitaa_account_lifecycle_invalid_transition' or sqlstate<>'22023'/,
+  "El verificador debe exigir mensaje y SQLSTATE canónicos para transición inválida",
+);
+assert.match(
+  sources.verify,
+  /0010_verify_invalid_transition_mutated_state/,
+  "El verificador debe demostrar cero mutación tras cada transición inválida",
+);
 assert.match(sources.migration, /requested_result is null or requested_result not in/);
 assert.match(sources.migration, /stable_error_code is null[\s\S]*retryable_failure/);
 assert.doesNotMatch(
@@ -451,8 +595,8 @@ for (const [file, expected] of immutable) {
   assert.equal(digest, expected, `Migración inmutable modificada: ${file}`);
 }
 assert.equal(fs.readdirSync(path.join(root, "supabase/migrations")).some((name) => /^0011_/.test(name)), false);
-assert.equal(coreArtifacts.length, 15);
-console.log("SHA-256 de artefactos núcleo 0010:");
+assert.equal(coreArtifacts.length, 16);
+console.log("SHA-256 del paquete de revisión completo 0010:");
 for (const relative of coreArtifacts) {
   const digest = crypto.createHash("sha256")
     .update(fs.readFileSync(path.join(root, relative)))
@@ -462,6 +606,10 @@ for (const relative of coreArtifacts) {
 console.log("Matriz final de cuerpos 0010:");
 for (const [signature, bodyHash] of finalBodyHashes) console.log(`  ${bodyHash}  ${signature}`);
 console.log("Alineación migración/verificador/rollback: OK");
+console.log("Alineación restricción/índice request_id mediante conindid: OK");
+console.log("Alineación preflight independiente/embebido: OK");
+console.log("Mapas canónicos predestructivos y post-rollback: OK");
+console.log("Validación total de transición, incluido NULL: OK");
 console.log("Orden de locks del rollback: ledger -> auditoría -> guarda completa: OK");
 console.log("Taxonomía provisional Auth sólo reintentable: OK");
 console.log("Cercado por claimed_attempt_count: OK");

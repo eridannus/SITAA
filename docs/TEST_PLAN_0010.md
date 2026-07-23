@@ -15,6 +15,8 @@ La revisión local previa a aplicación detectó y corrigió defectos del arnés
 
 Una segunda revisión recibió un paquete desactualizado respecto del repositorio canónico: contenía hashes anteriores en verificador/rollback, carecía del lock de auditoría, conservaba resultados terminales en el adaptador y mostraba archivos de aplicación B.2b. La captura obligatoria previa a esta corrección confirmó que el árbol canónico ya tenía sincronizados esos elementos. Antes de cualquier ejecución se añadió el cercado por intento, el reloj de pared posterior a locks y la inmutabilidad estricta de evidencia. No se ejecutaron preflight, SQL, Edge Function ni Auth Admin.
 
+La revisión final del catálogo corrigió antes de cualquier ejecución la identidad física de `request_id`: la restricción `admin_auth_operations_request_id_key` crea y usa el índice del mismo nombre, sin `UNIQUE USING INDEX` ni un índice duplicado. También hizo total la validación de transición, alineó el preflight embebido con toda la superficie bloqueante independiente y completó los mapas canónicos predestructivos y post-rollback. Estas correcciones siguen siendo exclusivamente locales y estáticas.
+
 El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
 
 ## 1. Validación estática y local
@@ -68,10 +70,13 @@ Después de publicar una aplicación compatible y aprobar el preflight:
 2. ejecutar `0010_coordinated_auth_session_suspension_verify.sql`;
 3. exigir `ROLLBACK` final y comprobar que no persisten fixtures, operaciones, auditoría o grants temporales.
 
-El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS sin políticas, triggers, firmas/argumentos/columnas de retorno, propiedades de función, ACL sin grant option y regresiones 0001–0009. Bajo roles reales debe probar:
+El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS sin políticas, triggers, firmas/argumentos/columnas de retorno, propiedades de función, ACL sin grant option y regresiones 0001–0009. Los cinco índices deben ser exactamente `admin_auth_operations_actor_requested_idx`, `admin_auth_operations_one_nonfinal_target_uidx`, `admin_auth_operations_pkey`, `admin_auth_operations_request_id_key` y `admin_auth_operations_target_status_idx`. La restricción única de `request_id` debe apuntar mediante `conindid` al índice `_key`, que debe ser único, válido, listo, no primario, no parcial, sin expresión y contener únicamente `request_id`; no puede existir otro índice de esa columna.
+
+Bajo roles reales debe probar:
 
 - mutación 0009 directa denegada a `authenticated` con `42501`;
 - usuarios ordinarios, objetivo, pendiente, administrador malformado/inactivo y autoacción denegados;
+- transición `NULL`, vacía, desconocida y en mayúsculas rechazada por la RPC pública con SQLSTATE `22023`, mensaje exacto `sitaa_account_lifecycle_invalid_transition` y cero cambios de perfil, ledger o auditoría;
 - último administrador protegido;
 - request ID idempotente y conflicto rechazado;
 - una sola operación no final por objetivo;
@@ -136,7 +141,7 @@ Usar un proyecto desechable, un objetivo sintético sin datos reales y dos sesio
 | 19 | Ausencia de secretos | Revisar bundles, variables Vercel visibles y logs sin secreto. |
 | 20 | Sanitización | Interfaz y auditoría no muestran error Auth crudo. |
 
-También verificar fallo terminal, recuperación después de timeout de `processing`, dos solicitudes concurrentes al mismo objetivo y request ID repetido con payload distinto. Registrar versiones SDK/runtime, tiempos UTC, respuestas sanitizadas y resultado observado; nunca tokens o credenciales.
+También verificar recuperación después de timeout de `processing`, dos solicitudes concurrentes al mismo objetivo y request ID repetido con payload distinto. El fallo `terminal_failure` se prueba sólo como estado sintético y transaccional del modelo SQL. El adaptador hospedado provisional debe producir únicamente `retryable_failure`; esta matriz no exige ni acepta una salida terminal hospedada. Una categoría terminal hospedada sólo podrá introducirse después de contar con evidencia empírica en un proyecto desechable, una clasificación estable del proveedor y un camino de recuperación del operador aprobado. Registrar versiones SDK/runtime, tiempos UTC, respuestas sanitizadas y resultado observado; nunca tokens o credenciales.
 
 ### Pruebas multisesión reservadas y no ejecutadas
 

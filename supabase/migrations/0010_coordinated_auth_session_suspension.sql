@@ -14,6 +14,150 @@ declare
   mismatch_count integer := 0;
   expected_function_hash text := '71f9763d702e95e4eede51a4a4611694';
 begin
+  -- El estado capturado abajo sólo es válido si primero coincide con toda la
+  -- superficie bloqueante canónica post-0009 del preflight independiente.
+  with canonical_blocking(category,aggregate_count) as (
+    values
+    ('post_0009_inventory_drift',
+      (case when (select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')=18 then 0 else 1 end)+
+      (case when (select count(*) from information_schema.columns where table_schema='public')=165 then 0 else 1 end)+
+      (case when (select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public' and c.contype in ('p','f','u','c'))=80 then 0 else 1 end)+
+      (case when (select count(*) from pg_indexes where schemaname='public')=43 then 0 else 1 end)+
+      (case when (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal)=11 then 0 else 1 end)+
+      (case when (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')=54 then 0 else 1 end)+
+      (case when (select count(*) from pg_policies where schemaname='public')=25 then 0 else 1 end)+
+      (case when (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p') and c.relrowsecurity)=18 then 0 else 1 end)),
+    ('post_0009_privilege_inventory_drift',
+      (case when (select count(*) from information_schema.routine_privileges where routine_schema='public')=137 then 0 else 1 end)+
+      (case when (select count(*) from information_schema.table_privileges where table_schema='public')=267 then 0 else 1 end)+
+      (case when (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where n.nspname='public')+(select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral aclexplode(coalesce(c.relacl,acldefault(case when c.relkind='S' then 's'::"char" else 'r'::"char" end,c.relowner))) a where n.nspname='public' and c.relkind in ('r','p','v','m','S'))=445 then 0 else 1 end)),
+    ('post_0009_function_map_drift',case when (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')='71f9763d702e95e4eede51a4a4611694' then 0 else 1 end),
+    ('post_0009_function_signature_drift',case when (select md5(coalesce(string_agg(p.oid::regprocedure::text,'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')='89d8e1d260ccc0af72ee42c394f79f90' then 0 else 1 end),
+    ('post_0009_function_metadata_drift',case when (
+      with entries(value) as (
+        select p.oid::regprocedure::text||':'||pg_get_userbyid(p.proowner)||':'||l.lanname||':'||
+          p.provolatile::text||':'||p.prosecdef::text||':'||coalesce(array_to_string(p.proconfig,E'\n'),'')
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang
+        where n.nspname='public'
+      )
+      select md5(coalesce(string_agg(value,'|' order by value),'')) from entries
+    )='c2095a58fb96e7387513b4bebf33b95d' then 0 else 1 end),
+    ('post_0009_function_acl_drift',case when (
+      with entries(value) as (
+        select p.oid::regprocedure::text||':'||pg_get_userbyid(p.proowner)||':'||
+          pg_get_userbyid(acl.grantor)||':'||
+          case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end||':'||
+          acl.privilege_type||':'||acl.is_grantable::text
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+        where n.nspname='public'
+      )
+      select count(*)=137 and md5(coalesce(string_agg(value,'|' order by value),''))='4ea1d04b7d1b1632fd5ce01a1dc83e05' from entries
+    ) then 0 else 1 end),
+    ('post_0009_table_acl_drift',case when (
+      with entries(value) as (
+        select c.relname||':'||pg_get_userbyid(c.relowner)||':'||
+          pg_get_userbyid(acl.grantor)||':'||
+          case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end||':'||
+          acl.privilege_type||':'||acl.is_grantable::text
+        from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
+        where n.nspname='public' and c.relkind in ('r','p','v','m')
+      )
+      select count(*)=302 and md5(coalesce(string_agg(value,'|' order by value),''))='e1e24e4406a6b72e539a412396b58a83' from entries
+    ) then 0 else 1 end),
+    ('post_0009_sequence_acl_exact_drift',case when (
+      with entries(value) as (
+        select c.relname||':'||pg_get_userbyid(c.relowner)||':'||
+          pg_get_userbyid(acl.grantor)||':'||
+          case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end||':'||
+          acl.privilege_type||':'||acl.is_grantable::text
+        from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        cross join lateral aclexplode(coalesce(c.relacl,acldefault('s',c.relowner))) acl
+        where n.nspname='public' and c.relkind='S'
+      )
+      select count(*)=6 and md5(coalesce(string_agg(value,'|' order by value),''))='f33fd097dfc9ed8a316ad5a3accab896' from entries
+    ) then 0 else 1 end),
+    ('post_0009_explicit_column_acl_drift',case when not exists (
+      (
+        select c.relname,a.attname,pg_get_userbyid(acl.grantor),
+          case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end,
+          acl.privilege_type,acl.is_grantable
+        from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace
+        cross join lateral aclexplode(a.attacl) acl
+        where n.nspname='public' and a.attnum>0 and not a.attisdropped and a.attacl is not null
+      )
+      except
+      values
+        ('profiles','first_names','postgres','authenticated','UPDATE',false),
+        ('profiles','maternal_surname','postgres','authenticated','UPDATE',false),
+        ('profiles','paternal_surname','postgres','authenticated','UPDATE',false)
+    ) and not exists (
+      (values
+        ('profiles','first_names','postgres','authenticated','UPDATE',false),
+        ('profiles','maternal_surname','postgres','authenticated','UPDATE',false),
+        ('profiles','paternal_surname','postgres','authenticated','UPDATE',false)
+      )
+      except
+      select c.relname,a.attname,pg_get_userbyid(acl.grantor),
+        case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end,
+        acl.privilege_type,acl.is_grantable
+      from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace
+      cross join lateral aclexplode(a.attacl) acl
+      where n.nspname='public' and a.attnum>0 and not a.attisdropped and a.attacl is not null
+    ) then 0 else 1 end),
+    ('post_0009_column_hash_drift',case when (select md5(coalesce(string_agg(table_name||':'||ordinal_position::text||':'||column_name||':'||data_type||':'||udt_name||':'||is_nullable||':'||coalesce(column_default,'')||':'||coalesce(character_maximum_length::text,'')||':'||coalesce(numeric_precision::text,'')||':'||coalesce(numeric_scale::text,'')||':'||coalesce(datetime_precision::text,''),'|' order by table_name,ordinal_position),'')) from information_schema.columns where table_schema='public')='847b9f5c4ec9d428c522f714de59fd1f' then 0 else 1 end),
+    ('post_0009_constraint_hash_drift',case when (select md5(coalesce(string_agg(c.relname||':'||k.conname||':'||case k.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(k.oid,true),'|' order by c.relname,k.conname),'')) from pg_constraint k join pg_class c on c.oid=k.conrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and k.contype in ('p','f','u','c'))='64f099164063d0cf500478dda3b5d25c' then 0 else 1 end),
+    ('post_0009_index_hash_drift',case when (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')='653875a8435cf43bda4fe55950f65802' then 0 else 1 end),
+    ('post_0009_policy_hash_drift',case when (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||policyname||':'||permissive||':'||roles::text||':'||cmd||':'||coalesce(qual,'')||':'||coalesce(with_check,''),'|' order by schemaname,tablename,policyname),'')) from pg_policies where schemaname='public')='a72df97fbb8e73d8445f7fe8765da4ba' then 0 else 1 end),
+    ('post_0009_trigger_hash_drift',case when (select md5(coalesce(string_agg(c.relname||':'||t.tgname||':'||pg_get_triggerdef(t.oid,true),'|' order by c.relname,t.tgname),'')) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal)='67ee47bcd43c0594129facf3d7729bad' then 0 else 1 end),
+    ('post_0009_authenticated_table_acl_drift',case when (select md5(coalesce(string_agg(table_name||':'||privilege_type,'|' order by table_name,privilege_type),'')) from information_schema.table_privileges where table_schema='public' and grantee='authenticated')='edbb0931514cafe989d3d345c4ea61d6' then 0 else 1 end),
+    ('post_0009_sequence_acl_drift',case when (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral aclexplode(coalesce(c.relacl,acldefault('s',c.relowner))) acl where n.nspname='public' and c.relkind='S')=6 then 0 else 1 end),
+    ('b2b_function_body_drift',(select count(*) from (values
+      ('is_exact_b1_account_admin_profile_b2b(uuid)','104d16a531ea53a5b4908102322097dc'),
+      ('get_admin_account_lifecycle_context_b2b(uuid)','6e7c8bb5e2dcf99fce6a75e03e07c309'),
+      ('transition_admin_account_lifecycle_b2b(uuid,text,text)','7f940968051ff1b844443f6c76b561c3')
+    ) e(signature,body_hash) left join pg_proc p on p.oid=to_regprocedure('public.'||e.signature) where p.oid is null or md5(regexp_replace(p.prosrc,'\s+','','g'))<>e.body_hash)),
+    ('b2b_function_acl_drift',
+      (case when has_function_privilege('authenticated','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE') then 0 else 1 end)+
+      (case when has_function_privilege('authenticated','public.get_admin_account_lifecycle_context_b2b(uuid)','EXECUTE') then 0 else 1 end)+
+      (case when not has_function_privilege('anon','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE') and not has_function_privilege('service_role','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE') then 0 else 1 end)),
+    ('b1_authority_contract_drift',case when exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.is_b1_account_admin()') and p.prosecdef and p.provolatile='s' and p.proconfig=array['search_path=pg_catalog, public']::text[] and md5(regexp_replace(p.prosrc,'\s+','','g'))='0486f72652abc79ed3d1334704d55fbe') then 0 else 1 end),
+    ('b2a_active_account_barrier_drift',(select count(*) from (values
+      ('is_sitaa_operational_account_active()','f85f733578f09c0f7466af7e18a90f4c'),
+      ('get_admin_identity_correction_context_b2a(uuid)','83932d04ff8f1b33793e8c7a49bb8e68'),
+      ('correct_admin_account_identity_b2a(uuid,text,text,text,text,text,uuid,text)','ce05cbc529473c070953e765e3ee05b2'),
+      ('enforce_activity_writer_integrity_b2a()','c58bd04859f1e2a044fcca58d3333e3c')
+    ) e(signature,body_hash) left join pg_proc p on p.oid=to_regprocedure('public.'||e.signature) where p.oid is null or md5(regexp_replace(p.prosrc,'\s+','','g'))<>e.body_hash)),
+    ('auth_profile_cardinality_drift',(select count(*) from public.profiles p left join auth.users u on u.id=p.id where u.id is null)+(select count(*) from auth.users u left join public.profiles p on p.id=u.id where p.id is null)),
+    ('canonical_auth_trigger_drift',
+      (case when (select count(*) from pg_trigger t where not t.tgisinternal and t.tgname='on_sitaa_auth_user_created')=1 then 0 else 1 end)+
+      (case when (select count(*) from pg_trigger t where not t.tgisinternal and t.tgname='on_sitaa_auth_user_created' and t.tgrelid='auth.users'::regclass and t.tgenabled='O' and t.tgtype=5::smallint and t.tgfoid=to_regprocedure('public.handle_sitaa_auth_user_created()') and cardinality(t.tgattr::smallint[])=0 and t.tgqual is null)=1 then 0 else 1 end)+
+      (case when (select count(*) from pg_trigger t where not t.tgisinternal and t.tgname='on_sitaa_auth_user_email_changed')=1 then 0 else 1 end)+
+      (case when (select count(*) from pg_trigger t where not t.tgisinternal and t.tgname='on_sitaa_auth_user_email_changed' and t.tgrelid='auth.users'::regclass and t.tgenabled='O' and t.tgtype=17::smallint and t.tgfoid=to_regprocedure('public.sync_sitaa_profile_email_from_auth()') and cardinality(t.tgattr::smallint[])=1 and t.tgqual is not null and (select count(*) from unnest(t.tgattr::smallint[]) u(attnum) join pg_attribute a on a.attrelid=t.tgrelid and a.attnum=u.attnum and a.attname='email' and not a.attisdropped)=1 and regexp_replace(regexp_replace(split_part(split_part(lower(pg_get_triggerdef(t.oid,false)),' when ',2),' execute function ',1),'[[:space:]()]','','g'),'::text','','g')='old.emailisdistinctfromnew.email')=1 then 0 else 1 end)),
+    ('admin_audit_contract_drift',
+      (case when to_regclass('public.admin_audit_events') is not null then 0 else 1 end)+
+      (case when (select count(*) from information_schema.columns where table_schema='public' and table_name='admin_audit_events')=9 then 0 else 1 end)+
+      (case when (select count(*) from pg_trigger where tgrelid='public.admin_audit_events'::regclass and not tgisinternal)=2 then 0 else 1 end)+
+      (case when (select relrowsecurity from pg_class where oid='public.admin_audit_events'::regclass) then 0 else 1 end)+
+      (case when (select count(*) from pg_policies where schemaname='public' and tablename='admin_audit_events')=0 then 0 else 1 end)),
+    ('b3a_action_code_incompatible',case when 'account_auth_suspended'~'^[a-z][a-z0-9]*(_[a-z0-9]+)*$' and 'account_auth_restored'~'^[a-z][a-z0-9]*(_[a-z0-9]+)*$' and 'account_auth_suspension_failed'~'^[a-z][a-z0-9]*(_[a-z0-9]+)*$' and 'account_auth_restoration_failed'~'^[a-z][a-z0-9]*(_[a-z0-9]+)*$' then 0 else 1 end),
+    ('service_role_contract_drift',case when exists(select 1 from pg_roles where rolname='service_role' and rolbypassrls and rolcanlogin=false) then 0 else 1 end),
+    ('profile_lifecycle_inconsistency',(select count(*) from public.profiles where not (account_status='active' and is_active and activated_at is not null and deactivated_at is null or account_status='pending_registration' and not is_active and activated_at is null and deactivated_at is null or account_status='inactive' and not is_active and activated_at is not null and deactivated_at is not null))),
+    ('conflicting_0010_table',case when to_regclass('public.admin_auth_operations') is null then 0 else 1 end),
+    ('conflicting_0010_functions',(select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('guard_admin_auth_operation_b3a','get_admin_account_auth_lifecycle_context_b3a','prepare_admin_account_auth_lifecycle_b3a','finalize_admin_account_auth_reactivation_b3a','claim_admin_auth_operation_b3a','record_admin_auth_operation_result_b3a'))),
+    ('controlled_seed_drift',case when (with rows(catalog,row_json) as (
+      select 'academic_periods',to_jsonb(s)::text from public.academic_periods s union all select 'academic_programs',to_jsonb(s)::text from public.academic_programs s union all select 'activity_modalities',to_jsonb(s)::text from public.activity_modalities s union all select 'activity_statuses',to_jsonb(s)::text from public.activity_statuses s union all select 'activity_types',to_jsonb(s)::text from public.activity_types s union all select 'attention_categories',to_jsonb(s)::text from public.attention_categories s union all select 'divisions',to_jsonb(s)::text from public.divisions s union all select 'location_types',to_jsonb(s)::text from public.location_types s union all select 'participant_roles',to_jsonb(s)::text from public.participant_roles s union all select 'roles',to_jsonb(s)::text from public.roles s union all select 'service_types',to_jsonb(s)::text from public.service_types s)
+      select count(*)=51 and md5(string_agg(catalog||E'\t'||row_json,E'\n' order by catalog,row_json))='2e450238768fbe9889470864a1832486' from rows) then 0 else 1 end),
+    ('dangerous_default_acl',(select count(*) from pg_default_acl d cross join lateral aclexplode(d.defaclacl) a where a.grantee in (0,'anon'::regrole,'authenticated'::regrole) and a.privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE')))
+  )
+  select count(*) into mismatch_count
+  from canonical_blocking
+  where aggregate_count<>0;
+  if mismatch_count<>0 then
+    raise exception 'sitaa_0010_preflight_canonical_baseline_mismatch' using errcode='55000';
+  end if;
+
   if (select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')<>18
      or (select count(*) from information_schema.columns where table_schema='public')<>165
      or (select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public' and c.contype in ('p','f','u','c'))<>80
@@ -173,6 +317,7 @@ create table public.admin_auth_operations (
   completed_at timestamptz null,
   updated_at timestamptz not null default now(),
   constraint admin_auth_operations_pkey primary key (id),
+  constraint admin_auth_operations_request_id_key unique (request_id),
   constraint admin_auth_operations_operation_check check (operation_code in ('deactivate','reactivate')),
   constraint admin_auth_operations_status_check check (status in ('open','processing','retryable_failure','succeeded','terminal_failure')),
   constraint admin_auth_operations_stage_check check (completed_stage in ('prepared','profile_suspended','auth_synchronized','completed')),
@@ -226,11 +371,6 @@ create table public.admin_auth_operations (
   )
 );
 
-create unique index admin_auth_operations_request_id_uidx
-  on public.admin_auth_operations(request_id);
-alter table public.admin_auth_operations
-  add constraint admin_auth_operations_request_id_key
-  unique using index admin_auth_operations_request_id_uidx;
 create index admin_auth_operations_target_status_idx
   on public.admin_auth_operations(target_profile_id,status,updated_at desc);
 create index admin_auth_operations_actor_requested_idx
@@ -470,7 +610,10 @@ begin
     raise exception 'sitaa_admin_access_denied' using errcode='42501';
   end if;
   if request_id is null then raise exception 'sitaa_auth_operation_request_id_required' using errcode='22023'; end if;
-  if requested_transition not in ('deactivate','reactivate') then raise exception 'sitaa_account_lifecycle_invalid_transition' using errcode='22023'; end if;
+  if requested_transition is null
+     or requested_transition not in ('deactivate','reactivate') then
+    raise exception 'sitaa_account_lifecycle_invalid_transition' using errcode='22023';
+  end if;
   if normalized_reason is null or char_length(normalized_reason) not between 10 and 1000 then raise exception 'sitaa_account_lifecycle_invalid_reason' using errcode='22023'; end if;
   if actor_id=requested_profile_id then raise exception 'sitaa_account_lifecycle_self_forbidden' using errcode='42501'; end if;
 
@@ -811,14 +954,14 @@ begin
      )
      or (select count(*) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>5
      or (select string_agg(indexname,'|' order by indexname) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>
-       'admin_auth_operations_actor_requested_idx|admin_auth_operations_one_nonfinal_target_uidx|admin_auth_operations_pkey|admin_auth_operations_request_id_uidx|admin_auth_operations_target_status_idx'
+       'admin_auth_operations_actor_requested_idx|admin_auth_operations_one_nonfinal_target_uidx|admin_auth_operations_pkey|admin_auth_operations_request_id_key|admin_auth_operations_target_status_idx'
      or exists (
        with expected(indexname,indexdef) as (
          values
            ('admin_auth_operations_actor_requested_idx','CREATE INDEX admin_auth_operations_actor_requested_idx ON public.admin_auth_operations USING btree (requested_by_profile_id, requested_at DESC, id DESC)'),
            ('admin_auth_operations_one_nonfinal_target_uidx','CREATE UNIQUE INDEX admin_auth_operations_one_nonfinal_target_uidx ON public.admin_auth_operations USING btree (target_profile_id) WHERE (status = ANY (ARRAY[''open''::text, ''processing''::text, ''retryable_failure''::text]))'),
            ('admin_auth_operations_pkey','CREATE UNIQUE INDEX admin_auth_operations_pkey ON public.admin_auth_operations USING btree (id)'),
-           ('admin_auth_operations_request_id_uidx','CREATE UNIQUE INDEX admin_auth_operations_request_id_uidx ON public.admin_auth_operations USING btree (request_id)'),
+           ('admin_auth_operations_request_id_key','CREATE UNIQUE INDEX admin_auth_operations_request_id_key ON public.admin_auth_operations USING btree (request_id)'),
            ('admin_auth_operations_target_status_idx','CREATE INDEX admin_auth_operations_target_status_idx ON public.admin_auth_operations USING btree (target_profile_id, status, updated_at DESC)')
        )
        (select * from expected except
@@ -826,6 +969,30 @@ begin
        union all
        (select indexname,indexdef from pg_indexes where schemaname='public' and tablename='admin_auth_operations'
         except select * from expected)
+     )
+     or to_regclass('public.admin_auth_operations_request_id_'||'uidx') is not null
+     or not exists (
+       select 1
+       from pg_constraint constraint_definition
+       join pg_index index_definition on index_definition.indexrelid=constraint_definition.conindid
+       where constraint_definition.conrelid='public.admin_auth_operations'::regclass
+         and constraint_definition.conname='admin_auth_operations_request_id_key'
+         and constraint_definition.contype='u'
+         and constraint_definition.conindid='public.admin_auth_operations_request_id_key'::regclass
+         and index_definition.indrelid='public.admin_auth_operations'::regclass
+         and index_definition.indisunique
+         and index_definition.indisvalid
+         and index_definition.indisready
+         and not index_definition.indisprimary
+         and index_definition.indpred is null
+         and index_definition.indexprs is null
+         and index_definition.indnkeyatts=1
+         and index_definition.indnatts=1
+         and (select string_agg(attribute_definition.attname,',' order by key_column.ordinality)
+              from unnest(index_definition.indkey::smallint[]) with ordinality key_column(attnum,ordinality)
+              join pg_attribute attribute_definition
+                on attribute_definition.attrelid=index_definition.indrelid
+               and attribute_definition.attnum=key_column.attnum)='request_id'
      )
      or (select count(*) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>2
      or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
@@ -910,7 +1077,7 @@ begin
     select 1 from (values
       ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
       ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
-      ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','6442e73504d4eecaf673f03b109c6eef'),
+      ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','2d8d580677411110fb9255fcced4c715'),
       ('claim_admin_auth_operation_b3a(uuid,uuid)','7da7aec9b4ff17aa551a4cf820d5cfbd'),
       ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','6467440196296d77662eb4cce77d3226'),
       ('finalize_admin_account_auth_reactivation_b3a(uuid)','b8223a508478e80edd340e231b66abeb')

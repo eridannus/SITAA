@@ -55,14 +55,14 @@ begin
      )
      or (select count(*) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>5
      or (select string_agg(indexname,'|' order by indexname) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>
-       'admin_auth_operations_actor_requested_idx|admin_auth_operations_one_nonfinal_target_uidx|admin_auth_operations_pkey|admin_auth_operations_request_id_uidx|admin_auth_operations_target_status_idx'
+       'admin_auth_operations_actor_requested_idx|admin_auth_operations_one_nonfinal_target_uidx|admin_auth_operations_pkey|admin_auth_operations_request_id_key|admin_auth_operations_target_status_idx'
      or exists (
        with expected(indexname,indexdef) as (
          values
            ('admin_auth_operations_actor_requested_idx','CREATE INDEX admin_auth_operations_actor_requested_idx ON public.admin_auth_operations USING btree (requested_by_profile_id, requested_at DESC, id DESC)'),
            ('admin_auth_operations_one_nonfinal_target_uidx','CREATE UNIQUE INDEX admin_auth_operations_one_nonfinal_target_uidx ON public.admin_auth_operations USING btree (target_profile_id) WHERE (status = ANY (ARRAY[''open''::text, ''processing''::text, ''retryable_failure''::text]))'),
            ('admin_auth_operations_pkey','CREATE UNIQUE INDEX admin_auth_operations_pkey ON public.admin_auth_operations USING btree (id)'),
-           ('admin_auth_operations_request_id_uidx','CREATE UNIQUE INDEX admin_auth_operations_request_id_uidx ON public.admin_auth_operations USING btree (request_id)'),
+           ('admin_auth_operations_request_id_key','CREATE UNIQUE INDEX admin_auth_operations_request_id_key ON public.admin_auth_operations USING btree (request_id)'),
            ('admin_auth_operations_target_status_idx','CREATE INDEX admin_auth_operations_target_status_idx ON public.admin_auth_operations USING btree (target_profile_id, status, updated_at DESC)')
        )
        (select * from expected except
@@ -70,6 +70,30 @@ begin
        union all
        (select indexname,indexdef from pg_indexes where schemaname='public' and tablename='admin_auth_operations'
         except select * from expected)
+     )
+     or to_regclass('public.admin_auth_operations_request_id_'||'uidx') is not null
+     or not exists (
+       select 1
+       from pg_constraint constraint_definition
+       join pg_index index_definition on index_definition.indexrelid=constraint_definition.conindid
+       where constraint_definition.conrelid='public.admin_auth_operations'::regclass
+         and constraint_definition.conname='admin_auth_operations_request_id_key'
+         and constraint_definition.contype='u'
+         and constraint_definition.conindid='public.admin_auth_operations_request_id_key'::regclass
+         and index_definition.indrelid='public.admin_auth_operations'::regclass
+         and index_definition.indisunique
+         and index_definition.indisvalid
+         and index_definition.indisready
+         and not index_definition.indisprimary
+         and index_definition.indpred is null
+         and index_definition.indexprs is null
+         and index_definition.indnkeyatts=1
+         and index_definition.indnatts=1
+         and (select string_agg(attribute_definition.attname,',' order by key_column.ordinality)
+              from unnest(index_definition.indkey::smallint[]) with ordinality key_column(attnum,ordinality)
+              join pg_attribute attribute_definition
+                on attribute_definition.attrelid=index_definition.indrelid
+               and attribute_definition.attnum=key_column.attnum)='request_id'
      )
      or (select count(*) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>2
      or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
@@ -128,7 +152,7 @@ begin
     select 1 from (values
       ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
       ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
-      ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','6442e73504d4eecaf673f03b109c6eef'),
+      ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','2d8d580677411110fb9255fcced4c715'),
       ('claim_admin_auth_operation_b3a(uuid,uuid)','7da7aec9b4ff17aa551a4cf820d5cfbd'),
       ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','6467440196296d77662eb4cce77d3226'),
       ('finalize_admin_account_auth_reactivation_b3a(uuid)','b8223a508478e80edd340e231b66abeb')
@@ -408,6 +432,56 @@ do $$ begin
     if sqlerrm<>'sitaa_account_lifecycle_pending_target' or sqlstate<>'P0001' then raise; end if;
   end;
 end $$;
+reset role;
+
+-- La transición pública es total: NULL, vacío, desconocido y mayúsculas fallan sin efectos.
+select pg_temp.set_actor('admin_a'); set local role authenticated;
+do $invalid_transition_contract$
+declare
+  transition_value text;
+  profile_hash_before text;
+  ledger_count_before bigint;
+  lifecycle_count_before bigint;
+  auth_count_before bigint;
+begin
+  foreach transition_value in array array[null::text,'','suspend','DEACTIVATE'] loop
+    select md5(row_to_json(profile_row)::text) into profile_hash_before
+    from public.profiles profile_row where profile_row.id=pg_temp.case_id('active_target');
+    select count(*) into ledger_count_before from public.admin_auth_operations;
+    select count(*) into lifecycle_count_before from public.admin_audit_events
+    where action_code in ('account_deactivated','account_reactivated');
+    select count(*) into auth_count_before from public.admin_audit_events
+    where action_code in (
+      'account_auth_suspended','account_auth_restored',
+      'account_auth_suspension_failed','account_auth_restoration_failed'
+    );
+
+    begin
+      perform public.prepare_admin_account_auth_lifecycle_b3a(
+        pg_temp.case_id('active_target'),transition_value,
+        'Motivo sintético de transición inválida 0010',gen_random_uuid()
+      );
+      raise exception '0010_verify_invalid_transition_unexpected';
+    exception when invalid_parameter_value then
+      if sqlerrm<>'sitaa_account_lifecycle_invalid_transition' or sqlstate<>'22023' then raise; end if;
+    end;
+
+    if profile_hash_before is distinct from
+         (select md5(row_to_json(profile_row)::text) from public.profiles profile_row
+          where profile_row.id=pg_temp.case_id('active_target'))
+       or ledger_count_before<>(select count(*) from public.admin_auth_operations)
+       or lifecycle_count_before<>(select count(*) from public.admin_audit_events
+          where action_code in ('account_deactivated','account_reactivated'))
+       or auth_count_before<>(select count(*) from public.admin_audit_events
+          where action_code in (
+            'account_auth_suspended','account_auth_restored',
+            'account_auth_suspension_failed','account_auth_restoration_failed'
+          )) then
+      raise exception '0010_verify_invalid_transition_mutated_state';
+    end if;
+  end loop;
+end;
+$invalid_transition_contract$;
 reset role;
 
 select pg_temp.set_actor('admin_malformed'); set local role authenticated;
