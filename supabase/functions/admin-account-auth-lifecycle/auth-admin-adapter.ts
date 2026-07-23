@@ -17,7 +17,7 @@ export type AuthAdminResult =
   | { ok: true }
   | {
       ok: false;
-      result: "retryable_failure" | "terminal_failure";
+      result: "retryable_failure";
       code: StableAuthFailureCode;
     };
 
@@ -26,13 +26,19 @@ type AuthAdminError = { status?: number };
 function stableFailure(error: AuthAdminError): AuthAdminResult {
   const status = error.status ?? 0;
   if (status === 404) {
-    return { ok: false, result: "terminal_failure", code: "auth_user_not_found" };
+    return { ok: false, result: "retryable_failure", code: "auth_user_not_found" };
   }
   if (status === 429) {
     return { ok: false, result: "retryable_failure", code: "auth_rate_limited" };
   }
   if (status === 400 || status === 401 || status === 403 || status === 422) {
-    return { ok: false, result: "terminal_failure", code: "auth_update_rejected" };
+    return {
+      ok: false,
+      result: "retryable_failure",
+      code: status === 400 || status === 422
+        ? "unsupported_auth_contract"
+        : "auth_update_rejected",
+    };
   }
   return {
     ok: false,
@@ -65,4 +71,3 @@ export function restoreAuthUser(
 ) {
   return updateBanDuration(client, targetAuthUserId, AUTH_RESTORATION_BAN_DURATION);
 }
-

@@ -162,6 +162,10 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - La suspensión provisional no se describe como revocación criptográfica de JWT. No se usa `auth.admin.signOut()` sin un JWT de la sesión objetivo y nunca se sustituye por el token del administrador.
 - Los tipos instalados permiten `ban_duration = 'none'` para levantar la suspensión y una duración larga para suspender. Su semántica hospedada, refresh tokens y sesiones existentes continúan sin verificar; `docs/TEST_PLAN_0010.md` exige un objetivo sintético y dos sesiones en un proyecto desechable.
 - Dos eventos exitosos son deliberados: B.2b acredita el cambio de perfil y B.3a la sincronización Auth. Ambos minimizan metadata y no contienen correo, tokens, proveedor o respuesta cruda.
+- El evento Auth usa como actor al administrador exacto que realizó el intento; el evento de ciclo B.2b conserva al actor de la mutación del perfil. El solicitante original y el completador se guardan por separado en el ledger.
+- El ledger tiene RLS sin políticas, ACL directo owner-only y ningún ACL explícito de columna. Su trigger rechaza writer `NULL`, vacío o desconocido, limpia el marcador tras cada DML aprobado y aplica una allowlist exacta de columnas por `prepare`, `claim`, `record` y `finalize`.
+- La Edge valida cardinalidad, campos, UUID, objetivo, operación, estado, etapa, intento, error y timestamps en toda respuesta RPC. No informa éxito o fallo persistido si la escritura del resultado no devuelve exactamente la fila esperada.
+- La clasificación Auth continúa provisional y reintentable para 400/401/403/404/422, límites, red y errores desconocidos. En especial, un error de credencial/configuración o un Auth user inesperadamente ausente no convierte una cuenta inactiva en un callejón terminal sin recuperación. La taxonomía hospedada sigue sin evidencia empírica.
 
 ## Validaciones previas al piloto
 

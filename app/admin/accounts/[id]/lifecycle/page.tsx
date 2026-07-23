@@ -57,7 +57,9 @@ export default async function AccountLifecyclePage({ params, searchParams }: Pro
     redirect(`/admin/accounts/${id}`);
   }
   const transition: AdminAccountLifecycleTransition = requested;
-  const allowed = context.b3aAvailable && context.openOperationId
+  const hasNonfinalOperation = context.b3aAvailable && context.currentOperationId
+    && context.operationStatus !== "succeeded" && context.operationStatus !== "terminal_failure";
+  const allowed = hasNonfinalOperation
     ? context.operationCode === transition
     : transition === "deactivate" ? context.canDeactivate : context.canReactivate;
   if (!allowed) redirect(`/admin/accounts/${id}`);

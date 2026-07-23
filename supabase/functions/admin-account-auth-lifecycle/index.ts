@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2.110.1";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.110.1";
 import {
   restoreAuthUser,
   suspendAuthUser,
@@ -10,17 +10,37 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const START_FIELDS = new Set(["mode", "targetProfileId", "transition", "reason", "requestId"]);
 const RETRY_FIELDS = new Set(["mode", "operationId"]);
+const STATUS_VALUES = new Set(["open", "processing", "retryable_failure", "succeeded", "terminal_failure"]);
+const STAGE_VALUES = new Set(["prepared", "profile_suspended", "auth_synchronized", "completed"]);
+const ERROR_VALUES = new Set([
+  "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
+  "auth_update_rejected", "unsupported_auth_contract", "database_finalize_pending",
+]);
 
 type OperationCode = "deactivate" | "reactivate";
+type OperationStatus = "open" | "processing" | "retryable_failure" | "succeeded" | "terminal_failure";
 type OperationStage = "prepared" | "profile_suspended" | "auth_synchronized" | "completed";
+type StableErrorCode =
+  | "auth_temporarily_unavailable"
+  | "auth_rate_limited"
+  | "auth_user_not_found"
+  | "auth_update_rejected"
+  | "unsupported_auth_contract"
+  | "database_finalize_pending";
 
-type ClaimedOperation = {
+type OperationSnapshot = {
   operationId: string;
   targetProfileId: string;
   operationCode: OperationCode;
+  status: OperationStatus;
   completedStage: OperationStage;
   attemptCount: number;
+  retryable: boolean;
+  lastErrorCode: StableErrorCode | null;
+  updatedAt: string;
 };
+
+type ClaimedOperation = OperationSnapshot & { claimed: boolean };
 
 function response(status: number, code: string, state: string, operationId?: string) {
   return new Response(JSON.stringify({ code, state, operationId: operationId ?? null }), {
@@ -38,32 +58,164 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function hasExactFields(value: Record<string, unknown>, allowed: Set<string>) {
-  return Object.keys(value).every((key) => allowed.has(key)) &&
-    Object.keys(value).length === allowed.size;
+  return Object.keys(value).every((key) => allowed.has(key)) && Object.keys(value).length === allowed.size;
 }
 
 function normalizedReason(value: unknown) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
 }
 
-function singleRow(data: unknown): Record<string, unknown> | null {
-  return Array.isArray(data) && data.length === 1 && isRecord(data[0]) ? data[0] : null;
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && Number.isFinite(Date.parse(value));
 }
 
-function parseClaim(data: unknown): ClaimedOperation | null {
-  const row = singleRow(data);
+function exactSingleRow(data: unknown, fields: readonly string[]): Record<string, unknown> | null {
+  if (!Array.isArray(data) || data.length !== 1 || !isRecord(data[0])) return null;
+  const keys = Object.keys(data[0]);
+  return keys.length === fields.length && keys.every((key) => fields.includes(key)) ? data[0] : null;
+}
+
+function parseSnapshot(
+  data: unknown,
+  fields: readonly string[],
+  expected?: { operationId?: string; targetProfileId?: string; operationCode?: OperationCode },
+): OperationSnapshot | null {
+  const row = exactSingleRow(data, fields);
   if (!row || typeof row.operation_id !== "string" || !UUID_PATTERN.test(row.operation_id)
     || typeof row.target_profile_id !== "string" || !UUID_PATTERN.test(row.target_profile_id)
     || (row.operation_code !== "deactivate" && row.operation_code !== "reactivate")
-    || !["prepared", "profile_suspended", "auth_synchronized", "completed"].includes(String(row.completed_stage))
-    || !Number.isInteger(row.attempt_count) || Number(row.attempt_count) < 1) return null;
+    || typeof row.status !== "string" || !STATUS_VALUES.has(row.status)
+    || typeof row.completed_stage !== "string" || !STAGE_VALUES.has(row.completed_stage)
+    || !Number.isSafeInteger(row.attempt_count) || Number(row.attempt_count) < 0
+    || typeof row.retryable !== "boolean"
+    || row.retryable !== (row.status === "retryable_failure")
+    || (row.last_error_code !== null
+      && (typeof row.last_error_code !== "string" || !ERROR_VALUES.has(row.last_error_code)))
+    || !isTimestamp(row.updated_at)
+    || (expected?.operationId !== undefined && row.operation_id !== expected.operationId)
+    || (expected?.targetProfileId !== undefined && row.target_profile_id !== expected.targetProfileId)
+    || (expected?.operationCode !== undefined && row.operation_code !== expected.operationCode)) return null;
   return {
     operationId: row.operation_id,
     targetProfileId: row.target_profile_id,
     operationCode: row.operation_code,
+    status: row.status as OperationStatus,
     completedStage: row.completed_stage as OperationStage,
     attemptCount: Number(row.attempt_count),
+    retryable: row.retryable,
+    lastErrorCode: row.last_error_code as StableErrorCode | null,
+    updatedAt: row.updated_at,
   };
+}
+
+const PREPARATION_FIELDS = [
+  "operation_id", "target_profile_id", "operation_code", "status", "completed_stage",
+  "attempt_count", "retryable", "last_error_code", "updated_at",
+] as const;
+const CLAIM_FIELDS = [...PREPARATION_FIELDS, "claimed"] as const;
+const RESULT_FIELDS = PREPARATION_FIELDS;
+const FINALIZATION_FIELDS = [
+  "operation_id", "target_profile_id", "status", "completed_stage",
+  "profile_audit_event_id", "auth_audit_event_id", "completed_at",
+] as const;
+
+function parseClaim(data: unknown, expected: { operationId: string }): ClaimedOperation | null {
+  const snapshot = parseSnapshot(data, CLAIM_FIELDS, expected);
+  const row = exactSingleRow(data, CLAIM_FIELDS);
+  return snapshot && row && typeof row.claimed === "boolean"
+    ? { ...snapshot, claimed: row.claimed }
+    : null;
+}
+
+function parseFinalization(data: unknown, expected: OperationSnapshot) {
+  const row = exactSingleRow(data, FINALIZATION_FIELDS);
+  return row
+    && row.operation_id === expected.operationId
+    && row.target_profile_id === expected.targetProfileId
+    && row.status === "succeeded"
+    && row.completed_stage === "completed"
+    && typeof row.profile_audit_event_id === "string" && UUID_PATTERN.test(row.profile_audit_event_id)
+    && typeof row.auth_audit_event_id === "string" && UUID_PATTERN.test(row.auth_audit_event_id)
+    && isTimestamp(row.completed_at);
+}
+
+function databaseCondition(error: { code?: string; message?: string } | null) {
+  const text = `${error?.code ?? ""} ${error?.message ?? ""}`.toLowerCase();
+  if (text.includes("sitaa_admin_access_denied") || error?.code === "42501") return "authorization_lost";
+  if (text.includes("sitaa_auth_operation_unavailable")) return "operation_unavailable";
+  if (text.includes("sitaa_auth_operation_request_id_conflict")) return "request_id_conflict";
+  if (text.includes("sitaa_account_lifecycle_pending_target")) return "pending_target";
+  if (text.includes("sitaa_auth_operation_target_busy")) return "operation_in_progress";
+  if (text.includes("sitaa_account_lifecycle_state_conflict")) return "state_conflict";
+  return "database_contract_rejected";
+}
+
+function finalResponse(operation: OperationSnapshot) {
+  if (operation.status === "succeeded") {
+    return response(200, operation.operationCode === "deactivate" ? "account_deactivated" : "account_reactivated", "completed", operation.operationId);
+  }
+  if (operation.status === "terminal_failure") {
+    return response(200, operation.lastErrorCode ?? "operation_terminal_failure", "terminal_failure", operation.operationId);
+  }
+  return null;
+}
+
+async function recordResult(
+  client: SupabaseClient,
+  operation: OperationSnapshot,
+  actorProfileId: string,
+  requestedResult: "auth_succeeded" | "retryable_failure" | "terminal_failure",
+  stableErrorCode: StableErrorCode | null,
+) {
+  const { data, error } = await client.rpc("record_admin_auth_operation_result_b3a", {
+    requested_operation_id: operation.operationId,
+    caller_profile_id: actorProfileId,
+    requested_result: requestedResult,
+    stable_error_code: stableErrorCode,
+  });
+  if (error) return null;
+  return parseSnapshot(data, RESULT_FIELDS, {
+    operationId: operation.operationId,
+    targetProfileId: operation.targetProfileId,
+    operationCode: operation.operationCode,
+  });
+}
+
+async function finalizeReactivation(
+  userClient: SupabaseClient,
+  privilegedClient: SupabaseClient,
+  operation: OperationSnapshot,
+  actorProfileId: string,
+): Promise<Response> {
+  const finalized = await userClient.rpc("finalize_admin_account_auth_reactivation_b3a", {
+    requested_operation_id: operation.operationId,
+  });
+  if (!finalized.error && parseFinalization(finalized.data, operation)) {
+    return response(200, "account_reactivated", "completed", operation.operationId);
+  }
+
+  // Una carrera de finalización puede haber concluido la operación. Consultar
+  // mediante claim ofrece un replay autoritativo antes de persistir el fallo.
+  const replay = await privilegedClient.rpc("claim_admin_auth_operation_b3a", {
+    requested_operation_id: operation.operationId,
+    caller_profile_id: actorProfileId,
+  });
+  const replayed = replay.error ? null : parseClaim(replay.data, { operationId: operation.operationId });
+  const replayResponse = replayed ? finalResponse(replayed) : null;
+  if (replayResponse) return replayResponse;
+
+  const persisted = await recordResult(
+    privilegedClient,
+    operation,
+    actorProfileId,
+    "retryable_failure",
+    "database_finalize_pending",
+  );
+  if (!persisted || persisted.status !== "retryable_failure"
+    || persisted.lastErrorCode !== "database_finalize_pending") {
+    return response(200, "result_persistence_failed", "pending", operation.operationId);
+  }
+  return response(200, "database_finalize_pending", "pending", operation.operationId);
 }
 
 async function main(request: Request): Promise<Response> {
@@ -105,6 +257,7 @@ async function main(request: Request): Promise<Response> {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
+  let operation: OperationSnapshot | null = null;
   let operationId: string;
   if (body.mode === "start") {
     if (!hasExactFields(body, START_FIELDS)
@@ -115,17 +268,24 @@ async function main(request: Request): Promise<Response> {
     }
     const reason = normalizedReason(body.reason);
     if (reason.length < 10 || reason.length > 1000) return response(400, "invalid_reason", "rejected");
-    const { data, error } = await userClient.rpc("prepare_admin_account_auth_lifecycle_b3a", {
+    const preparedRpc = await userClient.rpc("prepare_admin_account_auth_lifecycle_b3a", {
       requested_profile_id: body.targetProfileId,
       requested_transition: body.transition,
       transition_reason: reason,
       request_id: body.requestId,
     });
-    const prepared = singleRow(data);
-    if (error || !prepared || typeof prepared.operation_id !== "string" || !UUID_PATTERN.test(prepared.operation_id)) {
-      return response(error?.code === "42501" ? 403 : 409, "preparation_rejected", "rejected");
+    if (preparedRpc.error) {
+      const code = databaseCondition(preparedRpc.error);
+      return response(preparedRpc.error.code === "42501" ? 403 : 409, code, "rejected");
     }
-    operationId = prepared.operation_id;
+    operation = parseSnapshot(preparedRpc.data, PREPARATION_FIELDS, {
+      targetProfileId: body.targetProfileId,
+      operationCode: body.transition,
+    });
+    if (!operation) return response(409, "malformed_database_response", "pending");
+    operationId = operation.operationId;
+    const replayResponse = finalResponse(operation);
+    if (replayResponse) return replayResponse;
   } else if (body.mode === "retry") {
     if (!hasExactFields(body, RETRY_FIELDS)
       || typeof body.operationId !== "string" || !UUID_PATTERN.test(body.operationId)) {
@@ -136,26 +296,25 @@ async function main(request: Request): Promise<Response> {
     return response(400, "invalid_mode", "rejected");
   }
 
-  const { data: claimData, error: claimError } = await privilegedClient.rpc(
-    "claim_admin_auth_operation_b3a",
-    { requested_operation_id: operationId, caller_profile_id: actorProfileId },
-  );
-  const claim = parseClaim(claimData);
-  if (claimError || !claim) return response(200, "operation_not_claimable", "pending", operationId);
+  const claimRpc = await privilegedClient.rpc("claim_admin_auth_operation_b3a", {
+    requested_operation_id: operationId,
+    caller_profile_id: actorProfileId,
+  });
+  if (claimRpc.error) {
+    return response(claimRpc.error.code === "42501" ? 403 : 200, databaseCondition(claimRpc.error), "pending", operationId);
+  }
+  const claim = parseClaim(claimRpc.data, { operationId });
+  if (!claim || (operation && (claim.targetProfileId !== operation.targetProfileId
+    || claim.operationCode !== operation.operationCode))) {
+    return response(200, "malformed_database_response", "pending", operationId);
+  }
+  const claimReplay = finalResponse(claim);
+  if (claimReplay) return claimReplay;
+  if (!claim.claimed) return response(200, "operation_processing", "pending", operationId);
   recordLog(operationId, "claimed", "operation_claimed");
 
   if (claim.operationCode === "reactivate" && claim.completedStage === "auth_synchronized") {
-    const { error } = await userClient.rpc("finalize_admin_account_auth_reactivation_b3a", {
-      requested_operation_id: operationId,
-    });
-    if (!error) return response(200, "account_reactivated", "completed", operationId);
-    await privilegedClient.rpc("record_admin_auth_operation_result_b3a", {
-      requested_operation_id: operationId,
-      caller_profile_id: actorProfileId,
-      requested_result: "retryable_failure",
-      stable_error_code: "database_finalize_pending",
-    });
-    return response(200, "database_finalize_pending", "pending", operationId);
+    return finalizeReactivation(userClient, privilegedClient, claim, actorProfileId);
   }
 
   let authResult: AuthAdminResult;
@@ -167,37 +326,32 @@ async function main(request: Request): Promise<Response> {
     authResult = { ok: false, result: "retryable_failure", code: "auth_temporarily_unavailable" };
   }
   if (!authResult.ok) {
-    await privilegedClient.rpc("record_admin_auth_operation_result_b3a", {
-      requested_operation_id: operationId,
-      caller_profile_id: actorProfileId,
-      requested_result: authResult.result,
-      stable_error_code: authResult.code,
-    });
+    const persisted = await recordResult(
+      privilegedClient,
+      claim,
+      actorProfileId,
+      authResult.result,
+      authResult.code,
+    );
+    if (!persisted || persisted.status !== "retryable_failure"
+      || persisted.lastErrorCode !== authResult.code) {
+      return response(200, "result_persistence_failed", "pending", operationId);
+    }
     recordLog(operationId, "auth", authResult.code);
-    return response(200, authResult.code,
-      authResult.result === "retryable_failure" ? "pending" : "terminal_failure", operationId);
+    return response(200, authResult.code, "pending", operationId);
   }
 
-  const { error: recordError } = await privilegedClient.rpc("record_admin_auth_operation_result_b3a", {
-    requested_operation_id: operationId,
-    caller_profile_id: actorProfileId,
-    requested_result: "auth_succeeded",
-    stable_error_code: null,
-  });
-  if (recordError) return response(200, "result_persistence_failed", "pending", operationId);
-  if (claim.operationCode === "deactivate") return response(200, "account_deactivated", "completed", operationId);
-
-  const { error: finalizeError } = await userClient.rpc("finalize_admin_account_auth_reactivation_b3a", {
-    requested_operation_id: operationId,
-  });
-  if (!finalizeError) return response(200, "account_reactivated", "completed", operationId);
-  await privilegedClient.rpc("record_admin_auth_operation_result_b3a", {
-    requested_operation_id: operationId,
-    caller_profile_id: actorProfileId,
-    requested_result: "retryable_failure",
-    stable_error_code: "database_finalize_pending",
-  });
-  return response(200, "database_finalize_pending", "pending", operationId);
+  const persisted = await recordResult(privilegedClient, claim, actorProfileId, "auth_succeeded", null);
+  if (!persisted) return response(200, "result_persistence_failed", "pending", operationId);
+  if (claim.operationCode === "deactivate") {
+    return persisted.status === "succeeded" && persisted.completedStage === "completed"
+      ? response(200, "account_deactivated", "completed", operationId)
+      : response(200, "result_persistence_failed", "pending", operationId);
+  }
+  if (persisted.status !== "processing" || persisted.completedStage !== "auth_synchronized") {
+    return response(200, "result_persistence_failed", "pending", operationId);
+  }
+  return finalizeReactivation(userClient, privilegedClient, persisted, actorProfileId);
 }
 
 Deno.serve((request) => main(request).catch(() => response(500, "unexpected_failure", "pending")));

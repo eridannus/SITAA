@@ -41,20 +41,24 @@ export function AccountLifecycleForm({ detail, context, transition, requestId }:
   transition: AdminAccountLifecycleTransition;
   requestId: string;
 }) {
+  const hasNonfinalOperation = Boolean(
+    context.currentOperationId
+      && context.operationStatus !== "succeeded"
+      && context.operationStatus !== "terminal_failure",
+  );
   const initialState: AccountLifecycleState = {
-    status: context.operationStatus === "terminal_failure" ? "terminal_failure"
-      : context.openOperationId ? "pending" : "idle",
-    message: context.operationStatus === "terminal_failure"
-      ? "La sincronización terminó con una incidencia que requiere revisión técnica."
-      : context.openOperationId ? "Existe una operación coordinada pendiente para esta cuenta." : null,
+    status: hasNonfinalOperation ? "pending" : "idle",
+    message: hasNonfinalOperation
+      ? "Existe una operación coordinada pendiente para esta cuenta."
+      : null,
     fieldErrors: {},
     values: {
-      mode: context.openOperationId ? "retry" : "start",
+      mode: hasNonfinalOperation ? "retry" : "start",
       target_profile_id: detail.profileId,
       transition,
       transition_reason: "",
       request_id: requestId,
-      operation_id: context.openOperationId ?? "",
+      operation_id: hasNonfinalOperation ? context.currentOperationId ?? "" : "",
       confirmation: false,
     },
   };
@@ -72,9 +76,10 @@ export function AccountLifecycleForm({ detail, context, transition, requestId }:
   }, [state]);
 
   const isDeactivate = transition === "deactivate";
-  const operationId = state.values.operation_id || context.openOperationId;
+  const operationId = state.values.operation_id
+    || (hasNonfinalOperation ? context.currentOperationId : null);
   const operationPending = Boolean(operationId);
-  const operationTerminal = state.status === "terminal_failure" || context.operationStatus === "terminal_failure";
+  const operationTerminal = state.status === "terminal_failure";
   const canRetry = !operationTerminal && (
     state.status === "pending" || context.canRetryOrFinalize
   );
@@ -87,6 +92,17 @@ export function AccountLifecycleForm({ detail, context, transition, requestId }:
       <input type="hidden" name="transition" value={transition} />
       <input type="hidden" name="request_id" value={state.values.request_id} />
       <input type="hidden" name="operation_id" value={operationId ?? ""} />
+
+      {!operationPending && context.currentOperationId && context.operationStatus === "succeeded" ? (
+        <div className="sitaa-alert sitaa-alert--success">
+          La operación coordinada más reciente finalizó correctamente.
+        </div>
+      ) : null}
+      {!operationPending && context.currentOperationId && context.operationStatus === "terminal_failure" ? (
+        <div className="sitaa-alert sitaa-alert--warning">
+          La operación coordinada más reciente terminó con una incidencia registrada. Puedes iniciar una nueva transición sólo si el estado actual de la cuenta lo permite.
+        </div>
+      ) : null}
 
       {state.message ? (
         <div role="alert" className={`sitaa-alert ${

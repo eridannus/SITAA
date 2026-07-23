@@ -62,7 +62,7 @@ Las matrices manuales de concurrencia B.2a/B.2b siguen sin ejecutarse y no const
 - reintentos idempotentes que reanudan desde la última etapa persistida;
 - evidencia administrativa minimizada y separación explícita entre la transición del perfil y la sincronización Auth.
 
-La barrera 0008 sigue siendo el límite operativo inmediato. La coordinación no simula atomicidad entre PostgreSQL y Auth: desactivar primero bloquea el perfil y después intenta suspender Auth; reactivar primero restaura Auth y sólo entonces activa el perfil. Los fallos dejan estados recuperables o terminales sanitizados, nunca errores crudos.
+La barrera 0008 sigue siendo el límite operativo inmediato. La coordinación no simula atomicidad entre PostgreSQL y Auth: desactivar primero bloquea el perfil y después intenta suspender Auth; reactivar primero restaura Auth y sólo entonces activa el perfil. El modelo SQL conserva estados recuperables y terminales sanitizados, pero el adaptador hospedado provisional emite únicamente fallos reintentables hasta verificar una taxonomía terminal y un camino de recuperación. Nunca se persisten errores crudos.
 
 No se ha ejecutado el preflight, la migración, el verificador, el rollback, la Edge Function ni Auth Admin. Tampoco se ha probado en un proyecto hospedado el efecto sobre JWT existentes, refresh tokens o la restauración con `ban_duration = 'none'`. La matriz desechable de `docs/TEST_PLAN_0010.md` es bloqueante antes de producción.
 

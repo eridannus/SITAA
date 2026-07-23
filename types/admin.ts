@@ -180,6 +180,7 @@ export type AdminAuthOperationStableCode =
 export type AdminAccountLifecycleDenialCode =
   | "self_forbidden"
   | "pending_target"
+  | "operation_in_progress"
   | "last_admin"
   | "invalid_lifecycle"
   | "invalid_identity"
@@ -199,7 +200,7 @@ export interface AdminAccountLifecycleContext {
   openResponsibilityCount: number;
   openParticipationCount: number;
   b3aAvailable: boolean;
-  openOperationId: string | null;
+  currentOperationId: string | null;
   operationCode: AdminAccountLifecycleTransition | null;
   operationStatus: AdminAuthOperationStatus | null;
   completedStage: AdminAuthOperationStage | null;
@@ -229,7 +230,7 @@ export type AdminAccountAuthLifecycleEdgeInput =
 
 export interface AdminAccountAuthLifecycleEdgeResult {
   code: string;
-  state: "completed" | "pending" | "terminal_failure";
+  state: "completed" | "pending" | "rejected" | "terminal_failure";
   operationId: string | null;
 }
 

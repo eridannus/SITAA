@@ -11,16 +11,119 @@ const artifacts = {
   rollback: "supabase/reconciliation/0010_coordinated_auth_session_suspension_rollback.sql",
 };
 const sources = Object.fromEntries(Object.entries(artifacts).map(([key, relative]) => [key, fs.readFileSync(path.join(root, relative), "utf8")]));
+const edge = fs.readFileSync(path.join(root, "supabase/functions/admin-account-auth-lifecycle/index.ts"), "utf8");
+const adapter = fs.readFileSync(path.join(root, "supabase/functions/admin-account-auth-lifecycle/auth-admin-adapter.ts"), "utf8");
 
-function dollarQuoteTags(source) {
-  const counts = new Map();
-  for (const match of source.matchAll(/\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/g)) counts.set(match[0], (counts.get(match[0]) ?? 0) + 1);
-  return counts;
+function lineAtOffset(source, offset) {
+  return source.slice(0, offset).split("\n").length;
 }
+
+function extractDollarQuotedBodies(source, label) {
+  const bodies = [];
+  let single = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const current = source[index];
+    const next = source[index + 1];
+    if (lineComment) { if (current === "\n") lineComment = false; continue; }
+    if (blockComment) {
+      if (current === "*" && next === "/") { blockComment = false; index += 1; }
+      continue;
+    }
+    if (single) {
+      if (current === "'" && next === "'") { index += 1; continue; }
+      if (current === "'") single = false;
+      continue;
+    }
+    if (current === "-" && next === "-") { lineComment = true; index += 1; continue; }
+    if (current === "/" && next === "*") { blockComment = true; index += 1; continue; }
+    if (current === "'") { single = true; continue; }
+    if (current !== "$") continue;
+    const match = source.slice(index).match(/^(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/);
+    if (!match) continue;
+    const delimiter = match[1];
+    const openingOffset = index;
+    const bodyOffset = openingOffset + delimiter.length;
+    const closingOffset = source.indexOf(delimiter, bodyOffset);
+    assert.notEqual(closingOffset, -1,
+      `${label}: delimitador ${delimiter} abierto en línea ${lineAtOffset(source, openingOffset)} sin cierre`);
+    bodies.push({ delimiter, body: source.slice(bodyOffset, closingOffset), openingOffset,
+      closingOffset, openingLine: lineAtOffset(source, openingOffset),
+      closingLine: lineAtOffset(source, closingOffset) });
+    index = closingOffset + delimiter.length - 1;
+  }
+  return bodies;
+}
+
+function assertLexicallyBalanced(source, label) {
+  extractDollarQuotedBodies(source, label);
+  let depth = 0;
+  let squareDepth = 0;
+  let single = false;
+  let lineComment = false;
+  let blockComment = false;
+  let dollar = null;
+  for (let index = 0; index < source.length; index += 1) {
+    const current = source[index];
+    const next = source[index + 1];
+    if (lineComment) { if (current === "\n") lineComment = false; continue; }
+    if (blockComment) {
+      if (current === "*" && next === "/") { blockComment = false; index += 1; }
+      continue;
+    }
+    if (dollar) {
+      if (source.startsWith(dollar, index)) { index += dollar.length - 1; dollar = null; }
+      continue;
+    }
+    if (single) {
+      if (current === "'" && next === "'") { index += 1; continue; }
+      if (current === "'") single = false;
+      continue;
+    }
+    if (current === "-" && next === "-") { lineComment = true; index += 1; continue; }
+    if (current === "/" && next === "*") { blockComment = true; index += 1; continue; }
+    if (current === "'") { single = true; continue; }
+    if (current === "$") {
+      const match = source.slice(index).match(/^(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/);
+      if (match) { dollar = match[1]; index += dollar.length - 1; continue; }
+    }
+    if (current === "(") depth += 1;
+    if (current === ")") depth -= 1;
+    assert.ok(depth >= 0, `${label}: paréntesis de cierre inesperado`);
+    if (current === "[") squareDepth += 1;
+    if (current === "]") squareDepth -= 1;
+    assert.ok(squareDepth >= 0, `${label}: corchete de cierre inesperado`);
+  }
+  assert.equal(depth, 0, `${label}: paréntesis sin cerrar`);
+  assert.equal(squareDepth, 0, `${label}: corchete sin cerrar`);
+  assert.equal(single, false, `${label}: literal sin cerrar`);
+  assert.equal(blockComment, false, `${label}: comentario sin cerrar`);
+  assert.equal(dollar, null, `${label}: cuerpo dollar-quoted sin cerrar`);
+}
+
 for (const [name, source] of Object.entries(sources)) {
-  for (const [tag, count] of dollarQuoteTags(source)) assert.equal(count % 2, 0, `${name}: delimitador ${tag} desbalanceado`);
+  assertLexicallyBalanced(source, name);
+  for (const body of extractDollarQuotedBodies(source, name)) {
+    assertLexicallyBalanced(body.body, `${name}:${body.delimiter} líneas ${body.openingLine}-${body.closingLine}`);
+  }
   assert.doesNotMatch(source, /\bCASCADE\b/i, `${name}: CASCADE no permitido`);
 }
+
+const brokenDollarRegression = `do $preflight$
+begin
+  perform exists (select 1 where (true or exists (select 1));
+end;
+$preflight$;`;
+const brokenRegressionBody = extractDollarQuotedBodies(brokenDollarRegression, "regresión negativa")[0];
+assert.throws(() => assertLexicallyBalanced(brokenRegressionBody.body, "regresión negativa:$preflight$"), /paréntesis sin cerrar/);
+const correctedDollarRegression = `do $preflight$
+begin
+  perform exists (select 1 where (true or exists (select 1)));
+end;
+$preflight$;`;
+const correctedRegressionBody = extractDollarQuotedBodies(correctedDollarRegression, "regresión positiva")[0];
+assert.doesNotThrow(() => assertLexicallyBalanced(correctedRegressionBody.body, "regresión positiva:$preflight$"));
 assert.match(sources.migration, /^--[\s\S]*\nbegin;/);
 assert.match(sources.migration.trimEnd(), /commit;$/);
 assert.match(sources.preflight, /begin transaction read only;/);
@@ -29,6 +132,17 @@ assert.match(sources.verify, /^--[\s\S]*\nbegin;/);
 assert.match(sources.verify.trimEnd(), /rollback;$/);
 assert.match(sources.rollback.trimEnd(), /commit;$/);
 assert.match(sources.rollback, /lock table public\.admin_auth_operations in access exclusive mode nowait/);
+assert.match(sources.rollback, /lock table public\.admin_audit_events in access exclusive mode nowait/);
+assert.ok(
+  sources.rollback.indexOf("lock table public.admin_auth_operations")
+    < sources.rollback.indexOf("do $predestructive$"),
+  "Rollback debe bloquear ledger antes de la guarda completa",
+);
+assert.ok(
+  sources.rollback.indexOf("lock table public.admin_audit_events")
+    < sources.rollback.indexOf("do $predestructive$"),
+  "Rollback debe bloquear auditoría antes de la guarda completa",
+);
 assert.match(sources.rollback, /if exists\(select 1 from public\.admin_auth_operations\)/);
 assert.match(sources.rollback, /grant execute on function public\.transition_admin_account_lifecycle_b2b/);
 assert.match(sources.rollback, /revoke all on function public\.guard_admin_auth_operation_b3a\(\)/);
@@ -42,8 +156,40 @@ assert.match(sources.migration, /public\.guard_admin_auth_operation_b3a\(\)'::re
 assert.match(sources.verify, /public\.guard_admin_auth_operation_b3a\(\)'::regprocedure::oid,'postgres'::regrole::oid/);
 assert.doesNotMatch(`${sources.migration}\n${sources.verify}`, /has_function_privilege\('PUBLIC'/i);
 assert.match(sources.migration, /id:uuid:NO\|request_id:uuid:NO[\s\S]*updated_at:timestamp with time zone:NO/);
-assert.match(sources.migration, /operation_code='reactivate' and completed_stage='auth_synchronized'/,
+assert.match(sources.migration, /operation_code='reactivate'[\s\S]{0,240}completed_stage in \('prepared','auth_synchronized','completed'\)/,
   "Reactivación debe poder persistir Auth sincronizado antes del evento de perfil");
+assert.match(sources.migration, /writer is null or writer not in \('prepare','claim','record','finalize'\)/,
+  "El writer guard debe rechazar NULL explícitamente");
+assert.ok((sources.migration.match(/set_config\('sitaa\.b3a_writer','',true\)/g) ?? []).length >= 4,
+  "Cada ruta DML aprobada debe limpiar el writer");
+const prepareStart = sources.migration.indexOf("create function public.prepare_admin_account_auth_lifecycle_b3a");
+const prepareEnd = sources.migration.indexOf("$function$;", sources.migration.indexOf("as $function$", prepareStart));
+const prepareBody = sources.migration.slice(prepareStart, prepareEnd);
+assert.ok(prepareBody.indexOf("pg_advisory_xact_lock") < prepareBody.indexOf("operation.request_id=$4 for update"),
+  "El lock de ciclo debe preceder la consulta autoritativa request_id");
+assert.match(sources.migration, /requested_result is null or requested_result not in/);
+assert.match(sources.migration, /stable_error_code is null[\s\S]*retryable_failure/);
+assert.doesNotMatch(sources.migration, /operation\.status<>'succeeded'[\s\S]{0,160}order by operation\.requested_at/,
+  "El contexto debe seleccionar la operación más reciente antes de derivar su estado");
+assert.match(sources.migration, /defaclobjtype::text/);
+assert.match(sources.migration, /aclexplode\(table_definition\.relacl\)[\s\S]*=8/);
+
+for (const expected of sources.verify.matchAll(/sqlerrm<>'(sitaa_[^']+)'/g)) {
+  assert.ok(sources.migration.includes(`'${expected[1]}'`),
+    `Error estable del verificador ausente en implementación: ${expected[1]}`);
+}
+assert.equal((edge.match(/\.rpc\("record_admin_auth_operation_result_b3a"/g) ?? []).length, 1,
+  "Toda persistencia de resultado debe pasar por el helper validado único");
+assert.match(edge, /const \{ data, error \} = await client\.rpc\("record_admin_auth_operation_result_b3a"/);
+assert.match(edge, /if \(error\) return null;[\s\S]*parseSnapshot\(data, RESULT_FIELDS/);
+assert.doesNotMatch(adapter, /result:\s*"terminal_failure"/,
+  "El adaptador provisional no puede emitir fallos terminales");
+for (const retryableCode of ["auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
+  "auth_update_rejected", "unsupported_auth_contract", "database_finalize_pending"]) {
+  assert.match(sources.migration,
+    new RegExp(`requested_result='retryable_failure'[\\s\\S]{0,600}'${retryableCode}'`),
+    `El contrato SQL reintentable no acepta ${retryableCode}`);
+}
 
 for (const required of ["admin_auth_operations", "request_id", "requested_by_profile_id", "completed_by_profile_id",
   "target_profile_id", "operation_code", "status", "completed_stage", "attempt_count", "last_error_code",
@@ -91,7 +237,19 @@ for (const marker of [
   "0010_verify_inactive_admin_unexpected",
   "0010_verify_context_cardinality_failed",
   "0010_verify_second_open_operation_unexpected",
-  "0010_verify_concurrent_claim_unexpected",
+  "0010_verify_fresh_processing_contract_failed",
+  "0010_verify_missing_writer_insert_unexpected",
+  "0010_verify_missing_writer_update_unexpected",
+  "0010_verify_empty_writer_unexpected",
+  "0010_verify_unknown_writer_unexpected",
+  "0010_verify_writer_not_cleared",
+  "0010_verify_null_result_unexpected",
+  "0010_verify_null_retryable_code_unexpected",
+  "0010_verify_null_terminal_code_unexpected",
+  "0010_verify_success_error_code_unexpected",
+  "0010_verify_auth_synchronized_immediate_recovery_failed",
+  "0010_verify_final_operation_replay_failed",
+  "0010_verify_latest_success_selection_failed",
   "0010_verify_terminal_result_failed",
   "0010_verify_failed_finalization_activated_profile",
   "0010_verify_retry_repeated_auth_stage",

@@ -69,7 +69,7 @@ function countValue(value: unknown): number | null {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LIFECYCLE_DENIAL_CODES = new Set<AdminAccountLifecycleDenialCode>([
   "self_forbidden", "pending_target", "last_admin", "invalid_lifecycle",
-  "invalid_identity", "auth_unconfirmed",
+  "invalid_identity", "auth_unconfirmed", "operation_in_progress",
 ]);
 const OPERATION_STATUSES = new Set<AdminAuthOperationStatus>([
   "open", "processing", "retryable_failure", "succeeded", "terminal_failure",
@@ -81,12 +81,16 @@ const STABLE_ERROR_CODES = new Set<AdminAuthOperationStableCode>([
   "auth_temporarily_unavailable", "auth_rate_limited", "auth_user_not_found",
   "auth_update_rejected", "unsupported_auth_contract", "database_finalize_pending",
 ]);
-const EDGE_STATES = new Set(["completed", "pending", "terminal_failure"]);
+const EDGE_STATES = new Set(["completed", "pending", "rejected", "terminal_failure"]);
 const EDGE_CODES = new Set([
   "account_deactivated", "account_reactivated", "auth_temporarily_unavailable",
   "auth_rate_limited", "auth_user_not_found", "auth_update_rejected",
   "unsupported_auth_contract", "database_finalize_pending",
-  "operation_not_claimable", "result_persistence_failed", "unexpected_failure",
+  "operation_processing", "operation_unavailable", "authorization_lost",
+  "request_id_conflict", "pending_target", "operation_in_progress",
+  "state_conflict", "database_contract_rejected", "malformed_database_response",
+  "operation_terminal_failure", "result_persistence_failed", "unexpected_failure",
+  "trusted_boundary_unavailable",
 ]);
 
 function isUuid(value: unknown): value is string {
@@ -120,17 +124,17 @@ function parseContextRow(value: unknown, b3aAvailable: boolean): AdminAccountLif
     || (value.is_self && (value.can_deactivate || value.can_reactivate))) return null;
 
   let operation: Pick<AdminAccountLifecycleContext,
-    "openOperationId" | "operationCode" | "operationStatus" | "completedStage" |
+    "currentOperationId" | "operationCode" | "operationStatus" | "completedStage" |
     "attemptCount" | "retryable" | "lastErrorCode" | "operationUpdatedAt" |
     "canRetryOrFinalize"> = {
-      openOperationId: null, operationCode: null, operationStatus: null,
+      currentOperationId: null, operationCode: null, operationStatus: null,
       completedStage: null, attemptCount: 0, retryable: false,
       lastErrorCode: null, operationUpdatedAt: null, canRetryOrFinalize: false,
     };
   if (b3aAvailable) {
     const attemptCount = countValue(value.attempt_count);
     if (value.b3a_available !== true || attemptCount === null
-      || (value.open_operation_id !== null && !isUuid(value.open_operation_id))
+      || (value.current_operation_id !== null && !isUuid(value.current_operation_id))
       || (value.operation_code !== null && value.operation_code !== "deactivate" && value.operation_code !== "reactivate")
       || (value.operation_status !== null && (typeof value.operation_status !== "string" || !OPERATION_STATUSES.has(value.operation_status as AdminAuthOperationStatus)))
       || (value.completed_stage !== null && (typeof value.completed_stage !== "string" || !OPERATION_STAGES.has(value.completed_stage as AdminAuthOperationStage)))
@@ -138,7 +142,7 @@ function parseContextRow(value: unknown, b3aAvailable: boolean): AdminAccountLif
       || (value.last_error_code !== null && (typeof value.last_error_code !== "string" || !STABLE_ERROR_CODES.has(value.last_error_code as AdminAuthOperationStableCode)))
       || (value.operation_updated_at !== null && !isTimestamp(value.operation_updated_at))) return null;
     operation = {
-      openOperationId: value.open_operation_id,
+      currentOperationId: value.current_operation_id,
       operationCode: value.operation_code,
       operationStatus: value.operation_status as AdminAuthOperationStatus | null,
       completedStage: value.completed_stage as AdminAuthOperationStage | null,

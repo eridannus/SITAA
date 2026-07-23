@@ -28,6 +28,20 @@ assert.match(adapter, /AUTH_RESTORATION_BAN_DURATION = "none"/);
 assert.match(adapter, /AUTH_SUSPENSION_BAN_DURATION = "876000h"/);
 assert.match(adapter, /auth\.admin\.updateUserById/);
 assert.doesNotMatch(adapter, /throw error|error\.message|JSON\.stringify\(error/);
+assert.doesNotMatch(adapter, /result:\s*"terminal_failure"/);
+for (const status of ["400", "401", "403", "404", "422"]) {
+  assert.ok(adapter.includes(`status === ${status}`), `Falta clasificación provisional HTTP ${status}`);
+}
+assert.match(edge, /function parseSnapshot/);
+assert.match(edge, /function parseClaim/);
+assert.match(edge, /function parseFinalization/);
+assert.match(edge, /function exactSingleRow/);
+assert.equal((edge.match(/\.rpc\("record_admin_auth_operation_result_b3a"/g) ?? []).length, 1);
+assert.match(edge, /if \(error\) return null;[\s\S]*parseSnapshot\(data, RESULT_FIELDS/);
+assert.match(edge, /finalResponse\(operation\)/);
+assert.match(edge, /completedStage === "auth_synchronized"/);
+assert.match(data, /"completed", "pending", "rejected", "terminal_failure"/);
+assert.match(action, /result\.state === "rejected" \? "error" : "pending"/);
 
 for (const secret of ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY", "sb_secret_"]) {
   assert.equal(envExample.includes(secret), false, `${secret} no puede aparecer en .env.example`);
@@ -58,6 +72,8 @@ assert.doesNotMatch(form, /createSupabase|functions\.invoke|auth\.admin/);
 assert.match(action, /request_id/);
 assert.match(form, /Reintentar sincronización/);
 assert.match(form, /JWT de acceso ya emitidos pueden conservar validez técnica hasta expirar/);
+assert.match(data, /current_operation_id/);
+assert.doesNotMatch(`${data}\n${form}`, /openOperationId|open_operation_id/);
 
 for (const value of ["open", "processing", "retryable_failure", "succeeded", "terminal_failure",
   "prepared", "profile_suspended", "auth_synchronized", "completed"]) assert.ok(migration.includes(`'${value}'`));
@@ -69,4 +85,3 @@ assert.match(migration, /revoke all on function public\.transition_admin_account
 assert.doesNotMatch(`${edge}\n${adapter}\n${action}\n${data}`, /immediate access-token invalidation|global sign-out|revoca(?:r|ción) criptográficamente/i);
 
 console.log("Límite confiable Auth B.3a: OK");
-

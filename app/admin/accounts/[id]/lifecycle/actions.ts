@@ -88,8 +88,18 @@ function edgeMessage(code: string) {
     auth_update_rejected: "Supabase Auth rechazó la sincronización solicitada.",
     unsupported_auth_contract: "La restauración Auth no está disponible con el contrato instalado.",
     database_finalize_pending: "Auth ya fue sincronizado, pero la finalización en SITAA está pendiente. Reintenta para completar el proceso.",
-    operation_not_claimable: "La operación está siendo procesada o cambió de estado. Intenta nuevamente más tarde.",
+    operation_processing: "La operación está siendo procesada. Actualiza la página antes de intentar nuevamente.",
+    operation_unavailable: "La operación coordinada ya no está disponible.",
+    authorization_lost: "Tu autorización administrativa cambió antes de completar la operación.",
+    request_id_conflict: "El identificador de la solicitud ya corresponde a otra operación.",
+    pending_target: "Una cuenta con registro pendiente debe completar su propio registro.",
+    operation_in_progress: "Ya existe una operación coordinada no final para esta cuenta.",
+    state_conflict: "El estado de la cuenta cambió. Actualiza la página antes de continuar.",
+    database_contract_rejected: "La base de datos rechazó la operación coordinada.",
+    malformed_database_response: "La respuesta del contrato coordinado no fue válida.",
+    operation_terminal_failure: "La operación terminó con una incidencia que requiere revisión técnica.",
     result_persistence_failed: "La sincronización necesita reconciliación antes de continuar.",
+    trusted_boundary_unavailable: "El servicio confiable de sincronización Auth no está disponible.",
     unexpected_failure: "La operación quedó pendiente por una incidencia temporal del límite confiable.",
   };
   return messages[code] ?? "La operación de cuenta no pudo completarse.";
@@ -132,7 +142,7 @@ export async function submitAccountLifecycleTransition(
     if (!context) return mappedActionError(new AdminAccountLifecycleDataError("target_unavailable"), values);
 
     if (values.mode === "retry") {
-      if (!context.b3aAvailable || context.openOperationId !== values.operation_id
+      if (!context.b3aAvailable || context.currentOperationId !== values.operation_id
         || context.operationCode !== values.transition || !context.canRetryOrFinalize) {
         return state(values, "error", "La operación ya no puede reintentarse desde este estado.");
       }
@@ -140,7 +150,8 @@ export async function submitAccountLifecycleTransition(
       if (result.state === "completed") completed = true;
       else return state(
         { ...values, mode: "retry", operation_id: result.operationId ?? values.operation_id },
-        result.state === "terminal_failure" ? "terminal_failure" : "pending",
+        result.state === "terminal_failure" ? "terminal_failure"
+          : result.state === "rejected" ? "error" : "pending",
         edgeMessage(result.code),
       );
     } else {
@@ -160,11 +171,17 @@ export async function submitAccountLifecycleTransition(
           reason, requestId: values.request_id,
         });
         if (result.state === "completed") completed = true;
-        else return state(
-          { ...values, mode: "retry", operation_id: result.operationId ?? "" },
-          result.state === "terminal_failure" ? "terminal_failure" : "pending",
-          edgeMessage(result.code),
-        );
+        else {
+          const nextValues = result.operationId
+            ? { ...values, mode: "retry" as const, operation_id: result.operationId }
+            : values;
+          return state(
+            nextValues,
+            result.state === "terminal_failure" ? "terminal_failure"
+              : result.state === "rejected" ? "error" : "pending",
+            edgeMessage(result.code),
+          );
+        }
       } else {
         await transitionAdminAccountLifecycleLegacyBeforeB3a({
           targetProfileId: values.target_profile_id,

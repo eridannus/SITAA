@@ -11,6 +11,8 @@ Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción
 - no se ha probado suspensión, refresh, JWT ni restauración en Supabase hospedado;
 - B.3a permanece abierta y la prueba Auth desechable es bloqueante antes de producción.
 
+La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador esperaba `sitaa_account_lifecycle_pending_target_forbidden` aunque la implementación emitía `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
+
 El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
 
 ## 1. Validación estática y local
@@ -71,14 +73,20 @@ El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS s
 - último administrador protegido;
 - request ID idempotente y conflicto rechazado;
 - una sola operación no final por objetivo;
+- writer ausente, vacío o desconocido rechazado en `INSERT`/`UPDATE`, limpieza del writer después de cada DML aprobado y `DELETE`/`TRUNCATE` siempre prohibidos;
+- allowlist exacta de columnas por writer `prepare|claim|record|finalize` y matriz completa de estado/etapa/evidencia;
 - desactivación llega una vez a `profile_suspended` y su reintento no duplica evento B.2b;
 - reactivación preparada no activa el perfil;
 - éxito Auth simulado llega a `auth_synchronized` y finaliza una sola vez;
+- recuperación inmediata de `processing/auth_synchronized` sin repetir Auth, lease fresco no sincronizado no reclamable y replay de operaciones finales;
+- selección de la operación más reciente antes de derivar el estado, de modo que un éxito posterior suprima un fallo terminal anterior;
+- rechazo explícito de resultado `NULL`, códigos `NULL`, código en éxito y códigos fuera de allowlist;
+- reintento por un segundo administrador exacto, con actor Auth igual al ejecutor real y actor B.2b igual a quien realizó la transición de perfil;
 - un segundo administrador exacto puede finalizar;
 - pérdida de autoridad antes de finalizar falla cerrado;
 - fallo Auth deja desactivación inactiva;
 - fallo posterior a restauración Auth deja reactivación inactiva;
-- fallos retryable/terminal, allowlist de error y auditoría minimizada;
+- fallos retryable/terminal del modelo SQL, allowlist de error y auditoría minimizada; el adaptador hospedado provisional emite sólo `retryable_failure` hasta validar una categoría terminal y su recuperación;
 - preservación de Auth, identidad, asignaciones, actividades, participantes, asistencia e historia;
 - ausencia de mutación de roles y de comportamiento B.3b.
 
@@ -124,6 +132,10 @@ Usar un proyecto desechable, un objetivo sintético sin datos reales y dos sesio
 
 También verificar fallo terminal, recuperación después de timeout de `processing`, dos solicitudes concurrentes al mismo objetivo y request ID repetido con payload distinto. Registrar versiones SDK/runtime, tiempos UTC, respuestas sanitizadas y resultado observado; nunca tokens o credenciales.
 
+### Pruebas multisesión reservadas y no ejecutadas
+
+En una base desechable, dos sesiones deben usar simultáneamente el mismo `request_id` y payload normalizado. La primera adquiere el advisory lock; la segunda espera y, al continuar, devuelve exactamente el mismo `operation_id` en vez de una violación UNIQUE. Repetir con payload distinto y exigir `sitaa_auth_operation_request_id_conflict`. Otra pareja de sesiones debe comprobar lease fresco, recuperación después de cinco minutos y recuperación inmediata de `processing/auth_synchronized`. El verificador de una sola transacción cubre reutilización determinista y conflicto, pero no demuestra espera real ni orden intersesión. Ninguna de estas pruebas se ejecutó durante este hardening.
+
 ## 6. Smoke tests de producción
 
 Sólo después de aprobar las fases anteriores y desplegar la Edge Function:
@@ -147,3 +159,4 @@ B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT
 - B.3b y Fase C permanecen fuera de alcance.
 
 El rollback 0010 sólo puede considerarse antes de la primera operación o evento B.3a real; después queda prohibido por diseño.
+Antes de revisar historia, el rollback adquiere `ACCESS EXCLUSIVE NOWAIT` primero sobre `admin_auth_operations` y después sobre `admin_audit_events`; mantiene ambos locks durante la guarda completa, las dos comprobaciones históricas y la eliminación controlada.

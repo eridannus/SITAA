@@ -13,8 +13,9 @@ export function getAdminAccountLifecyclePresentation(
   if (!context) return { action: null, showDependencyWarning: false };
   if (
     context.b3aAvailable === true &&
-    context.openOperationId &&
+    context.currentOperationId &&
     context.operationCode &&
+    context.operationStatus !== "succeeded" &&
     context.operationStatus !== "terminal_failure"
   ) {
     return {
