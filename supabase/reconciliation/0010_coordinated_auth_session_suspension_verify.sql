@@ -1376,8 +1376,8 @@ do $restore_failure_finalize$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
 begin
   begin perform public.finalize_admin_account_auth_reactivation_b3a(op); raise exception '0010_verify_invalid_finalization_unexpected';
-  exception when raise_exception then
-    if sqlerrm<>'sitaa_account_lifecycle_auth_unconfirmed' then raise; end if;
+  exception when insufficient_privilege then
+    if sqlstate<>'42501' or sqlerrm<>'sitaa_account_lifecycle_auth_unconfirmed' then raise; end if;
   end;
 end;
 $restore_failure_finalize$;

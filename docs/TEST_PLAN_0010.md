@@ -2,14 +2,15 @@
 
 ## Estado y alcance
 
-Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción. En esta preparación:
+Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción. En el estado actual:
 
-- 0010 no está aplicada;
-- el primer preflight PostgreSQL fue rechazado y la reejecución corregida fue aprobada; ambas ejecuciones fueron de sólo lectura y terminaron con `ROLLBACK`; el verificador no se ha ejecutado;
-- la Edge Function no está desplegada ni se ha invocado;
+- la aplicación compatible se desplegó correctamente;
+- la Edge Function está desplegada y `ACTIVE`, pero no se ha invocado;
+- 0010 fue aplicada y el registro local de aplicación termina en `COMMIT`;
+- el primer verificador hospedado terminó con código de salida 3 en `restore_failure_finalize`: el arnés esperaba `P0001`, pero la función emitió correctamente `42501/sitaa_account_lifecycle_auth_unconfirmed`; no alcanzó el `ROLLBACK` final y la desconexión de `psql` descartó la transacción abierta;
 - no se ejecutó ninguna operación Auth Admin;
 - no se ha probado suspensión, refresh, JWT ni restauración en Supabase hospedado;
-- B.3a permanece abierta y la prueba Auth desechable es bloqueante antes de producción.
+- el verificador corregido, la matriz Auth desechable, los smoke tests y la reconciliación post‑0010 permanecen pendientes; B.3a sigue abierta.
 
 La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador usaba un nombre obsoleto para el rechazo de objetivo pendiente, mientras la implementación emitía el contrato canónico `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
 
@@ -19,11 +20,13 @@ La revisión final del catálogo corrigió antes de cualquier ejecución la iden
 
 Una revisión posterior detectó acceso crudo a tablas protegidas dentro de intervalos del verificador ejecutados como `authenticated` o `service_role`, un baseline ACL predestructivo de rollback que todavía exigía el mapa completo post‑0009 y la pérdida de resultados estables enviados por Edge con HTTP 403/409. El arnés quedó separado por fases: los roles cliente sólo invocan RPC aprobadas o escriben resultados sanitizados en `pg_temp`; toda postcondición cruda y toda regresión del trigger del ledger se ejecuta como owner después de `RESET ROLE`. El rollback distingue funciones preexistentes sin cambios, el mutador 0009 owner-only y las seis funciones 0010. La aplicación reutiliza el parser exacto también para el cuerpo JSON de `FunctionsHttpError`, sin activar el fallback 0009 ante errores Edge. No se ejecutaron PostgreSQL, preflight, Edge Function ni operaciones Auth Admin.
 
-La revisión de cierre aún local detectó dos cercos de presentación que rompían la idempotencia autoritativa: `canDeactivate`/`canReactivate` impedían que un `start` repetido llegara a `prepare` después de cambiar el estado, y `canRetryOrFinalize` impedía recuperar el replay final. La Server Action usa ahora esos indicadores sólo en el flujo legado o en presentación; con B.3a disponible valida la forma y deja que las RPC autoritativas resuelvan el mismo `request_id`, conflictos, operaciones no finales y replays. También se cerró la matriz etapa/error del ledger, el parser Edge exige snapshots exactos y SQLSTATE `42501` sólo implica pérdida de autoridad ante `sitaa_admin_access_denied`. El hallazgo previo de tipos internos `char` del catálogo y la reautorización posterior a locks permanecen cubiertos. 0010 continúa sin aplicar y B.3a permanece abierta.
+La revisión de cierre aún local detectó dos cercos de presentación que rompían la idempotencia autoritativa: `canDeactivate`/`canReactivate` impedían que un `start` repetido llegara a `prepare` después de cambiar el estado, y `canRetryOrFinalize` impedía recuperar el replay final. La Server Action usa ahora esos indicadores sólo en el flujo legado o en presentación; con B.3a disponible valida la forma y deja que las RPC autoritativas resuelvan el mismo `request_id`, conflictos, operaciones no finales y replays. También se cerró la matriz etapa/error del ledger, el parser Edge exige snapshots exactos y SQLSTATE `42501` sólo implica pérdida de autoridad ante `sitaa_admin_access_denied`. El hallazgo previo de tipos internos `char` del catálogo y la reautorización posterior a locks permanecen cubiertos.
 
 El primer preflight remoto 0010 devolvió 34 filas: 29 de las 30 categorías bloqueantes fueron cero y `dangerous_default_acl` devolvió 50. Terminó con `ROLLBACK` y código de salida 0, por lo que no cambió objetos, filas o privilegios, pero no fue aprobado. Un diagnóstico posterior, también de sólo lectura, con `ROLLBACK` y código 0, confirmó `current_user = postgres`, `session_user = postgres` y cinco grupos estándar de diez filas: `postgres/public`, `postgres/storage`, `supabase_admin/graphql`, `supabase_admin/graphql_public` y `supabase_admin/public`. El predicado era demasiado amplio porque mezclaba propietarios, esquemas y secuencias que 0010 no consume; el diagnóstico no cambió ningún privilegio predeterminado.
 
 La reejecución corregida devolvió exactamente 34 filas: las 30 categorías bloqueantes quedaron en cero, incluido `dangerous_default_acl = 0`, y las cuatro categorías informativas fueron `active_exact_b1_administrators = 1`, `existing_b2b_lifecycle_events = 4`, `inactive_accounts = 0` e `inactive_accounts_with_active_or_future_assignments = 0`. Terminó con `ROLLBACK`, código de salida 0 y sin `ERROR`; no expuso UUID, filas operativas, PII, credenciales, tokens o secretos y no cambió objetos, filas o privilegios. Este segundo preflight quedó aprobado.
+
+El defecto del primer verificador fue exclusivamente del arnés: `sitaa_account_lifecycle_auth_unconfirmed` usa por contrato SQLSTATE `42501`, cuyo nombre de condición es `insufficient_privilege`, mientras `raise_exception` sólo captura `P0001`. El bloque corregido exige el SQLSTATE y el mensaje exactos. El checker estático incluye una fixture negativa con el handler anterior, una fixture positiva con el contrato corregido y una auditoría de las condiciones esperadas `P0001`, `42501`, `22023`, `23505`, `23514` y `55000`. La reejecución hospedada debe terminar explícitamente con el `ROLLBACK` final.
 
 El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
 
@@ -74,13 +77,12 @@ La ejecución aprobada validó el inventario post‑0009 18/165/80/43/11/54/25/1
 
 ## 3. Migración y verificador transaccional
 
-El preflight corregido ya está aprobado. El siguiente orden operativo autorizado es:
+La aplicación compatible, la Edge Function y 0010 ya fueron desplegadas/aplicadas en ese orden; el registro local de la migración confirma el `COMMIT`. El siguiente orden operativo autorizado es:
 
-1. publicar el commit de aplicación compatible y confirmar que su despliegue terminó correctamente;
-2. desplegar la Edge Function revisada;
-3. sólo entonces aplicar 0010 una sola vez y exigir `COMMIT` posterior a la guarda post‑DDL;
-4. ejecutar `0010_coordinated_auth_session_suspension_verify.sql`;
-5. exigir `ROLLBACK` final y comprobar que no persisten fixtures, operaciones, auditoría o grants temporales.
+1. ejecutar la versión corregida de `0010_coordinated_auth_session_suspension_verify.sql`;
+2. exigir su `ROLLBACK` final explícito y comprobar que no persisten fixtures, operaciones, auditoría o grants temporales;
+3. ejecutar la matriz Auth hospedada desechable y los smoke tests aprobados;
+4. generar y reconciliar el snapshot post‑0010.
 
 El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS sin políticas, triggers, firmas/argumentos/columnas de retorno, propiedades de función, ACL sin grant option y regresiones 0001–0009. Los cinco índices deben ser exactamente `admin_auth_operations_actor_requested_idx`, `admin_auth_operations_one_nonfinal_target_uidx`, `admin_auth_operations_pkey`, `admin_auth_operations_request_id_key` y `admin_auth_operations_target_status_idx`. La restricción única de `request_id` debe apuntar mediante `conindid` al índice `_key`, que debe ser único, válido, listo, no primario, no parcial, sin expresión y contener únicamente `request_id`; no puede existir otro índice de esa columna.
 
@@ -207,7 +209,7 @@ Debe rechazar llaves adicionales, códigos/estados desconocidos, UUID ausente do
 
 ## 6. Smoke tests de producción
 
-Sólo después de aprobar las fases anteriores y desplegar la Edge Function:
+Sólo después de aprobar el verificador corregido y la matriz Auth hospedada:
 
 - autoridad B.1 ve contexto y operación sanitizada;
 - desactivar bloquea SITAA de inmediato, conserva datos y muestra sincronización pendiente/completa con precisión;
@@ -223,7 +225,7 @@ B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT
 
 - no afirmar invalidación de JWT, refresh o restauración;
 - no usar la función en producción;
-- no describir 0010 como aplicada;
+- no describir el verificador como aprobado ni B.3a como cerrada;
 - no crear 0011;
 - B.3b y Fase C permanecen fuera de alcance.
 

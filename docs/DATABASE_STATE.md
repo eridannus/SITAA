@@ -3,7 +3,7 @@
 **Actualización documental:** 2026-07-23.
 **Snapshot vivo canónico:** `2026-07-22T23:32:46Z`, estado `SUCCESS`.
 
-La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Estas migraciones son inmutables. La comparación se realizó previamente contra `supabase/reconciliation/live/`; esta preparación B.3a no volvió a conectarse a Supabase, no ejecutó SQL y no regeneró el snapshot.
+La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Esas migraciones son inmutables. `0010` también está aplicada, pero su verificador corregido y la reconciliación post‑0010 permanecen pendientes. El snapshot canónico bajo `supabase/reconciliation/live/` continúa representando post‑0009; esta corrección del arnés no volvió a conectarse a Supabase, no ejecutó SQL y no regeneró el snapshot.
 
 ## Cadena aplicada
 
@@ -16,6 +16,7 @@ La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Est
 7. `0007_admin_account_directory_audit.sql`: directorio B.1 de sólo lectura y auditoría append-only.
 8. `0008_operational_account_barrier_identity_correction.sql`: barrera de cuenta activa y corrección de identidad B.2a.
 9. `0009_admin_account_lifecycle_transitions.sql`: desactivación/reactivación auditada B.2b.
+10. `0010_coordinated_auth_session_suspension.sql`: coordinación B.3a entre ciclo de vida SITAA y Auth; aplicada, con verificación hospedada pendiente.
 
 ## Inventario vivo posterior a 0009
 
@@ -51,9 +52,9 @@ El delta frente a post‑0008 es exactamente el esperado por 0009: tres firmas, 
 
 Las matrices manuales de concurrencia B.2a/B.2b siguen sin ejecutarse y no constituyen evidencia de producción.
 
-## Preparación local 0010 / B.3a
+## 0010 aplicada / verificación B.3a pendiente
 
-`0010_coordinated_auth_session_suspension.sql` existe localmente y está **sin aplicar**. Prepara:
+`0010_coordinated_auth_session_suspension.sql` fue aplicada y el registro local termina en `COMMIT`. Añade:
 
 - `admin_auth_operations`, ledger sin políticas cliente para coordinar perfil y Auth;
 - cinco RPC B.3a públicas o de servicio y un trigger de estado owner-only;
@@ -72,15 +73,17 @@ La categoría corregida exige ejecutor y sesión `postgres`; inspecciona sólo d
 
 La segunda ejecución corregida quedó aprobada: devolvió exactamente 34 filas, dejó las 30 categorías bloqueantes en cero y produjo `dangerous_default_acl = 0`. Sus cuatro conteos informativos fueron `active_exact_b1_administrators = 1`, `existing_b2b_lifecycle_events = 4`, `inactive_accounts = 0` e `inactive_accounts_with_active_or_future_assignments = 0`. Terminó con `ROLLBACK`, código 0 y sin `ERROR`; no expuso UUID, datos operativos, PII, credenciales, tokens o secretos y no cambió ningún objeto, fila o privilegio.
 
-La migración, el verificador, el rollback, la Edge Function y Auth Admin no se han ejecutado. Tampoco se ha probado en un proyecto hospedado el efecto sobre JWT existentes, refresh tokens o la restauración con `ban_duration = 'none'`. La matriz desechable de `docs/TEST_PLAN_0010.md` es bloqueante antes de producción. El siguiente paso autorizado es publicar y confirmar el despliegue del commit de aplicación compatible; después se despliega la Edge Function revisada y sólo entonces se aplican 0010 y su verificador.
+La aplicación compatible se desplegó correctamente y la Edge Function está `ACTIVE`, sin invocaciones registradas para esta fase. El primer verificador hospedado terminó con código de salida 3 en `restore_failure_finalize`: la función devolvió correctamente `42501/sitaa_account_lifecycle_auth_unconfirmed`, pero el arnés intentaba capturarlo con `raise_exception`, condición reservada para `P0001`. No imprimió el `ROLLBACK` final; la desconexión de `psql` descartó la transacción abierta. No se ejecutó Auth Admin ni una operación real B.3a.
+
+La corrección usa `insufficient_privilege` y valida de forma conjunta SQLSTATE `42501` y el mensaje estable. Aún deben aprobarse la reejecución completa con `ROLLBACK` explícito, la matriz Auth hospedada, los smoke tests y el snapshot post‑0010. No se ha probado el efecto sobre JWT existentes, refresh tokens o la restauración con `ban_duration = 'none'`.
 
 ## Pendientes
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- B.3a permanece abierta hasta aplicar/verificar 0010, desplegar la Edge Function y aprobar la prueba Auth desechable y smoke tests.
-- El paquete local 0010 ya exige casts `::text` al serializar campos internos `char` de catálogo y revalida B.1 después de los locks en todas sus RPC mutables. Esta evidencia es estática: no equivale a preflight, aplicación ni verificación PostgreSQL.
+- B.3a permanece abierta hasta aprobar el verificador corregido, la prueba Auth desechable, los smoke tests y la reconciliación post‑0010.
+- El paquete 0010 exige casts `::text` al serializar campos internos `char` de catálogo y revalida B.1 después de los locks en todas sus RPC mutables. Su aplicación no sustituye la verificación hospedada pendiente.
 - B.3b, administración de roles/Fase C, retiro de A-02, paneles especializados, formularios dinámicos, reportes y exportaciones continúan pendientes.
-- No se debe crear 0011 mientras 0010 siga en preparación no aplicada.
+- No se debe crear 0011 mientras 0010 siga sin verificación y reconciliación aprobadas.
 
 ## Evidencia y rollback
 

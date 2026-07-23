@@ -344,6 +344,98 @@ function sliceBetween(source, startToken, endToken, label) {
   return source.slice(start, end);
 }
 
+function assertRestoreFailureFinalizeHandler(source, label) {
+  const block = sliceBetween(
+    source,
+    "do $restore_failure_finalize$",
+    "$restore_failure_finalize$;",
+    label,
+  );
+  assert.doesNotMatch(
+    block,
+    /exception\s+when\s+raise_exception/i,
+    `${label}: raise_exception sólo captura P0001 y no puede aceptar el contrato 42501`,
+  );
+  assert.match(
+    block,
+    /exception\s+when\s+(?:insufficient_privilege|sqlstate\s+'42501')\s+then/i,
+    `${label}: falta un handler compatible con SQLSTATE 42501`,
+  );
+  assert.match(
+    block,
+    /if\s+sqlstate\s*<>\s*'42501'\s+or\s+sqlerrm\s*<>\s*'sitaa_account_lifecycle_auth_unconfirmed'\s+then\s+raise;\s+end\s+if;/i,
+    `${label}: debe validar exactamente SQLSTATE 42501 y sitaa_account_lifecycle_auth_unconfirmed`,
+  );
+}
+
+const restoreFailureWrongHandlerFixture = `
+do $restore_failure_finalize$
+begin
+  begin
+    perform public.finalize_admin_account_auth_reactivation_b3a(gen_random_uuid());
+  exception when raise_exception then
+    if sqlerrm<>'sitaa_account_lifecycle_auth_unconfirmed' then raise; end if;
+  end;
+end;
+$restore_failure_finalize$;`;
+const restoreFailureCorrectHandlerFixture = `
+do $restore_failure_finalize$
+begin
+  begin
+    perform public.finalize_admin_account_auth_reactivation_b3a(gen_random_uuid());
+  exception when insufficient_privilege then
+    if sqlstate<>'42501' or sqlerrm<>'sitaa_account_lifecycle_auth_unconfirmed' then raise; end if;
+  end;
+end;
+$restore_failure_finalize$;`;
+assert.throws(
+  () => assertRestoreFailureFinalizeHandler(restoreFailureWrongHandlerFixture, "regresión negativa restore_failure_finalize"),
+  /raise_exception sólo captura P0001/,
+);
+assert.doesNotThrow(
+  () => assertRestoreFailureFinalizeHandler(restoreFailureCorrectHandlerFixture, "regresión positiva restore_failure_finalize"),
+);
+assertRestoreFailureFinalizeHandler(sources.verify, "restore_failure_finalize canónico");
+
+const verifierHandlerConditions = [
+  ...sources.verify.matchAll(
+    /exception\s+when\s+(insufficient_privilege|raise_exception|invalid_parameter_value|unique_violation|check_violation|sqlstate\s+'55000'|others)\s+then/gi,
+  ),
+].map((match) => match[1].toLowerCase().replace(/\s+/g, " "));
+for (const requiredCondition of [
+  "raise_exception",
+  "insufficient_privilege",
+  "invalid_parameter_value",
+  "unique_violation",
+  "check_violation",
+  "sqlstate '55000'",
+]) {
+  assert.ok(
+    verifierHandlerConditions.includes(requiredCondition),
+    `Falta cobertura del handler PostgreSQL ${requiredCondition}`,
+  );
+}
+assert.match(
+  sources.verify,
+  /exception\s+when\s+raise_exception\s+then\s+if\s+sqlerrm<>'sitaa_account_lifecycle_pending_target'\s+or\s+sqlstate<>'P0001'\s+then\s+raise;\s+end\s+if;/i,
+  "El rechazo P0001 debe validar condición y mensaje estable",
+);
+assert.equal(
+  verifierHandlerConditions.filter((condition) => condition === "others").length,
+  3,
+  "Sólo se permiten los tres colectores OTHERS controlados con validación posterior exacta",
+);
+assert.match(
+  sources.verify,
+  /sitaa_0010_invalid_transition_outcomes[\s\S]*observed_sqlstate<>'22023'[\s\S]*observed_message<>'sitaa_account_lifecycle_invalid_transition'/i,
+  "El colector de transición inválida debe validar 22023 y mensaje exacto",
+);
+assert.match(
+  sources.verify,
+  /exception\s+when\s+sqlstate\s+'55000'\s+then\s+if\s+sqlerrm<>'sitaa_auth_operation_error_stage_conflict'\s+then\s+raise;\s+end\s+if;/i,
+  "El handler 55000 debe validar el mensaje estable exacto",
+);
+
 function topLevelCategories(source, spaces) {
   const pattern = new RegExp(`^${" ".repeat(spaces)}\\('([a-z0-9_]+)'\\s*,`, "gm");
   return [...source.matchAll(pattern)].map((match) => match[1]);
@@ -1166,7 +1258,7 @@ for (const [name, signature] of functionSignatures) {
 assert.match(sources.verify, /@example\.invalid/);
 assert.match(sources.verify, /set local role authenticated/);
 assert.match(sources.verify, /set local role service_role/);
-assert.match(sources.verify, /rollback;/);
+assert.match(sources.verify, /rollback;\s*$/i, "El verificador canónico debe terminar con ROLLBACK");
 assert.doesNotMatch(sources.verify, /auth\.admin|updateUserById|SUPABASE_SERVICE_ROLE_KEY/);
 const verifierRoleAudit = auditVerifierRoleIntervals(sources.verify, "verificador 0010");
 assert.equal(verifierRoleAudit.counts.authenticated, 25);
@@ -1285,6 +1377,10 @@ for (const relative of coreArtifacts) {
 console.log("Matriz final de cuerpos 0010:");
 for (const [signature, bodyHash] of finalBodyHashes) console.log(`  ${bodyHash}  ${signature}`);
 console.log("Alineación migración/verificador/rollback: OK");
+console.log("Handler restore_failure_finalize: 42501 + mensaje estable exacto");
+console.log("Regresión P0001 para contrato 42501: rechazada");
+console.log("Auditoría SQLSTATE/condición: P0001, 42501, 22023, 23505, 23514 y 55000: OK");
+console.log("Handlers OTHERS limitados a tres colectores con validación posterior exacta: OK");
 console.log("Alineación restricción/índice request_id mediante conindid: OK");
 console.log("Alineación preflight independiente/embebido: OK");
 console.log(`Categorías preflight conservadas: ${independentCategories.length} blocking + ${informationalCategories.length} informational`);
