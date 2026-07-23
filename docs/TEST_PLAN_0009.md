@@ -2,7 +2,7 @@
 
 ## Estado y alcance
 
-`0009_admin_account_lifecycle_transitions.sql` está preparada localmente y no aplicada. Este plan valida la desactivación/reactivación auditada por administradores B.1 exactos. No administra Auth, no revoca sesiones físicas, no modifica asignaciones y no implementa roles V2.
+`0009_admin_account_lifecycle_transitions.sql` está aplicada, verificada, probada, reconciliada e inmutable. Este registro histórico cubre la desactivación/reactivación auditada por administradores B.1 exactos. No administra Auth, no revoca sesiones físicas, no modifica asignaciones y no implementa roles V2.
 
 Orden manual obligatorio: ejecutar el preflight de sólo lectura, revisar sus 19 categorías bloqueantes y 7 informativas (26 filas siempre presentes, incluso cuando un bloqueo vale cero), desplegar la aplicación compatible, aplicar la migración, ejecutar el verificador transaccional, realizar smoke tests y finalmente regenerar/reconciliar el snapshot.
 
@@ -20,7 +20,9 @@ La corrección alineó restricciones con `pg_get_constraintdef(oid, true)`, el m
 
 La aplicación compatible B.2b se desplegó antes del intento de migración. La primera ejecución de 0009 falló mientras PostgreSQL compilaba el `DO $preflight$` embebido: una rama abría un `EXISTS` exterior para comprobar `is_b1_account_admin()` y no lo cerraba antes del siguiente `UNION ALL`. Sólo se alcanzaron `BEGIN` y los dos `SET LOCAL`; no se envió ni ejecutó el primer `CREATE FUNCTION`, no se creó ningún objeto 0009, no se alcanzaron `REVOKE`, `GRANT`, guarda post-DDL o `COMMIT`, y la transacción fallida se descartó. No fue necesario ni se ejecutó el rollback. El defecto sintáctico quedó corregido localmente.
 
-La segunda ejecución superó el análisis sintáctico y entró al preflight embebido, pero falló al capturar la línea base pre-DDL de privilegios predeterminados: `pg_default_acl.defaclobjtype`, cuyo tipo interno es `pg_catalog."char"`, se concatenaba sin `::text` y PostgreSQL rechazó el operador ambiguo `text || "char"`. El intento alcanzó únicamente `BEGIN`, los dos `SET LOCAL` y el preflight; no llegó al primer `CREATE FUNCTION`, a `REVOKE`, `GRANT`, la guarda post-DDL ni `COMMIT`. La transacción no confirmada se descartó, no creó objetos 0009 y no necesitó ni ejecutó el rollback. Las dos serializaciones del hash quedaron corregidas localmente y un tercer intento controlado permanece pendiente.
+La segunda ejecución superó el análisis sintáctico y entró al preflight embebido, pero falló al capturar la línea base pre-DDL de privilegios predeterminados: `pg_default_acl.defaclobjtype`, cuyo tipo interno es `pg_catalog."char"`, se concatenaba sin `::text` y PostgreSQL rechazó el operador ambiguo `text || "char"`. El intento alcanzó únicamente `BEGIN`, los dos `SET LOCAL` y el preflight; no llegó al primer `CREATE FUNCTION`, a `REVOKE`, `GRANT`, la guarda post-DDL ni `COMMIT`. La transacción no confirmada se descartó, no creó objetos 0009 y no necesitó ni ejecutó el rollback.
+
+El tercer intento usó las dos serializaciones corregidas, aprobó el preflight embebido, creó exactamente las tres funciones B.2b, normalizó su ACL, aprobó la guarda atómica post-DDL y alcanzó `COMMIT`. Desde ese momento 0009 es historia inmutable. El verificador transaccional final completó fixtures y aserciones y terminó con su `ROLLBACK`; no persistió fixture, grant temporal, transición, estado ni evento sintético.
 
 ## Contrato automatizado y transaccional
 
@@ -151,16 +153,16 @@ La seguridad de última autoridad usa una secuencia real con dos administradores
 8. La reactivación comienza antes que el cambio de email Auth: el cambio espera y el trigger sincroniza después del commit de la reactivación.
 9. La sesión A desactiva el programa institucional y se pausa antes de `COMMIT`; la sesión B intenta reactivar una cuenta de ese programa y espera su fila. Si A confirma, B rechaza con `sitaa_account_lifecycle_invalid_identity`; si A revierte, B puede continuar. Nunca debe confirmar un perfil activo ligado a un programa inactivo.
 
-Cada escenario debe ejecutarse en una rama Supabase, base local o clon desechable que pueda descartarse por completo. No se limpia producción borrando eventos append-only. Ningún escenario de concurrencia ni verificación PostgreSQL de 0009 se ha ejecutado todavía.
+Cada escenario debe ejecutarse en una rama Supabase, base local o clon desechable que pueda descartarse por completo. No se limpia producción borrando eventos append-only. El verificador PostgreSQL final sí fue ejecutado y aprobó con `ROLLBACK`; ninguno de estos escenarios manuales de concurrencia multisesión fue ejecutado.
 
 ## Aplicación compatible y smoke tests
 
-- Antes de aplicar 0009, el detalle B.1/B.2a sigue disponible y los controles B.2b permanecen ocultos.
-- Después de aplicar, una cuenta activa elegible muestra `Desactivar cuenta`; una inactiva elegible muestra `Reactivar cuenta`.
-- El formulario preserva motivo y confirmación ante errores, enfoca el primer error y nunca envía PII a URLs o almacenamiento local.
-- Una transición exitosa redirige al detalle con mensaje de éxito y refresca lista, detalle e historial.
-- Una cuenta inactiva continúa siendo desviada por las guardas operativas existentes; no se afirma revocación física de sesiones.
+- La aplicación compatible se desplegó antes del intento de migración que alcanzó `COMMIT`.
+- Una cuenta activa elegible mostró `Desactivar cuenta`; una inactiva elegible mostró `Reactivar cuenta`, sólo bajo autoridad B.1 exacta.
+- La desactivación de la cuenta institucional de prueba activó la barrera 0008 sobre una sesión ya existente y conservó identidad, asignaciones, actividades, responsabilidades, participaciones, asistencia e historia.
+- El evento append-only minimizado apareció y la reactivación restauró acceso operativo únicamente mediante asignaciones todavía activas, válidas y vigentes.
+- Autotransición, registro pendiente, profesor, estudiante y no administrador permanecieron denegados o sin controles. No se afirma revocación física de sesiones.
 
 ## Criterio de cierre
 
-B.2b no se considera aplicada, verificada ni reconciliada hasta completar la ejecución corregida de la migración, el verificador, smoke tests, snapshot post-0009 e informe de reconciliación. A la fecha, el preflight independiente está aprobado y la aplicación compatible está desplegada, pero dos intentos de migración fallaron de forma segura antes del DDL: el primero por el `EXISTS` sin cerrar y el segundo por concatenar `pg_default_acl.defaclobjtype` sin `::text`. 0009 permanece no aplicada y un tercer intento controlado está pendiente. No se afirma ejecución del verificador/rollback, smoke tests, snapshot ni reconciliación de B.2b. B.3 y Fase C continúan pendientes.
+B.2b cumplió el criterio: preflight aprobado, aplicación compatible desplegada, tercer intento de migración con `COMMIT`, verificador final con `ROLLBACK`, smoke tests aprobados, snapshot `2026-07-22T23:32:46Z` con estado `SUCCESS` y reconciliación sin deriva inexplicada. 0009 es inmutable y B.2b está cerrada dentro de su alcance aprobado. La matriz manual multisesión continúa sin ejecutar y restringida a un entorno desechable; B.3 y Fase C permanecen pendientes.

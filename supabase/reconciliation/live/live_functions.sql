@@ -2171,6 +2171,143 @@ begin
 end;
 $function$
 
+get_admin_account_lifecycle_context_b2b(uuid)	requested_profile_id uuid	requested_profile_id uuid	CREATE OR REPLACE FUNCTION public.get_admin_account_lifecycle_context_b2b(requested_profile_id uuid)
+ RETURNS TABLE(target_profile_id uuid, account_kind text, account_status text, is_self boolean, can_deactivate boolean, can_reactivate boolean, denial_code text, has_exact_b1_assignment boolean, active_exact_b1_admin_count bigint, current_or_future_assignment_count bigint, open_responsibility_count bigint, open_participation_count bigint)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+declare
+  target_profile public.profiles%rowtype;
+  institutional_today date:=public.sitaa_current_mexico_date();
+  exact_assignment boolean:=false;
+  exact_admin_count bigint:=0;
+  assignment_count bigint:=0;
+  responsibility_count bigint:=0;
+  participation_count bigint:=0;
+  matching_auth_count bigint:=0;
+  auth_confirmed boolean:=false;
+  identity_valid boolean:=false;
+  lifecycle_valid boolean:=false;
+  denial text:=null;
+  deactivate_allowed boolean:=false;
+  reactivate_allowed boolean:=false;
+begin
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode='42501';
+  end if;
+
+  select profile.* into target_profile
+  from public.profiles profile
+  where profile.id=requested_profile_id;
+  if not found then return; end if;
+
+  select exists(
+    select 1 from public.role_assignments assignment
+    where assignment.user_id=target_profile.id
+      and assignment.role_code='technical_admin'
+      and assignment.scope_type='system'
+      and assignment.service_area='technical'
+      and assignment.program_id is null
+      and assignment.division_id is null
+      and assignment.is_active=true
+      and assignment.starts_at<=institutional_today
+      and (assignment.ends_at is null or assignment.ends_at>=institutional_today)
+  ) into exact_assignment;
+  select count(distinct profile.id) into exact_admin_count
+  from public.profiles profile
+  where public.is_exact_b1_account_admin_profile_b2b(profile.id);
+
+  select count(*) into assignment_count
+  from public.role_assignments assignment
+  where assignment.user_id=target_profile.id
+    and assignment.is_active=true
+    and (assignment.ends_at is null or assignment.ends_at>=institutional_today);
+
+  select count(distinct activity.id) into responsibility_count
+  from public.activities activity
+  where (activity.created_by=target_profile.id
+      or activity.responsible_profile_id=target_profile.id)
+    and (activity.status_code='draft'
+      or public.activity_has_ended(activity.id) is distinct from true);
+
+  select count(distinct activity.id) into participation_count
+  from public.activity_participants participant
+  join public.activities activity on activity.id=participant.activity_id
+  where participant.profile_id=target_profile.id
+    and (activity.status_code='draft' or public.activity_has_ended(activity.id) is distinct from true);
+
+  select count(*),coalesce(bool_or(
+    auth_user.email_confirmed_at is not null or exists (
+      select 1 from auth.identities identity_row
+      where identity_row.user_id=auth_user.id
+        and identity_row.provider='google'
+        and lower(btrim(identity_row.identity_data->>'email'))=lower(btrim(auth_user.email))
+        and lower(btrim(coalesce(identity_row.identity_data->>'email_verified',''))) in ('true','t','1')
+    )
+  ),false)
+  into matching_auth_count,auth_confirmed
+  from auth.users auth_user
+  where auth_user.id=target_profile.id
+    and lower(btrim(auth_user.email))=target_profile.email;
+
+  lifecycle_valid:=
+    (target_profile.account_status='active' and target_profile.is_active=true and target_profile.activated_at is not null and target_profile.deactivated_at is null)
+    or (target_profile.account_status='inactive' and target_profile.is_active=false
+      and target_profile.activated_at is not null and target_profile.deactivated_at is not null);
+
+  identity_valid:=target_profile.email=lower(btrim(target_profile.email)) and (
+      target_profile.account_kind='institutional'
+      and target_profile.person_type in ('student','professor')
+      and target_profile.first_names is not null
+      and target_profile.paternal_surname is not null
+      and target_profile.full_name is not null
+      and char_length(target_profile.first_names) between 1 and 150
+      and target_profile.first_names=regexp_replace(btrim(target_profile.first_names),'\s+',' ','g')
+      and char_length(target_profile.paternal_surname) between 1 and 150
+      and target_profile.paternal_surname=regexp_replace(btrim(target_profile.paternal_surname),'\s+',' ','g')
+      and (target_profile.maternal_surname is null or char_length(target_profile.maternal_surname) between 1 and 150 and target_profile.maternal_surname=regexp_replace(btrim(target_profile.maternal_surname),'\s+',' ','g'))
+      and char_length(target_profile.full_name) between 2 and 200
+      and target_profile.full_name=concat_ws(' ',target_profile.first_names,target_profile.paternal_surname,target_profile.maternal_surname)
+      and target_profile.primary_program_id is not null
+      and exists (select 1 from public.academic_programs program where program.id=target_profile.primary_program_id and program.is_active=true)
+      and target_profile.institutional_id_value~'^[0-9]{1,50}$'
+      and target_profile.institutional_id_type=case when target_profile.person_type='student' then 'student_account' else 'worker_number' end
+      or target_profile.account_kind='technical'
+      and target_profile.first_names is not null
+      and target_profile.full_name is not null
+      and char_length(target_profile.first_names) between 1 and 150
+      and target_profile.first_names=regexp_replace(btrim(target_profile.first_names),'\s+',' ','g')
+      and (target_profile.paternal_surname is null or char_length(target_profile.paternal_surname) between 1 and 150 and target_profile.paternal_surname=regexp_replace(btrim(target_profile.paternal_surname),'\s+',' ','g'))
+      and (target_profile.maternal_surname is null or char_length(target_profile.maternal_surname) between 1 and 150 and target_profile.maternal_surname=regexp_replace(btrim(target_profile.maternal_surname),'\s+',' ','g'))
+      and char_length(target_profile.full_name) between 2 and 200
+      and target_profile.full_name=concat_ws(' ',target_profile.first_names,target_profile.paternal_surname,target_profile.maternal_surname)
+      and target_profile.person_type is null
+      and target_profile.primary_program_id is null
+      and target_profile.institutional_id_type is null
+      and target_profile.institutional_id_value is null
+    );
+
+  denial:=case
+    when target_profile.id=auth.uid() then 'self_forbidden'
+    when target_profile.account_status='pending_registration' then 'pending_target'
+    when target_profile.account_status not in ('active','inactive') or not lifecycle_valid then 'invalid_lifecycle'
+    when target_profile.account_status='active' and exact_assignment and exact_admin_count<=1 then 'last_admin'
+    when target_profile.account_status='inactive' and not identity_valid then 'invalid_identity'
+    when target_profile.account_status='inactive' and (matching_auth_count<>1 or not auth_confirmed) then 'auth_unconfirmed'
+    else null
+  end;
+
+  deactivate_allowed:=denial is null and target_profile.account_status='active';
+  reactivate_allowed:=denial is null and target_profile.account_status='inactive';
+
+  return query select target_profile.id,target_profile.account_kind,
+    target_profile.account_status,target_profile.id=auth.uid(),deactivate_allowed,
+    reactivate_allowed,denial,exact_assignment,exact_admin_count,assignment_count,
+    responsibility_count,participation_count;
+end;
+$function$
+
 get_admin_identity_correction_context_b2a(uuid)	requested_profile_id uuid	requested_profile_id uuid	CREATE OR REPLACE FUNCTION public.get_admin_identity_correction_context_b2a(requested_profile_id uuid)
  RETURNS TABLE(target_profile_id uuid, can_correct boolean, denial_code text, account_kind text, account_status text, is_self boolean, current_or_future_assignment_count bigint, open_responsibility_count bigint, open_participation_count bigint)
  LANGUAGE plpgsql
@@ -2544,6 +2681,30 @@ AS $function$
       and ra.is_active = true
       and ra.starts_at <= public.sitaa_current_mexico_date()
       and (ra.ends_at is null or ra.ends_at >= public.sitaa_current_mexico_date())
+  );
+$function$
+
+is_exact_b1_account_admin_profile_b2b(uuid)	requested_profile_id uuid	requested_profile_id uuid	CREATE OR REPLACE FUNCTION public.is_exact_b1_account_admin_profile_b2b(requested_profile_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+  select exists (
+    select 1
+    from public.profiles profile
+    join public.role_assignments assignment on assignment.user_id=profile.id
+    where profile.id=requested_profile_id
+      and profile.account_status='active'
+      and profile.is_active=true
+      and assignment.role_code='technical_admin'
+      and assignment.scope_type='system'
+      and assignment.service_area='technical'
+      and assignment.program_id is null
+      and assignment.division_id is null
+      and assignment.is_active=true
+      and assignment.starts_at<=public.sitaa_current_mexico_date()
+      and (assignment.ends_at is null or assignment.ends_at>=public.sitaa_current_mexico_date())
   );
 $function$
 
@@ -3179,6 +3340,196 @@ begin
   end if;
   update public.profiles set email = normalized_email where id = new.id;
   return new;
+end;
+$function$
+
+transition_admin_account_lifecycle_b2b(uuid,text,text)	requested_profile_id uuid, requested_transition text, transition_reason text	requested_profile_id uuid, requested_transition text, transition_reason text	CREATE OR REPLACE FUNCTION public.transition_admin_account_lifecycle_b2b(requested_profile_id uuid, requested_transition text, transition_reason text)
+ RETURNS TABLE(target_profile_id uuid, audit_event_id uuid, previous_status text, new_status text, changed_fields text[], updated_at timestamp with time zone)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+declare
+  actor_profile_id uuid:=auth.uid();
+  target_profile public.profiles%rowtype;
+  normalized_reason text;
+  exact_assignment boolean:=false;
+  exact_admin_count bigint:=0;
+  matching_auth_count bigint:=0;
+  auth_confirmed boolean:=false;
+  identity_valid boolean:=false;
+  locked_program_active boolean:=null;
+  event_id uuid;
+  persisted_updated_at timestamptz;
+  prior_status text;
+  resulting_status text;
+  changed text[]:=array['account_status','deactivated_at','is_active']::text[];
+begin
+  if actor_profile_id is null or not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode='42501';
+  end if;
+  if requested_transition is null or requested_transition not in ('deactivate','reactivate') then
+    raise exception 'sitaa_account_lifecycle_invalid_transition' using errcode='22023';
+  end if;
+  normalized_reason:=nullif(btrim(regexp_replace(coalesce(transition_reason,''),'\s+',' ','g')),'');
+  if normalized_reason is null or char_length(normalized_reason)<10 or char_length(normalized_reason)>1000 then
+    raise exception 'sitaa_account_lifecycle_invalid_reason' using errcode='22023';
+  end if;
+  if actor_profile_id=requested_profile_id then
+    raise exception 'sitaa_account_lifecycle_self_forbidden' using errcode='42501';
+  end if;
+
+  perform pg_advisory_xact_lock(1397310529,9002);
+  lock table public.role_assignments in share mode;
+
+  -- El usuario Auth objetivo se bloquea antes de cualquier perfil.
+  perform 1
+  from auth.users auth_user
+  where auth_user.id=requested_profile_id
+  for update;
+
+  -- Actor, objetivo y candidatos B.1 exactos se bloquean juntos por UUID.
+  perform 1
+  from public.profiles profile
+  where profile.id in (actor_profile_id,requested_profile_id)
+     or exists (
+       select 1 from public.role_assignments assignment
+       where assignment.user_id=profile.id
+         and assignment.role_code='technical_admin'
+         and assignment.scope_type='system'
+         and assignment.service_area='technical'
+         and assignment.program_id is null
+         and assignment.division_id is null
+         and assignment.is_active=true
+         and assignment.starts_at<=public.sitaa_current_mexico_date()
+         and (assignment.ends_at is null or assignment.ends_at>=public.sitaa_current_mexico_date())
+     )
+  order by profile.id
+  for update;
+
+  if not public.is_b1_account_admin() then
+    raise exception 'sitaa_admin_access_denied' using errcode='42501';
+  end if;
+
+  select profile.* into target_profile
+  from public.profiles profile
+  where profile.id=requested_profile_id;
+  if target_profile.id is null then
+    raise exception 'sitaa_account_lifecycle_target_unavailable' using errcode='P0001';
+  end if;
+  if target_profile.account_status='pending_registration' then
+    raise exception 'sitaa_account_lifecycle_pending_target' using errcode='P0001';
+  end if;
+
+  if requested_transition='deactivate' and not (
+    target_profile.account_status='active' and target_profile.is_active=true
+    and target_profile.activated_at is not null and target_profile.deactivated_at is null
+  ) or requested_transition='reactivate' and not (
+    target_profile.account_status='inactive' and target_profile.is_active=false
+    and target_profile.activated_at is not null and target_profile.deactivated_at is not null
+  ) then
+    raise exception 'sitaa_account_lifecycle_state_conflict' using errcode='55000';
+  end if;
+
+  select public.is_exact_b1_account_admin_profile_b2b(target_profile.id)
+    into exact_assignment;
+  select count(distinct profile.id) into exact_admin_count
+  from public.profiles profile
+  where public.is_exact_b1_account_admin_profile_b2b(profile.id);
+  if requested_transition='deactivate' and exact_assignment and exact_admin_count<=1 then
+    raise exception 'sitaa_account_lifecycle_last_admin_forbidden' using errcode='55000';
+  end if;
+
+  if requested_transition='reactivate' then
+    -- La decisión institucional usa la fila bloqueada, no una lectura no protegida.
+    if target_profile.account_kind='institutional' then
+      select program.is_active into locked_program_active
+      from public.academic_programs program
+      where program.id=target_profile.primary_program_id
+      for share;
+      if locked_program_active is distinct from true then
+        raise exception 'sitaa_account_lifecycle_invalid_identity' using errcode='23514';
+      end if;
+    end if;
+
+    select count(*),coalesce(bool_or(
+      auth_user.email_confirmed_at is not null or exists (
+        select 1 from auth.identities identity_row
+        where identity_row.user_id=auth_user.id
+          and identity_row.provider='google'
+          and lower(btrim(identity_row.identity_data->>'email'))=lower(btrim(auth_user.email))
+          and lower(btrim(coalesce(identity_row.identity_data->>'email_verified',''))) in ('true','t','1')
+      )
+    ),false)
+    into matching_auth_count,auth_confirmed
+    from auth.users auth_user
+    where auth_user.id=target_profile.id
+      and lower(btrim(auth_user.email))=target_profile.email;
+
+    identity_valid:=target_profile.email=lower(btrim(target_profile.email)) and (
+        target_profile.account_kind='institutional'
+        and target_profile.person_type in ('student','professor')
+        and target_profile.first_names is not null
+        and target_profile.paternal_surname is not null
+        and target_profile.full_name is not null
+        and char_length(target_profile.first_names) between 1 and 150
+        and target_profile.first_names=regexp_replace(btrim(target_profile.first_names),'\s+',' ','g')
+        and char_length(target_profile.paternal_surname) between 1 and 150
+        and target_profile.paternal_surname=regexp_replace(btrim(target_profile.paternal_surname),'\s+',' ','g')
+        and (target_profile.maternal_surname is null or char_length(target_profile.maternal_surname) between 1 and 150 and target_profile.maternal_surname=regexp_replace(btrim(target_profile.maternal_surname),'\s+',' ','g'))
+        and char_length(target_profile.full_name) between 2 and 200
+        and target_profile.full_name=concat_ws(' ',target_profile.first_names,target_profile.paternal_surname,target_profile.maternal_surname)
+        and target_profile.primary_program_id is not null
+        and locked_program_active is true
+        and target_profile.institutional_id_value~'^[0-9]{1,50}$'
+        and target_profile.institutional_id_type=case when target_profile.person_type='student' then 'student_account' else 'worker_number' end
+        or target_profile.account_kind='technical'
+        and target_profile.first_names is not null
+        and target_profile.full_name is not null
+        and char_length(target_profile.first_names) between 1 and 150
+        and target_profile.first_names=regexp_replace(btrim(target_profile.first_names),'\s+',' ','g')
+        and (target_profile.paternal_surname is null or char_length(target_profile.paternal_surname) between 1 and 150 and target_profile.paternal_surname=regexp_replace(btrim(target_profile.paternal_surname),'\s+',' ','g'))
+        and (target_profile.maternal_surname is null or char_length(target_profile.maternal_surname) between 1 and 150 and target_profile.maternal_surname=regexp_replace(btrim(target_profile.maternal_surname),'\s+',' ','g'))
+        and char_length(target_profile.full_name) between 2 and 200
+        and target_profile.full_name=concat_ws(' ',target_profile.first_names,target_profile.paternal_surname,target_profile.maternal_surname)
+        and target_profile.person_type is null
+        and target_profile.primary_program_id is null
+        and target_profile.institutional_id_type is null
+        and target_profile.institutional_id_value is null
+      );
+    if not identity_valid then
+      raise exception 'sitaa_account_lifecycle_invalid_identity' using errcode='23514';
+    end if;
+    if matching_auth_count<>1 or not auth_confirmed then
+      raise exception 'sitaa_account_lifecycle_auth_unconfirmed' using errcode='42501';
+    end if;
+  end if;
+
+  prior_status:=target_profile.account_status;
+  if requested_transition='deactivate' then
+    update public.profiles profile
+    set account_status='inactive',is_active=false,deactivated_at=now(),updated_at=now()
+    where profile.id=target_profile.id
+    returning profile.account_status,profile.updated_at into resulting_status,persisted_updated_at;
+  else
+    update public.profiles profile
+    set account_status='active',is_active=true,deactivated_at=null,updated_at=now()
+    where profile.id=target_profile.id
+    returning profile.account_status,profile.updated_at into resulting_status,persisted_updated_at;
+  end if;
+
+  insert into public.admin_audit_events(
+    actor_profile_id,target_profile_id,action_code,outcome,reason,
+    role_assignment_id,metadata
+  ) values (
+    actor_profile_id,target_profile.id,
+    case when requested_transition='deactivate' then 'account_deactivated' else 'account_reactivated' end,
+    'success',normalized_reason,null,
+    jsonb_build_object('changed_fields',to_jsonb(changed))
+  ) returning id into event_id;
+
+  return query select target_profile.id,event_id,prior_status,resulting_status,
+    changed,persisted_updated_at;
 end;
 $function$
 

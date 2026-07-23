@@ -58,10 +58,10 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0008` están aplicadas, verificadas, reconciliadas e inmutables. Fase B.2a está cerrada dentro de su alcance aprobado y `0009` es el siguiente número disponible. Todo cambio futuro debe:
+`0001`–`0009` están aplicadas, verificadas, reconciliadas e inmutables. Fase B.2b está cerrada dentro de su alcance aprobado y `0010` es el siguiente número disponible. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
-2. crear una nueva migración numerada, sin reescribir `0001`–`0008`;
+2. crear una nueva migración numerada, sin reescribir `0001`–`0009`;
 3. incluir verificación y rollback cuando sea apropiado;
 4. aplicarse manualmente a Supabase;
 5. regenerar el snapshot vivo después de cambios significativos;
@@ -203,7 +203,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Resultado: sin deriva inexplicada; informe en `supabase/reconciliation/0008_post_apply_reconciliation.md`.
 - Cierre: 0008 queda aplicada, verificada, probada, reconciliada e inmutable; Fase B.2a queda cerrada dentro de su alcance aprobado y 0009 es el siguiente número disponible.
 
-## 0009 preparada localmente — ciclo de vida administrativo B.2b
+## 0009_admin_account_lifecycle_transitions.sql — aplicada, verificada y reconciliada
 
 - Se preparó `0009_admin_account_lifecycle_transitions.sql` con tres funciones: autoridad B.1 exacta por perfil, contexto de elegibilidad sin PII y transición auditada de desactivación/reactivación.
 - El delta previsto es 0 tablas, 0 columnas, 0 restricciones, 0 índices, 0 triggers, +3 funciones, 0 políticas, 0 semillas, +5 grants de rutina, 0 grants de tabla/secuencia y +5 ACL expandidas.
@@ -215,4 +215,8 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - La reejecución corregida del preflight devolvió 26 filas, dejó las 19 categorías bloqueantes en cero, terminó con `ROLLBACK` y fue aprobada. La aplicación compatible B.2b se desplegó antes del intento de migración.
 - El primer intento de migración falló al compilar el `DO $preflight$` embebido porque la rama del helper B.1 privado no cerraba su `EXISTS` exterior antes del siguiente `UNION ALL`. Sólo se alcanzaron `BEGIN` y los dos `SET LOCAL`; no hubo DDL, objetos 0009, grants, guarda post-DDL ni `COMMIT`. La transacción se descartó y no se ejecutó rollback.
 - Después de corregir la sintaxis, el segundo intento entró al preflight embebido y falló al capturar el hash pre-DDL de `pg_default_acl`: `defaclobjtype` tiene tipo interno `pg_catalog."char"` y se concatenaba sin `::text`. Sólo alcanzó `BEGIN`, los dos `SET LOCAL` y el preflight; no hubo DDL, objetos 0009, `REVOKE`, `GRANT`, guarda post-DDL ni `COMMIT`. La transacción no confirmada se descartó y no se ejecutó rollback.
-- Estado: las dos serializaciones default ACL están corregidas localmente; 0009 no aplicada, verificador/rollback no ejecutados y B.2b no reconciliada ni cerrada. Un tercer intento controlado permanece pendiente.
+- El tercer intento aprobó el preflight embebido, creó las tres funciones, normalizó ACL, aprobó la guarda atómica post-DDL y terminó con `COMMIT`; 0009 quedó aplicada e inmutable.
+- El verificador final completó contratos, fixtures y aserciones y terminó con `ROLLBACK`; no persistió fixture, grant, transición, estado o evento sintético.
+- Los smoke tests aprobaron autoridad exacta, desactivación/reactivación institucional, barrera operativa sobre sesión existente, preservación de identidad/historia, auditoría minimizada y denegaciones. La matriz manual multisesión no fue ejecutada y permanece limitada a un entorno desechable.
+- Snapshot post-0009: `2026-07-22T23:32:46Z`, estado `SUCCESS`, 18/165/80/43/11/54/25/18/51 y privilegios 137/267/6/445. El delta es +3 funciones, +5 grants de rutina y +5 ACL; no existe deriva inexplicada.
+- Cierre: 0001–0009 son inmutables, B.2b está cerrada, `0010` es el siguiente número disponible y B.3/Fase C permanecen pendientes.

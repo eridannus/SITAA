@@ -64,7 +64,7 @@ El registro autentica primero con Google y sólo después solicita identidad ins
 
 Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los usuarios no autenticados que intenten visitar `/dashboard`, `/catalogs`, `/profile` o `/activities` serán enviados al inicio de sesión.
 
-La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-22T01:46:13Z` quedó reconciliado contra 0001–0008 sin deriva inexplicada. 0006 mantiene los nombres personales estructurados como autoridad y `full_name` como compatibilidad derivada. Fase B.1 está cerrada y operativa mediante 0007; Fase B.2a está aplicada, verificada, probada y reconciliada mediante 0008. Las migraciones 0001–0008 son inmutables y 0009 es el siguiente número disponible.
+La Fase A de identidad y Google OAuth está operativa. El snapshot `2026-07-22T23:32:46Z` quedó reconciliado contra 0001–0009 sin deriva inexplicada. 0006 mantiene los nombres personales estructurados como autoridad y `full_name` como compatibilidad derivada. Fase B.1 está cerrada mediante 0007, B.2a mediante 0008 y B.2b mediante 0009. Las migraciones 0001–0009 son inmutables y 0010 es el siguiente número disponible.
 
 La navegación autenticada usa avatar Google validado o iniciales, menú de cuenta accesible y estados seleccionados de alto contraste. El acceso público emplea una tarjeta única que cabe en el viewport; el fondo canvas es decorativo, pausa en pestañas ocultas y respeta movimiento reducido.
 
@@ -72,6 +72,6 @@ El sistema visual canónico está en `docs/DESIGN_SYSTEM.md`. Toda interfaz usa 
 
 ## Alcance actual
 
-Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes, asistencia manual o por QR/enlace/código, el directorio B.1 y la barrera operativa con corrección auditada de identidad de B.2a. B.2a está cerrada dentro de su alcance aprobado; B.2b/B.3 para ciclo de cuenta y Auth, Fase C para roles, paneles especializados, formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.
+Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes, asistencia manual o por QR/enlace/código, el directorio B.1, la barrera operativa con corrección auditada de identidad de B.2a y la desactivación/reactivación auditada de B.2b. B.3 para operaciones Auth, Fase C para roles, paneles especializados, formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.
 
-La implementación local de B.2b está preparada como migración 0009: añade desactivación/reactivación auditada sin borrar asignaciones ni historia. Aún no se ha aplicado, verificado ni reconciliado contra Supabase; no revoca físicamente sesiones Auth y no sustituye la futura administración B.3.
+B.2b está operativa mediante 0009: permite a una autoridad B.1 exacta desactivar o reactivar otra cuenta elegible, conserva asignaciones e historia y registra un evento append-only minimizado. No activa registros pendientes, no repara asignaciones inválidas o vencidas, no revoca físicamente sesiones Auth y no sustituye la futura administración B.3.

@@ -77,6 +77,8 @@ function	get_admin_account_audit_history_b1(uuid,integer,integer)	postgres	postg
 function	get_admin_account_audit_history_b1(uuid,integer,integer)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
 function	get_admin_account_detail_b1(uuid)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
 function	get_admin_account_detail_b1(uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
+function	get_admin_account_lifecycle_context_b2b(uuid)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
+function	get_admin_account_lifecycle_context_b2b(uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
 function	get_admin_identity_correction_context_b2a(uuid)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
 function	get_admin_identity_correction_context_b2a(uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
 function	get_visible_activity_cards()	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
@@ -97,6 +99,7 @@ function	is_activity_participant(uuid)	postgres	postgres	authenticated	EXECUTE	f
 function	is_activity_participant(uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	is_activity_participant(uuid)	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	is_b1_account_admin()	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres
+function	is_exact_b1_account_admin_profile_b2b(uuid)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres
 function	is_sitaa_operational_account_active()	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
 function	is_sitaa_operational_account_active()	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
 function	normalize_sitaa_profile_names()	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
@@ -122,6 +125,8 @@ function	set_updated_at()	postgres	postgres	service_role	EXECUTE	false	postgres=
 function	sitaa_current_mexico_date()	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres
 function	sync_sitaa_profile_email_from_auth()	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
 function	sync_sitaa_profile_email_from_auth()	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,service_role=X/postgres
+function	transition_admin_account_lifecycle_b2b(uuid,text,text)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
+function	transition_admin_account_lifecycle_b2b(uuid,text,text)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres
 function	update_activity_participant_attendance(uuid,text,text)	postgres	postgres	authenticated	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	update_activity_participant_attendance(uuid,text,text)	postgres	postgres	postgres	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres
 function	update_activity_participant_attendance(uuid,text,text)	postgres	postgres	service_role	EXECUTE	false	postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres

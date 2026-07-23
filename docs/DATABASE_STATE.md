@@ -4,7 +4,7 @@
 
 **Snapshot vivo comparado:** `2026-07-22T01:46:13Z`, estado `SUCCESS`.
 
-La fuente de verdad histórica y evolutiva comprende `0001`–`0008`, aplicadas, verificadas, reconciliadas e inmutables:
+La fuente de verdad histórica y evolutiva comprende `0001`–`0009`, aplicadas, verificadas, reconciliadas e inmutables:
 
 1. `0001_baseline_current_schema.sql`: baseline reconciliada.
 2. `0002_database_security_and_integrity.sql`: seguridad, publicación y privilegios mínimos.
@@ -94,13 +94,13 @@ El detalle probatorio está en `supabase/reconciliation/0008_post_apply_reconcil
 ## Pendientes conocidos
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- Las operaciones administrativas B.2b/B.3, roles V2/Fase C, filtros/reportes futuros, retiro de A-02 y check-in abierto siguen sus fases documentadas.
+- Las transiciones administrativas B.2b están operativas mediante 0009. B.3, roles V2/Fase C, filtros/reportes futuros, retiro de A-02 y check-in abierto siguen sus fases documentadas.
 - Reportes y exportaciones CSV/PDF permanecen como trabajo futuro.
 - Overloads heredados, `activities.updated_by`, `starts_at`/`ends_at`, alcance divisional y `token_type = 'registration'` permanecen reservados o pendientes de análisis.
 
 ## Inmutabilidad y siguiente migración
 
-`0001`–`0008` forman historia aplicada, verificada y reconciliada y no se reescriben. 0007 cerró Fase B.1 y 0008 cierra Fase B.2a dentro de sus alcances aprobados. El snapshot post-0008 no presenta deriva inexplicada.
+`0001`–`0009` forman historia aplicada, verificada y reconciliada y no se reescriben. 0007 cerró Fase B.1, 0008 cerró Fase B.2a y 0009 cerró Fase B.2b dentro de sus alcances aprobados. El snapshot post-0009 no presenta deriva inexplicada.
 
 `0008_operational_account_barrier_identity_correction.sql` fue aplicada con `COMMIT` después de aprobar el preflight y publicar la aplicación compatible. Es inmutable. Implementa una barrera operativa independiente del JWT y corrección de identidad auditada sin alterar Auth, roles ni historia. Una dependencia es abierta sólo si está en borrador o aún no termina según el cálculo temporal en `America/Mexico_City`; una actividad no borrador ya terminada es histórica y no bloquea correcciones posteriores.
 
@@ -112,14 +112,14 @@ La primera ejecución del verificador 0008 abortó al invocar directamente bajo 
 
 La tercera ejecución del verificador aprobó y terminó con `ROLLBACK`. El smoke test de corrección de identidad y auditoría sanitizada aprobó; después se detectó que la página y las acciones de participantes ocultaban controles a un responsable histórico cuyo programa principal fue corregido. El contrato vivo `can_edit_activity(uuid)` sí autorizaba por creador o `responsible_profile_id`; la aplicación pasó a consumir esa decisión autoritativa y la reejecución del smoke test aprobó sin requerir una migración nueva.
 
-El directorio `supabase/reconciliation/live/` es evidencia autoritativa post-0008 y no debe editarse manualmente. Los inventarios de 51 funciones, 11 triggers, 25 políticas, 132 grants de rutina, 267 de tabla, 6 de secuencia y 440 ACL expandidas son conteos vivos observados. `0009` es el siguiente número disponible.
+El directorio `supabase/reconciliation/live/` es evidencia autoritativa post-0009 y no debe editarse manualmente. El snapshot `2026-07-22T23:32:46Z` registra 18 tablas, 165 columnas, 80 restricciones, 43 índices, 11 triggers, 54 funciones, 25 políticas, 18 tablas con RLS y 51 semillas. Los privilegios observados suman 137 grants de rutina, 267 de tabla, 6 de secuencia y 445 ACL expandidas. `0010` es el siguiente número disponible.
 
 Todo cambio futuro de base de datos debe crear una migración nueva, incluir verificación y rollback cuando corresponda, aplicarse manualmente, regenerar el snapshot después de cambios significativos y reconciliarlo contra la cadena completa.
 
-## Estado previsto por 0009 (no aplicado)
+## Estado reconciliado posterior a 0009
 
-0009 conserva intacto el modelo físico y añade tres funciones B.2b. El estado esperado posterior sería 54 funciones, 137 grants de rutina y 445 ACL expandidas; los demás inventarios permanecerían en 18/165/80/43/11/25/51 para tablas/columnas/restricciones/índices/triggers/políticas/semillas. Estos conteos son un contrato previsto, no evidencia viva, hasta regenerar el snapshot.
+0009 conservó intacto el modelo físico y añadió tres funciones B.2b. El inventario observado es 54 funciones, 137 grants de rutina y 445 ACL expandidas; los demás conteos permanecen en 18/165/80/43/11/25/18/51 para tablas/columnas/restricciones/índices/triggers/políticas/tablas con RLS/semillas. El delta frente a post-0008 es exactamente +3 funciones, +5 grants de rutina y +5 ACL, con cero cambio físico, de políticas, privilegios de tabla/secuencia o semillas.
 
 El primer preflight remoto de 0009 devolvió las 26 categorías y terminó con `ROLLBACK`, pero no fue aprobado por cuatro falsos positivos del arnés. Un diagnóstico adicional de sólo lectura confirmó el estado post-0008. Después de alinear las comparaciones con el snapshot canónico, el preflight independiente corregido devolvió nuevamente las 26 filas, dejó sus 19 bloqueos en cero y terminó con `ROLLBACK`; quedó aprobado. La aplicación compatible B.2b se desplegó antes del intento de migración.
 
-Dos intentos de migración fallaron de forma segura antes del DDL. El primero se detuvo al compilar el `DO $preflight$` por un `EXISTS` exterior sin cerrar. Tras corregirlo, el segundo entró al preflight y se detuvo al calcular la línea base default ACL porque `pg_default_acl.defaclobjtype` se concatenaba sin conversión explícita de su tipo interno `"char"` a `text`. Ambos intentos alcanzaron sólo `BEGIN`, los dos `SET LOCAL` y, en el segundo caso, el preflight; ninguno llegó a `CREATE FUNCTION`, `REVOKE`, `GRANT`, la guarda post-DDL o `COMMIT`. No se creó objeto 0009 alguno y no fue necesario ejecutar el rollback. La corrección `defaclobjtype::text` permanece local y un tercer intento controlado está pendiente. 0009 sigue no aplicada, B.2b no está cerrada y B.3/Fase C continúan pendientes.
+Dos intentos de migración fallaron de forma segura antes del DDL. El primero se detuvo por un `EXISTS` exterior sin cerrar y el segundo por concatenar sin `::text` el tipo interno `"char"` de `pg_default_acl.defaclobjtype`; ambas transacciones se descartaron sin persistencia. El intento 3 aprobó el preflight embebido, creó las tres funciones, normalizó ACL, aprobó la guarda post-DDL y alcanzó `COMMIT`. El verificador final aprobó con `ROLLBACK`, los smoke tests aprobaron y la reconciliación no encontró deriva inexplicada. 0001–0009 son inmutables, B.2b está cerrada y B.3/Fase C continúan pendientes.

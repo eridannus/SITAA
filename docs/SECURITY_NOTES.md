@@ -28,7 +28,7 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - No permitir que el usuario cambie por autoservicio tipo de cuenta/persona, identificador, programa principal, estado o roles.
 - Con 0006, el autoservicio activo permite únicamente `first_names`, `paternal_surname` y `maternal_surname`; privilegios de columna y trigger impiden cambiar clasificación, identificador, programa, correo, estado o roles. `full_name` se deriva en la base y no se escribe directamente.
 - La migración 0006 no divide nombres existentes. Su preflight de sólo lectura expone conteos y bloquea cualquier cuenta activa sin componentes revisados, evitando incorporar PII o correspondencias adivinadas al repositorio.
-- La aplicación bloquea perfiles pendientes o inactivos. La revocación coordinada de sesiones Auth y la administración de bajas permanecen para una migración posterior de Fase B.
+- La aplicación bloquea perfiles pendientes o inactivos. La desactivación/reactivación operativa auditada está implementada por 0009; la revocación física coordinada de sesiones Auth permanece para B.3.
 
 ### Administración de cuentas y roles
 
@@ -53,7 +53,7 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 - La metadata debe ser un objeto JSON de hasta 16 384 bytes. Sus llaves superiores se normalizan a minúsculas y sin separadores antes de rechazar términos sensibles como `password`, `token`, `cookie`, `secret`, `authorization`, `credential`, `recovery`, `session`, `bearer` o `apikey`.
 - El verificador 0007 no se limita a comprobar nombres de objetos: valida columnas y defaults, PK/FK/CHECK, índices, triggers, firmas RPC, propiedades de helpers y ACL de tabla, columna y función contra los catálogos PostgreSQL. Esto impide aceptar una forma física o un privilegio más amplio que el contrato B.1.
 - Su primera ejecución se detuvo antes de crear fixtures porque el arnés normalizaba `pg_proc.prosrc` en un orden incorrecto. El diagnóstico de sólo lectura confirmó las definiciones y ACL persistentes; la corrección sólo cambió el verificador y no debilitó ni alteró la migración aplicada. La reejecución terminó con `ROLLBACK`, los smoke tests aprobaron y la reconciliación post-0007 no encontró deriva inexplicada.
-- La aplicación no utiliza `service_role` ni escribe auditoría en B.1. Las mutaciones de cuenta quedan en B.2/B.3 y las de rol en Fase C.
+- La aplicación no utiliza `service_role`. B.1 sólo lee auditoría sanitizada; B.2a/B.2b escriben eventos minimizados mediante RPC owner y B.3 conserva las operaciones Auth. Las mutaciones de rol permanecen en Fase C.
 - No incorporar nombres, correos ni identificadores personales a semillas SQL.
 
 #### Fase B.2a aplicada, verificada y reconciliada mediante 0008
@@ -138,7 +138,7 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - En el verificador 0008, las RPC, denegaciones y DML cliente se ejecutan bajo `authenticated`; las postcondiciones crudas de perfil, Auth y auditoría se inspeccionan sólo como owner después de `RESET ROLE`.
 - Las dos ejecuciones fallidas del verificador fueron transacciones descartadas y no justifican ampliar RLS ni ACL: la primera llamó un helper owner-only como cliente y la segunda intentó leer postcondiciones owner-only bajo el rol cliente.
 
-### Transiciones administrativas B.2b previstas
+### Transiciones administrativas B.2b vigentes
 
 - Sólo un administrador B.1 exacto activo puede consultar elegibilidad o solicitar una transición; el helper de autoridad permanece owner-only.
 - La mutación captura el actor, bloquea autoridad y perfiles en orden determinista y repite la autorización antes de leer o cambiar el objetivo.
@@ -150,7 +150,8 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - Los dos triggers Auth continúan conectados por OID a `handle_sitaa_auth_user_created()` y `sync_sitaa_profile_email_from_auth()`; 0009 sólo verifica su contrato y no los altera.
 - El verificador 0009 ejecuta RPC y denegaciones cliente bajo `authenticated`, restablece el rol antes de inspeccionar perfiles, Auth, asignaciones o auditoría y conserva como owner la línea base de administradores exactos vivos. El allocator temporal de identificadores comprueba colisiones sin registrar identificadores existentes.
 - El primer preflight remoto 0009 no fue aprobado: cuatro falsos positivos de representación/privilegios quedaron confirmados por un diagnóstico de sólo lectura. La corrección local verifica bidireccionalmente las seis ACL de `system_health_id_seq` y los diecinueve grants de tabla de `authenticated`; `activity_participants` conserva sólo `SELECT`, no se restaura DML directo y `profiles` conserva sus tres `UPDATE` exclusivamente por columna. El preflight corregido fue reejecutado, dejó sus 19 bloqueos en cero y terminó con `ROLLBACK`.
-- La aplicación compatible fue desplegada. El primer intento de 0009 falló al compilar el preflight embebido por un paréntesis faltante; después de corregirlo, el segundo entró al preflight y falló porque el tipo interno `pg_catalog."char"` de `pg_default_acl.defaclobjtype` se concatenaba sin `::text` al capturar la línea base default ACL. Ambos fallos ocurrieron antes de todo DDL y sus transacciones se descartaron: no existen objetos 0009 ni cambios de grants y no se requirió rollback. Las dos serializaciones están corregidas localmente; 0009 permanece no aplicada, un tercer intento controlado está pendiente y B.2b sigue abierta.
+- La aplicación compatible fue desplegada. Los intentos 1 y 2 de 0009 fallaron antes del DDL, respectivamente, por un paréntesis faltante y por concatenar sin `::text` el tipo interno `pg_catalog."char"` de `pg_default_acl.defaclobjtype`; ambas transacciones se descartaron sin persistencia. El intento 3 aprobó preflight embebido, DDL, ACL, guarda atómica y `COMMIT`. El verificador final aprobó con `ROLLBACK`, los smoke tests funcionales aprobaron y el snapshot `2026-07-22T23:32:46Z` quedó reconciliado sin deriva inexplicada. 0009 es inmutable y B.2b está cerrada. La matriz manual multisesión no se ejecutó y permanece limitada a un entorno desechable.
+- La desactivación activa inmediatamente la barrera operativa 0008 aun cuando un JWT siga vigente, pero no elimina ni modifica Auth, identidad, asignaciones, actividades, responsabilidades, participaciones, asistencia o historia. La reactivación no repara asignaciones vencidas, futuras, inactivas, malformadas o incompatibles. B.3 conserva la revocación física de sesiones y las operaciones `auth.admin`; Fase C conserva la mutación de roles.
 
 ## Validaciones previas al piloto
 

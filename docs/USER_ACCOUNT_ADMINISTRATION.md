@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 está operativa mediante 0007. Fase B.2a fue aplicada, verificada, probada y reconciliada mediante 0008; está cerrada dentro de su alcance aprobado. B.2b, B.3 y C siguen pendientes.
+**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3 y Fase C siguen pendientes.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -34,9 +34,9 @@ El primer preflight remoto de 0008 revirtió con un falso positivo por nombres y
 
 La primera ejecución del verificador pasó los controles estáticos y comenzó las fixtures, pero abortó al invocar directamente como `authenticated` el helper owner-only `is_b1_account_admin()`. El ACL actuó correctamente y la transacción completa fue descartada sin persistencia. Una segunda ejecución descartada dejó postcondiciones crudas bajo el rol cliente. La versión final separó semántica owner, denegación cliente `42501` y acceso autorizado por las RPC B.1/B.2a `SECURITY DEFINER`; aprobó y terminó con `ROLLBACK`. Los smoke tests finales, incluido el responsable histórico entre programas, aprobaron.
 
-### B.2b — Ciclo de vida operativo
+### B.2b — Ciclo de vida operativo cerrado
 
-Preparada localmente mediante 0009: desactivación y reactivación del estado operativo en `profiles`, con auditoría y sin mutar Auth, roles ni historia. `pending_registration` no puede activarse administrativamente y continúa en el flujo propio de registro.
+Implementada mediante 0009: desactivación y reactivación del estado operativo en `profiles`, con auditoría y sin mutar Auth, roles ni historia. `pending_registration` no puede activarse administrativamente y continúa en el flujo propio de registro.
 
 ### B.3 — Cuentas técnicas y operaciones Auth
 
@@ -80,14 +80,14 @@ La aplicación compatible con B.2a expone `/admin/accounts/[id]/identity`. Con 0
 - La aplicación compatible publicada consulta exclusivamente las RPC B.1 autorizadas por 0007.
 - No se introduce PII real en SQL, verificadores o documentación.
 
-## Fase B.2b preparada: ciclo de vida operativo
+## Fase B.2b operativa: ciclo de vida administrativo
 
 La ruta protegida `/admin/accounts/[id]/lifecycle` permite a una autoridad B.1 exacta desactivar una cuenta activa elegible o reactivar una inactiva válida. El detalle muestra estado, marcas temporales y conteos de dependencias; las dependencias se conservan y no bloquean. La acción requiere motivo de 10–1000 caracteres y confirmación explícita, y llama exclusivamente a la RPC 0009.
 
 La cuenta propia, los registros pendientes y la última autoridad B.1 exacta no son objetivos válidos. La guarda de última autoridad es defensa en profundidad: con un único administrador exacto activo, el objetivo posible es la propia cuenta y se rechaza antes; con un actor autorizado distinto hay al menos dos autoridades. El verificador captura primero la línea base viva, añade dos administradores sintéticos y comprueba los totales relativos línea base + 2, + 1 y + 2, sin modificar autoridades preexistentes. Las fases cliente llaman RPC bajo `authenticated` y las postcondiciones crudas se evalúan como owner.
 
-La reactivación exige identidad coherente, Auth confirmado y, para cuentas institucionales, un programa existente y activo bloqueado con `FOR SHARE`. El orden es: advisory de ciclo, `role_assignments` en `SHARE`, Auth objetivo, perfiles ordenados por UUID, segunda autorización, programa institucional, validación, actualización y auditoría. La prueba de concurrencia con desactivación del programa debe ejecutarse sólo en un entorno desechable y aún está pendiente. La desactivación aplica la barrera operativa existente, sin borrar historia ni afirmar revocación física de sesiones. Esta fase está preparada localmente y no es operativa hasta aplicar y verificar 0009.
+La reactivación exige identidad coherente, Auth confirmado y, para cuentas institucionales, un programa existente y activo bloqueado con `FOR SHARE`. El orden es: advisory de ciclo, `role_assignments` en `SHARE`, Auth objetivo, perfiles ordenados por UUID, segunda autorización, programa institucional, validación, actualización y auditoría. La matriz manual de concurrencia debe ejecutarse sólo en un entorno desechable y aún está pendiente. La desactivación aplica la barrera operativa existente sin borrar historia ni afirmar revocación física de sesiones. Al reactivar, sólo recuperan efecto asignaciones todavía activas, vigentes, válidas y compatibles.
 
 La precedencia de denegación del contexto es determinista: cuenta propia, registro pendiente, ciclo de vida inválido, último administrador, identidad inválida y finalmente Auth no confirmado. La mutación vuelve a validar todo bajo locks y es la autoridad final.
 
-El primer preflight remoto de 0009 fue de sólo lectura y no se aprobó por cuatro falsos positivos del arnés; un diagnóstico igualmente descartado confirmó el estado post-0008. La reejecución corregida devolvió las 26 categorías, dejó los 19 bloqueos en cero y terminó con `ROLLBACK`. Después de desplegar la aplicación compatible, el primer intento de migración falló al compilar su preflight embebido por un `EXISTS` exterior sin cerrar. Tras corregirlo, el segundo entró al preflight y falló al concatenar sin `::text` el tipo interno `pg_catalog."char"` de `pg_default_acl.defaclobjtype` durante el hash de línea base. Ninguno alcanzó DDL ni `COMMIT`, creó objetos o requirió rollback. Las dos expresiones están corregidas localmente y un tercer intento controlado permanece pendiente; B.2b continúa no aplicada ni cerrada, y B.3/Fase C permanecen pendientes.
+El primer preflight remoto de 0009 no fue aprobado por cuatro falsos positivos del arnés; un diagnóstico de sólo lectura confirmó el estado post-0008. La reejecución corregida dejó los 19 bloqueos en cero y terminó con `ROLLBACK`. Después de desplegar la aplicación compatible, los intentos 1 y 2 fallaron antes del DDL por el `EXISTS` exterior sin cerrar y por el cast faltante de `pg_default_acl.defaclobjtype`; ambas transacciones se descartaron. El intento 3 aprobó la guarda atómica y terminó con `COMMIT`. El verificador final aprobó con `ROLLBACK` sin persistir fixtures, los smoke tests aprobaron y el snapshot `2026-07-22T23:32:46Z` quedó reconciliado sin deriva inexplicada. 0009 es inmutable, B.2b está cerrada y B.3/Fase C permanecen pendientes.

@@ -140,4 +140,4 @@ Los valores desconocidos se rechazan explícitamente. La paginación conserva lo
 
 ## Visibilidad del ciclo de vida B.2b
 
-Los controles de desactivación/reactivación sólo aparecen después de consultar el contexto autorizado de 0009. La interfaz no infiere elegibilidad a partir de filtros, estado local, `created_by` o una asignación mostrada en pantalla. Antes de aplicar la migración, el directorio y la corrección B.2a continúan disponibles y no se muestra una capacidad inexistente.
+Los controles de desactivación/reactivación sólo aparecen después de consultar el contexto autorizado de 0009. La interfaz no infiere elegibilidad a partir de filtros, estado local, `created_by` o una asignación mostrada en pantalla. El contexto y la mutación vuelven a exigir autoridad B.1 exacta en la base; registros pendientes, cuenta propia y objetivos no elegibles no reciben una transición operativa.
