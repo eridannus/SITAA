@@ -13,7 +13,7 @@ import { getAuthenticatedUserContext } from "@/lib/auth/get-authenticated-user-c
 import type { AdminAccountLifecycleTransition } from "@/types/admin";
 
 export interface AccountLifecycleValues {
-  mode: "start" | "retry";
+  mode: "start" | "retry" | null;
   target_profile_id: string;
   transition: string;
   transition_reason: string;
@@ -38,9 +38,15 @@ function textValue(formData: FormData, field: string) {
 function normalizedText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
+
+function lifecycleModeValue(formData: FormData): AccountLifecycleValues["mode"] {
+  const value = formData.get("mode");
+  return value === "start" || value === "retry" ? value : null;
+}
+
 function valuesFrom(formData: FormData): AccountLifecycleValues {
   return {
-    mode: textValue(formData, "mode") === "retry" ? "retry" : "start",
+    mode: lifecycleModeValue(formData),
     target_profile_id: textValue(formData, "target_profile_id"),
     transition: textValue(formData, "transition"),
     transition_reason: textValue(formData, "transition_reason"),
@@ -113,6 +119,14 @@ export async function submitAccountLifecycleTransition(
   formData: FormData,
 ): Promise<AccountLifecycleState> {
   const values = valuesFrom(formData);
+  if (values.mode === null) {
+    return state(
+      values,
+      "error",
+      "La modalidad de la operación no es válida. Actualiza la página e intenta nuevamente.",
+    );
+  }
+
   let actorContext;
   try {
     actorContext = await getAuthenticatedUserContext();

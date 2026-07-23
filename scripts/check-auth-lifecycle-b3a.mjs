@@ -60,6 +60,20 @@ assert.match(action, /result\.state === "rejected" \? "error" : "pending"/);
 assert.match(action, /result\.code === \(values\.transition === "deactivate" \? "account_deactivated" : "account_reactivated"\)/);
 assert.doesNotMatch(action, /context\.operationCode !== values\.transition \|\| !context\.canRetryOrFinalize/);
 assert.doesNotMatch(action, /values\.mode === "retry"[\s\S]{0,500}canRetryOrFinalize/);
+assert.match(action, /function lifecycleModeValue\(formData: FormData\): AccountLifecycleValues\["mode"\]/);
+assert.match(action, /value === "start" \|\| value === "retry" \? value : null/);
+assert.doesNotMatch(action, /textValue\(formData, "mode"\) === "retry" \? "retry" : "start"/);
+const lifecycleActionStart = action.indexOf("export async function submitAccountLifecycleTransition");
+const invalidModeGuard = action.indexOf("if (values.mode === null)", lifecycleActionStart);
+const authenticatedContextLoad = action.indexOf("await getAuthenticatedUserContext()", lifecycleActionStart);
+const lifecycleContextLoad = action.indexOf("await getAdminAccountLifecycleContext(", lifecycleActionStart);
+const edgeCall = action.indexOf("await runAdminAccountAuthLifecycle(", lifecycleActionStart);
+const legacyCall = action.indexOf("await transitionAdminAccountLifecycleLegacyBeforeB3a(", lifecycleActionStart);
+assert.ok(lifecycleActionStart >= 0 && invalidModeGuard > lifecycleActionStart);
+for (const boundary of [authenticatedContextLoad, lifecycleContextLoad, edgeCall, legacyCall]) {
+  assert.ok(boundary > invalidModeGuard,
+    "El modo inválido debe rechazarse antes de autenticación, contexto y límites de mutación");
+}
 assert.match(data, /FunctionsHttpError/);
 assert.match(data, /FunctionsRelayError/);
 assert.match(data, /FunctionsFetchError/);
@@ -110,6 +124,36 @@ assert.equal(fixtureStartReachesAuthoritativePath({
   b3aAvailable: false,
   canTransition: true,
 }), true);
+
+function parseLifecycleModeFixture(value) {
+  return value === "start" || value === "retry" ? value : null;
+}
+function fixtureMalformedModeDispatch(value) {
+  const mode = parseLifecycleModeFixture(value);
+  const calls = { edge: 0, legacy: 0 };
+  if (mode === null) return calls;
+  if (mode === "retry") calls.edge += 1;
+  else calls.legacy += 1;
+  return calls;
+}
+for (const malformedMode of [
+  undefined,
+  null,
+  "",
+  "START",
+  "RETRY",
+  " start",
+  "start ",
+  " retry",
+  "retry ",
+  "unknown",
+]) {
+  assert.equal(parseLifecycleModeFixture(malformedMode), null);
+  assert.deepEqual(fixtureMalformedModeDispatch(malformedMode), { edge: 0, legacy: 0 },
+    `El modo malformado no debe alcanzar Edge ni legado: ${String(malformedMode)}`);
+}
+assert.equal(parseLifecycleModeFixture("start"), "start");
+assert.equal(parseLifecycleModeFixture("retry"), "retry");
 
 function fixtureRetryReachesAuthoritativePath({
   b3aAvailable,
@@ -409,6 +453,7 @@ console.log(`Fixtures Edge válidos aceptados: ${validFixtures.length}`);
 console.log(`Fixtures Edge inválidos sin redirección: ${invalidFixtures.length}`);
 console.log(`Snapshots RPC incompatibles rechazados: ${malformedSnapshots.length}`);
 console.log("Replays start/retry alcanzan la autoridad B.3a; el legado conserva su elegibilidad: OK");
+console.log("Modos malformados rechazados antes de Edge y del legado: OK");
 console.log("Clasificación exacta 42501 y límite confiable: OK");
 console.log("Contrato discriminado Edge y coincidencia transición/código: OK");
 console.log("Errores HTTP malformados, Relay, Fetch y desconocidos fallan cerrados: OK");
