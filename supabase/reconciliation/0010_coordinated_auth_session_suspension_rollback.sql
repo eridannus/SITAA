@@ -12,7 +12,7 @@ begin
      or to_regprocedure('public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)') is null
      or to_regprocedure('public.finalize_admin_account_auth_reactivation_b3a(uuid)') is null
      or to_regprocedure('public.claim_admin_auth_operation_b3a(uuid,uuid)') is null
-     or to_regprocedure('public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)') is null
+     or to_regprocedure('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)') is null
      or to_regprocedure('public.guard_admin_auth_operation_b3a()') is null then
     raise exception 'sitaa_0010_rollback_contract_missing' using errcode='55000';
   end if;
@@ -28,9 +28,82 @@ begin
     (select md5(coalesce(string_agg(defaclrole::text||':'||defaclnamespace::text||':'||defaclobjtype::text||':'||defaclacl::text,'|' order by defaclrole,defaclnamespace,defaclobjtype),'')) from pg_default_acl),true);
   if (select string_agg(column_name||':'||data_type||':'||is_nullable,'|' order by ordinal_position) from information_schema.columns where table_schema='public' and table_name='admin_auth_operations')<>
        'id:uuid:NO|request_id:uuid:NO|requested_by_profile_id:uuid:NO|completed_by_profile_id:uuid:YES|target_profile_id:uuid:NO|operation_code:text:NO|status:text:NO|completed_stage:text:NO|reason:text:NO|attempt_count:integer:NO|last_error_code:text:YES|profile_audit_event_id:uuid:YES|auth_audit_event_id:uuid:YES|requested_at:timestamp with time zone:NO|processing_started_at:timestamp with time zone:YES|auth_synchronized_at:timestamp with time zone:YES|completed_at:timestamp with time zone:YES|updated_at:timestamp with time zone:NO'
+     or (select string_agg(column_name||':'||coalesce(column_default,''),'|' order by ordinal_position) from information_schema.columns where table_schema='public' and table_name='admin_auth_operations')<>
+       'id:gen_random_uuid()|request_id:|requested_by_profile_id:|completed_by_profile_id:|target_profile_id:|operation_code:|status:''open''::text|completed_stage:''prepared''::text|reason:|attempt_count:0|last_error_code:|profile_audit_event_id:|auth_audit_event_id:|requested_at:now()|processing_started_at:|auth_synchronized_at:|completed_at:|updated_at:now()'
      or (select count(*) from pg_constraint where conrelid='public.admin_auth_operations'::regclass)<>16
+     or (select string_agg(conname||':'||contype::text,'|' order by conname) from pg_constraint where conrelid='public.admin_auth_operations'::regclass)<>
+       'admin_auth_operations_attempt_check:c|admin_auth_operations_auth_audit_event_id_fkey:f|admin_auth_operations_completed_by_profile_id_fkey:f|admin_auth_operations_error_check:c|admin_auth_operations_evidence_check:c|admin_auth_operations_operation_check:c|admin_auth_operations_pkey:p|admin_auth_operations_profile_audit_event_id_fkey:f|admin_auth_operations_reason_check:c|admin_auth_operations_request_id_key:u|admin_auth_operations_requested_by_profile_id_fkey:f|admin_auth_operations_stage_check:c|admin_auth_operations_stage_operation_check:c|admin_auth_operations_status_check:c|admin_auth_operations_target_profile_id_fkey:f|admin_auth_operations_timestamp_check:c'
+     or exists (
+       with expected(conname,contype,key_columns,referenced_table,referenced_columns,update_action,delete_action) as (
+         values
+           ('admin_auth_operations_pkey','p','id',null::oid,null::text,null::text,null::text),
+           ('admin_auth_operations_request_id_key','u','request_id',null::oid,null::text,null::text,null::text),
+           ('admin_auth_operations_requested_by_profile_id_fkey','f','requested_by_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_completed_by_profile_id_fkey','f','completed_by_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_target_profile_id_fkey','f','target_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_profile_audit_event_id_fkey','f','profile_audit_event_id','public.admin_audit_events'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_auth_audit_event_id_fkey','f','auth_audit_event_id','public.admin_audit_events'::regclass::oid,'id','a','r')
+       )
+       select 1
+       from expected
+       left join pg_constraint constraint_definition
+         on constraint_definition.conrelid='public.admin_auth_operations'::regclass
+        and constraint_definition.conname=expected.conname
+       where constraint_definition.oid is null
+          or constraint_definition.contype::text<>expected.contype
+          or constraint_definition.condeferrable
+          or constraint_definition.condeferred
+          or not constraint_definition.convalidated
+          or (select string_agg(attribute_definition.attname,',' order by key_column.ordinality)
+              from unnest(constraint_definition.conkey) with ordinality key_column(attnum,ordinality)
+              join pg_attribute attribute_definition
+                on attribute_definition.attrelid=constraint_definition.conrelid
+               and attribute_definition.attnum=key_column.attnum)<>expected.key_columns
+          or expected.referenced_table is not null and (
+               constraint_definition.confrelid<>expected.referenced_table
+            or constraint_definition.confupdtype::text<>expected.update_action
+            or constraint_definition.confdeltype::text<>expected.delete_action
+            or constraint_definition.confmatchtype<>'s'
+            or (select string_agg(attribute_definition.attname,',' order by key_column.ordinality)
+                from unnest(constraint_definition.confkey) with ordinality key_column(attnum,ordinality)
+                join pg_attribute attribute_definition
+                  on attribute_definition.attrelid=constraint_definition.confrelid
+                 and attribute_definition.attnum=key_column.attnum)<>expected.referenced_columns
+          )
+     )
      or (select count(*) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>5
+     or (select string_agg(indexname,'|' order by indexname) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>
+       'admin_auth_operations_actor_requested_idx|admin_auth_operations_one_nonfinal_target_uidx|admin_auth_operations_pkey|admin_auth_operations_request_id_uidx|admin_auth_operations_target_status_idx'
+     or exists (
+       with expected(indexname,indexdef) as (
+         values
+           ('admin_auth_operations_actor_requested_idx','CREATE INDEX admin_auth_operations_actor_requested_idx ON public.admin_auth_operations USING btree (requested_by_profile_id, requested_at DESC, id DESC)'),
+           ('admin_auth_operations_one_nonfinal_target_uidx','CREATE UNIQUE INDEX admin_auth_operations_one_nonfinal_target_uidx ON public.admin_auth_operations USING btree (target_profile_id) WHERE (status = ANY (ARRAY[''open''::text, ''processing''::text, ''retryable_failure''::text]))'),
+           ('admin_auth_operations_pkey','CREATE UNIQUE INDEX admin_auth_operations_pkey ON public.admin_auth_operations USING btree (id)'),
+           ('admin_auth_operations_request_id_uidx','CREATE UNIQUE INDEX admin_auth_operations_request_id_uidx ON public.admin_auth_operations USING btree (request_id)'),
+           ('admin_auth_operations_target_status_idx','CREATE INDEX admin_auth_operations_target_status_idx ON public.admin_auth_operations USING btree (target_profile_id, status, updated_at DESC)')
+       )
+       (select * from expected except
+        select indexname,indexdef from pg_indexes where schemaname='public' and tablename='admin_auth_operations')
+       union all
+       (select indexname,indexdef from pg_indexes where schemaname='public' and tablename='admin_auth_operations'
+        except select * from expected)
+     )
      or (select count(*) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>2
+     or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
+       'guard_admin_auth_operation_b3a:31:O:guard_admin_auth_operation_b3a()|guard_admin_auth_operation_truncate_b3a:34:O:guard_admin_auth_operation_b3a()'
+     or exists (
+       with expected(tgname,definition) as (
+         values
+           ('guard_admin_auth_operation_b3a','CREATE TRIGGER guard_admin_auth_operation_b3a BEFORE INSERT OR DELETE OR UPDATE ON admin_auth_operations FOR EACH ROW EXECUTE FUNCTION guard_admin_auth_operation_b3a()'),
+           ('guard_admin_auth_operation_truncate_b3a','CREATE TRIGGER guard_admin_auth_operation_truncate_b3a BEFORE TRUNCATE ON admin_auth_operations FOR EACH STATEMENT EXECUTE FUNCTION guard_admin_auth_operation_b3a()')
+       )
+       (select * from expected except
+        select tgname,pg_get_triggerdef(oid,true) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)
+       union all
+       (select tgname,pg_get_triggerdef(oid,true) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal
+        except select * from expected)
+     )
      or not (select relrowsecurity from pg_class where oid='public.admin_auth_operations'::regclass)
      or (select count(*) from pg_policies where schemaname='public' and tablename='admin_auth_operations')<>0
      or (select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')<>19
@@ -54,12 +127,12 @@ begin
      or (select md5(coalesce(string_agg(table_definition.relname||':'||trigger_definition.tgname||':'||pg_get_triggerdef(trigger_definition.oid,true),'|' order by table_definition.relname,trigger_definition.tgname),'')) from pg_trigger trigger_definition join pg_class table_definition on table_definition.oid=trigger_definition.tgrelid join pg_namespace namespace_definition on namespace_definition.oid=table_definition.relnamespace where namespace_definition.nspname='public' and table_definition.relname<>'admin_auth_operations' and not trigger_definition.tgisinternal)<>'67ee47bcd43c0594129facf3d7729bad'
      or (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||policyname||':'||permissive||':'||roles::text||':'||cmd||':'||coalesce(qual,'')||':'||coalesce(with_check,''),'|' order by schemaname,tablename,policyname),'')) from pg_policies where schemaname='public')<>'a72df97fbb8e73d8445f7fe8765da4ba'
      or exists(select 1 from (values
-       ('guard_admin_auth_operation_b3a()','c90a06bb49d1f705d220c63691278d04'),
-       ('get_admin_account_auth_lifecycle_context_b3a(uuid)','8748f265e02c560b319469752902badc'),
-       ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','311caba6baf9a5d220d013d58ff82ec3'),
-       ('claim_admin_auth_operation_b3a(uuid,uuid)','9e56474054dc3dae3e5f000c5322bf8c'),
-       ('record_admin_auth_operation_result_b3a(uuid,uuid,text,text)','3d7113328aa036840d0499a824d8fbce'),
-       ('finalize_admin_account_auth_reactivation_b3a(uuid)','493c12625b205ad4e36f27d86a373ae4')
+       ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
+       ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
+       ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','6442e73504d4eecaf673f03b109c6eef'),
+       ('claim_admin_auth_operation_b3a(uuid,uuid)','7da7aec9b4ff17aa551a4cf820d5cfbd'),
+       ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','6467440196296d77662eb4cce77d3226'),
+       ('finalize_admin_account_auth_reactivation_b3a(uuid)','b8223a508478e80edd340e231b66abeb')
      ) expected(signature,body_hash) left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
      where p.oid is null or not p.prosecdef or pg_get_userbyid(p.proowner)<>'postgres'
        or p.proconfig is distinct from array['search_path=pg_catalog, public']::text[]
@@ -78,8 +151,8 @@ begin
            ('public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure::oid,'authenticated'::regrole::oid),
            ('public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure::oid,'postgres'::regrole::oid),
            ('public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure::oid,'service_role'::regrole::oid),
-           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure::oid,'postgres'::regrole::oid),
-           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure::oid,'service_role'::regrole::oid)
+           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure::oid,'postgres'::regrole::oid),
+           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure::oid,'service_role'::regrole::oid)
        ), actual(function_oid,grantee) as (
          select p.oid,acl.grantee from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
          where p.oid in (select expected.function_oid from expected) and acl.privilege_type='EXECUTE' and not acl.is_grantable
@@ -149,14 +222,14 @@ revoke all on function public.get_admin_account_auth_lifecycle_context_b3a(uuid)
 revoke all on function public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.finalize_admin_account_auth_reactivation_b3a(uuid) from public,anon,authenticated,service_role;
 revoke all on function public.claim_admin_auth_operation_b3a(uuid,uuid) from public,anon,authenticated,service_role;
-revoke all on function public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text) from public,anon,authenticated,service_role;
+revoke all on function public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text) from public,anon,authenticated,service_role;
 revoke all on function public.guard_admin_auth_operation_b3a() from public,anon,authenticated,service_role;
 
 drop function public.get_admin_account_auth_lifecycle_context_b3a(uuid);
 drop function public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid);
 drop function public.finalize_admin_account_auth_reactivation_b3a(uuid);
 drop function public.claim_admin_auth_operation_b3a(uuid,uuid);
-drop function public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text);
+drop function public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text);
 
 drop trigger guard_admin_auth_operation_b3a on public.admin_auth_operations;
 drop trigger guard_admin_auth_operation_truncate_b3a on public.admin_auth_operations;

@@ -144,24 +144,35 @@ end;
 $preflight$;
 
 create table public.admin_auth_operations (
-  id uuid primary key default gen_random_uuid(),
+  id uuid not null default gen_random_uuid(),
   request_id uuid not null,
-  requested_by_profile_id uuid not null references public.profiles(id) on delete restrict,
-  completed_by_profile_id uuid null references public.profiles(id) on delete restrict,
-  target_profile_id uuid not null references public.profiles(id) on delete restrict,
+  requested_by_profile_id uuid not null
+    constraint admin_auth_operations_requested_by_profile_id_fkey
+    references public.profiles(id) on delete restrict,
+  completed_by_profile_id uuid null
+    constraint admin_auth_operations_completed_by_profile_id_fkey
+    references public.profiles(id) on delete restrict,
+  target_profile_id uuid not null
+    constraint admin_auth_operations_target_profile_id_fkey
+    references public.profiles(id) on delete restrict,
   operation_code text not null,
   status text not null default 'open',
   completed_stage text not null default 'prepared',
   reason text not null,
   attempt_count integer not null default 0,
   last_error_code text null,
-  profile_audit_event_id uuid null references public.admin_audit_events(id) on delete restrict,
-  auth_audit_event_id uuid null references public.admin_audit_events(id) on delete restrict,
+  profile_audit_event_id uuid null
+    constraint admin_auth_operations_profile_audit_event_id_fkey
+    references public.admin_audit_events(id) on delete restrict,
+  auth_audit_event_id uuid null
+    constraint admin_auth_operations_auth_audit_event_id_fkey
+    references public.admin_audit_events(id) on delete restrict,
   requested_at timestamptz not null default now(),
   processing_started_at timestamptz null,
   auth_synchronized_at timestamptz null,
   completed_at timestamptz null,
   updated_at timestamptz not null default now(),
+  constraint admin_auth_operations_pkey primary key (id),
   constraint admin_auth_operations_operation_check check (operation_code in ('deactivate','reactivate')),
   constraint admin_auth_operations_status_check check (status in ('open','processing','retryable_failure','succeeded','terminal_failure')),
   constraint admin_auth_operations_stage_check check (completed_stage in ('prepared','profile_suspended','auth_synchronized','completed')),
@@ -292,11 +303,11 @@ begin
   if new_rank<old_rank or new.attempt_count<old.attempt_count
      or new.updated_at<old.updated_at
      or old.processing_started_at is not null and new.processing_started_at<old.processing_started_at
-     or old.completed_by_profile_id is not null and new.completed_by_profile_id is null
-     or old.profile_audit_event_id is not null and new.profile_audit_event_id is null
-     or old.auth_audit_event_id is not null and new.auth_audit_event_id is null
-     or old.auth_synchronized_at is not null and new.auth_synchronized_at is null
-     or old.completed_at is not null and new.completed_at is null then
+     or old.completed_by_profile_id is not null and new.completed_by_profile_id is distinct from old.completed_by_profile_id
+     or old.profile_audit_event_id is not null and new.profile_audit_event_id is distinct from old.profile_audit_event_id
+     or old.auth_audit_event_id is not null and new.auth_audit_event_id is distinct from old.auth_audit_event_id
+     or old.auth_synchronized_at is not null and new.auth_synchronized_at is distinct from old.auth_synchronized_at
+     or old.completed_at is not null and new.completed_at is distinct from old.completed_at then
     raise exception 'sitaa_auth_operation_regression_forbidden' using errcode='23514';
   end if;
 
@@ -332,7 +343,10 @@ begin
            and new.completed_by_profile_id is null and new.completed_at is null
            and new.auth_audit_event_id is not distinct from old.auth_audit_event_id
            and new.auth_synchronized_at is not distinct from old.auth_synchronized_at
-         or new.status='terminal_failure' and new.completed_stage=old.completed_stage
+         or new.status='terminal_failure'
+           and old.completed_stage in ('prepared','profile_suspended')
+           and old.auth_audit_event_id is null and old.auth_synchronized_at is null
+           and new.completed_stage=old.completed_stage
            and new.completed_by_profile_id is not null and new.completed_at is not null
            and new.auth_audit_event_id is not null and new.auth_synchronized_at is not distinct from old.auth_synchronized_at
          or old.operation_code='reactivate' and new.status='processing'
@@ -425,7 +439,7 @@ begin
       operation_row.status in ('open','retryable_failure')
       or operation_row.status='processing' and (
         operation_row.completed_stage='auth_synchronized'
-        or operation_row.processing_started_at<=now()-interval '5 minutes'
+        or operation_row.processing_started_at<=statement_timestamp()-interval '5 minutes'
       )
     ),false);
 end;
@@ -450,6 +464,7 @@ declare
   existing public.admin_auth_operations%rowtype;
   base record;
   lifecycle_result record;
+  operation_timestamp timestamptz;
 begin
   if actor_id is null or not public.is_exact_b1_account_admin_profile_b2b(actor_id) then
     raise exception 'sitaa_admin_access_denied' using errcode='42501';
@@ -495,20 +510,25 @@ begin
     select * into lifecycle_result from public.transition_admin_account_lifecycle_b2b(
       requested_profile_id,'deactivate',normalized_reason
     );
+    operation_timestamp:=clock_timestamp();
     perform set_config('sitaa.b3a_writer','prepare',true);
     insert into public.admin_auth_operations(
       request_id,requested_by_profile_id,target_profile_id,operation_code,reason,
-      completed_stage,profile_audit_event_id
+      completed_stage,profile_audit_event_id,requested_at,updated_at
     ) values(
       $4,actor_id,requested_profile_id,requested_transition,normalized_reason,
-      'profile_suspended',lifecycle_result.audit_event_id
+      'profile_suspended',lifecycle_result.audit_event_id,operation_timestamp,operation_timestamp
     ) returning * into existing;
   else
+    operation_timestamp:=clock_timestamp();
     perform set_config('sitaa.b3a_writer','prepare',true);
     insert into public.admin_auth_operations(
       request_id,requested_by_profile_id,target_profile_id,operation_code,reason,
-      completed_stage
-    ) values($4,actor_id,requested_profile_id,requested_transition,normalized_reason,'prepared')
+      completed_stage,requested_at,updated_at
+    ) values(
+      $4,actor_id,requested_profile_id,requested_transition,normalized_reason,
+      'prepared',operation_timestamp,operation_timestamp
+    )
     returning * into existing;
   end if;
   perform set_config('sitaa.b3a_writer','',true);
@@ -531,13 +551,16 @@ volatile
 security definer
 set search_path=pg_catalog,public
 as $function$
-declare operation_row public.admin_auth_operations%rowtype;
+declare
+  operation_row public.admin_auth_operations%rowtype;
+  operation_timestamp timestamptz;
 begin
   if coalesce(auth.jwt()->>'role','')<>'service_role' then raise exception 'sitaa_service_boundary_required' using errcode='42501'; end if;
   if caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
   perform pg_advisory_xact_lock(1397310529,9002);
   select operation.* into operation_row from public.admin_auth_operations operation where operation.id=requested_operation_id for update;
   if not found then raise exception 'sitaa_auth_operation_unavailable' using errcode='P0001'; end if;
+  operation_timestamp:=greatest(clock_timestamp(),operation_row.updated_at);
   if operation_row.status in ('succeeded','terminal_failure') then
     return query select operation_row.id,operation_row.target_profile_id,operation_row.operation_code,
       operation_row.status,operation_row.completed_stage,operation_row.attempt_count,
@@ -546,7 +569,7 @@ begin
   end if;
   if operation_row.status='processing'
      and operation_row.completed_stage<>'auth_synchronized'
-     and operation_row.processing_started_at>now()-interval '5 minutes' then
+     and operation_row.processing_started_at>operation_timestamp-interval '5 minutes' then
     return query select operation_row.id,operation_row.target_profile_id,operation_row.operation_code,
       operation_row.status,operation_row.completed_stage,operation_row.attempt_count,
       false,operation_row.last_error_code,operation_row.updated_at,false;
@@ -554,8 +577,8 @@ begin
   end if;
   perform set_config('sitaa.b3a_writer','claim',true);
   update public.admin_auth_operations operation set status='processing',
-    attempt_count=operation.attempt_count+1,processing_started_at=now(),
-    last_error_code=null,updated_at=now()
+    attempt_count=operation.attempt_count+1,processing_started_at=operation_timestamp,
+    last_error_code=null,updated_at=operation_timestamp
   where operation.id=operation_row.id returning * into operation_row;
   perform set_config('sitaa.b3a_writer','',true);
   return query select operation_row.id,operation_row.target_profile_id,
@@ -565,7 +588,8 @@ end;
 $function$;
 
 create function public.record_admin_auth_operation_result_b3a(
-  requested_operation_id uuid,caller_profile_id uuid,requested_result text,stable_error_code text
+  requested_operation_id uuid,caller_profile_id uuid,claimed_attempt_count integer,
+  requested_result text,stable_error_code text
 )
 returns table(
   operation_id uuid,target_profile_id uuid,operation_code text,status text,completed_stage text,attempt_count integer,
@@ -576,12 +600,19 @@ volatile
 security definer
 set search_path=pg_catalog,public
 as $function$
-declare operation_row public.admin_auth_operations%rowtype; event_id uuid; action text;
+declare
+  operation_row public.admin_auth_operations%rowtype;
+  event_id uuid;
+  action text;
+  operation_timestamp timestamptz;
 begin
   if coalesce(auth.jwt()->>'role','')<>'service_role' then raise exception 'sitaa_service_boundary_required' using errcode='42501'; end if;
   if caller_profile_id is null or not public.is_exact_b1_account_admin_profile_b2b(caller_profile_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
   if requested_result is null or requested_result not in ('auth_succeeded','retryable_failure','terminal_failure') then
     raise exception 'sitaa_auth_operation_invalid_result' using errcode='22023';
+  end if;
+  if claimed_attempt_count is null or claimed_attempt_count<=0 then
+    raise exception 'sitaa_auth_operation_invalid_attempt' using errcode='22023';
   end if;
   if requested_result='retryable_failure' and (
        stable_error_code is null
@@ -600,6 +631,18 @@ begin
   perform pg_advisory_xact_lock(1397310529,9002);
   select operation.* into operation_row from public.admin_auth_operations operation where operation.id=requested_operation_id for update;
   if not found or operation_row.status<>'processing' then raise exception 'sitaa_auth_operation_not_processing' using errcode='55000'; end if;
+  if claimed_attempt_count<>operation_row.attempt_count then
+    raise exception 'sitaa_auth_operation_stale_attempt' using errcode='55000';
+  end if;
+  if requested_result='terminal_failure'
+     and (
+       operation_row.completed_stage='auth_synchronized'
+       or operation_row.auth_audit_event_id is not null
+       or operation_row.auth_synchronized_at is not null
+     ) then
+    raise exception 'sitaa_auth_operation_terminal_after_sync' using errcode='55000';
+  end if;
+  operation_timestamp:=greatest(clock_timestamp(),operation_row.updated_at);
   perform set_config('sitaa.b3a_writer','record',true);
 
   if requested_result='auth_succeeded' then
@@ -610,8 +653,9 @@ begin
         jsonb_build_object('operation_id',operation_row.id,'operation_code',operation_row.operation_code,'changed_fields',jsonb_build_array('auth_access')))
       returning id into event_id;
       update public.admin_auth_operations operation set status='succeeded',completed_stage='completed',
-        auth_audit_event_id=event_id,auth_synchronized_at=now(),completed_at=now(),
-        completed_by_profile_id=caller_profile_id,last_error_code=null,updated_at=now()
+        auth_audit_event_id=event_id,auth_synchronized_at=operation_timestamp,
+        completed_at=operation_timestamp,completed_by_profile_id=caller_profile_id,
+        last_error_code=null,updated_at=operation_timestamp
       where operation.id=operation_row.id returning * into operation_row;
     else
       if operation_row.completed_stage<>'prepared' then raise exception 'sitaa_auth_operation_stage_conflict' using errcode='55000'; end if;
@@ -620,12 +664,13 @@ begin
         jsonb_build_object('operation_id',operation_row.id,'operation_code',operation_row.operation_code,'changed_fields',jsonb_build_array('auth_access')))
       returning id into event_id;
       update public.admin_auth_operations operation set completed_stage='auth_synchronized',
-        auth_audit_event_id=event_id,auth_synchronized_at=now(),last_error_code=null,updated_at=now()
+        auth_audit_event_id=event_id,auth_synchronized_at=operation_timestamp,
+        last_error_code=null,updated_at=operation_timestamp
       where operation.id=operation_row.id returning * into operation_row;
     end if;
   elsif requested_result='retryable_failure' then
     update public.admin_auth_operations operation set status='retryable_failure',
-      last_error_code=stable_error_code,updated_at=now()
+      last_error_code=stable_error_code,updated_at=operation_timestamp
     where operation.id=operation_row.id returning * into operation_row;
   else
     action:=case when operation_row.operation_code='deactivate' then 'account_auth_suspension_failed' else 'account_auth_restoration_failed' end;
@@ -635,7 +680,8 @@ begin
     returning id into event_id;
     update public.admin_auth_operations operation set status='terminal_failure',
       auth_audit_event_id=event_id,last_error_code=stable_error_code,
-      completed_at=now(),completed_by_profile_id=caller_profile_id,updated_at=now()
+      completed_at=operation_timestamp,completed_by_profile_id=caller_profile_id,
+      updated_at=operation_timestamp
     where operation.id=operation_row.id returning * into operation_row;
   end if;
   perform set_config('sitaa.b3a_writer','',true);
@@ -656,7 +702,11 @@ volatile
 security definer
 set search_path=pg_catalog,public
 as $function$
-declare actor_id uuid:=auth.uid(); operation_row public.admin_auth_operations%rowtype; lifecycle_result record;
+declare
+  actor_id uuid:=auth.uid();
+  operation_row public.admin_auth_operations%rowtype;
+  lifecycle_result record;
+  operation_timestamp timestamptz;
 begin
   if actor_id is null or not public.is_exact_b1_account_admin_profile_b2b(actor_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
   perform pg_advisory_xact_lock(1397310529,9002);
@@ -672,10 +722,12 @@ begin
   end if;
   if not public.is_exact_b1_account_admin_profile_b2b(actor_id) then raise exception 'sitaa_admin_access_denied' using errcode='42501'; end if;
   select * into lifecycle_result from public.transition_admin_account_lifecycle_b2b(operation_row.target_profile_id,'reactivate',operation_row.reason);
+  operation_timestamp:=greatest(clock_timestamp(),operation_row.updated_at);
   perform set_config('sitaa.b3a_writer','finalize',true);
   update public.admin_auth_operations operation set status='succeeded',completed_stage='completed',
     profile_audit_event_id=lifecycle_result.audit_event_id,
-    completed_by_profile_id=actor_id,completed_at=now(),last_error_code=null,updated_at=now()
+    completed_by_profile_id=actor_id,completed_at=operation_timestamp,
+    last_error_code=null,updated_at=operation_timestamp
   where operation.id=operation_row.id returning * into operation_row;
   perform set_config('sitaa.b3a_writer','',true);
   return query select operation_row.id,operation_row.target_profile_id,operation_row.status,
@@ -689,18 +741,18 @@ alter function public.get_admin_account_auth_lifecycle_context_b3a(uuid) owner t
 alter function public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid) owner to postgres;
 alter function public.finalize_admin_account_auth_reactivation_b3a(uuid) owner to postgres;
 alter function public.claim_admin_auth_operation_b3a(uuid,uuid) owner to postgres;
-alter function public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text) owner to postgres;
+alter function public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text) owner to postgres;
 
 revoke all on function public.get_admin_account_auth_lifecycle_context_b3a(uuid) from public,anon,authenticated,service_role;
 revoke all on function public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.finalize_admin_account_auth_reactivation_b3a(uuid) from public,anon,authenticated,service_role;
 revoke all on function public.claim_admin_auth_operation_b3a(uuid,uuid) from public,anon,authenticated,service_role;
-revoke all on function public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text) from public,anon,authenticated,service_role;
+revoke all on function public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text) from public,anon,authenticated,service_role;
 grant execute on function public.get_admin_account_auth_lifecycle_context_b3a(uuid) to authenticated;
 grant execute on function public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid) to authenticated;
 grant execute on function public.finalize_admin_account_auth_reactivation_b3a(uuid) to authenticated;
 grant execute on function public.claim_admin_auth_operation_b3a(uuid,uuid) to service_role;
-grant execute on function public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text) to service_role;
+grant execute on function public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text) to service_role;
 
 -- 0010 elimina la invocación cliente directa del mutador B.2b.
 revoke all on function public.transition_admin_account_lifecycle_b2b(uuid,text,text)
@@ -714,9 +766,82 @@ begin
      or (select count(*) from information_schema.columns where table_schema='public' and table_name='admin_auth_operations')<>18
      or (select string_agg(column_name||':'||data_type||':'||is_nullable,'|' order by ordinal_position) from information_schema.columns where table_schema='public' and table_name='admin_auth_operations')<>
        'id:uuid:NO|request_id:uuid:NO|requested_by_profile_id:uuid:NO|completed_by_profile_id:uuid:YES|target_profile_id:uuid:NO|operation_code:text:NO|status:text:NO|completed_stage:text:NO|reason:text:NO|attempt_count:integer:NO|last_error_code:text:YES|profile_audit_event_id:uuid:YES|auth_audit_event_id:uuid:YES|requested_at:timestamp with time zone:NO|processing_started_at:timestamp with time zone:YES|auth_synchronized_at:timestamp with time zone:YES|completed_at:timestamp with time zone:YES|updated_at:timestamp with time zone:NO'
+     or (select string_agg(column_name||':'||coalesce(column_default,''),'|' order by ordinal_position) from information_schema.columns where table_schema='public' and table_name='admin_auth_operations')<>
+       'id:gen_random_uuid()|request_id:|requested_by_profile_id:|completed_by_profile_id:|target_profile_id:|operation_code:|status:''open''::text|completed_stage:''prepared''::text|reason:|attempt_count:0|last_error_code:|profile_audit_event_id:|auth_audit_event_id:|requested_at:now()|processing_started_at:|auth_synchronized_at:|completed_at:|updated_at:now()'
      or (select count(*) from pg_constraint where conrelid='public.admin_auth_operations'::regclass)<>16
+     or (select string_agg(conname||':'||contype::text,'|' order by conname) from pg_constraint where conrelid='public.admin_auth_operations'::regclass)<>
+       'admin_auth_operations_attempt_check:c|admin_auth_operations_auth_audit_event_id_fkey:f|admin_auth_operations_completed_by_profile_id_fkey:f|admin_auth_operations_error_check:c|admin_auth_operations_evidence_check:c|admin_auth_operations_operation_check:c|admin_auth_operations_pkey:p|admin_auth_operations_profile_audit_event_id_fkey:f|admin_auth_operations_reason_check:c|admin_auth_operations_request_id_key:u|admin_auth_operations_requested_by_profile_id_fkey:f|admin_auth_operations_stage_check:c|admin_auth_operations_stage_operation_check:c|admin_auth_operations_status_check:c|admin_auth_operations_target_profile_id_fkey:f|admin_auth_operations_timestamp_check:c'
+     or exists (
+       with expected(conname,contype,key_columns,referenced_table,referenced_columns,update_action,delete_action) as (
+         values
+           ('admin_auth_operations_pkey','p','id',null::oid,null::text,null::text,null::text),
+           ('admin_auth_operations_request_id_key','u','request_id',null::oid,null::text,null::text,null::text),
+           ('admin_auth_operations_requested_by_profile_id_fkey','f','requested_by_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_completed_by_profile_id_fkey','f','completed_by_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_target_profile_id_fkey','f','target_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_profile_audit_event_id_fkey','f','profile_audit_event_id','public.admin_audit_events'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_auth_audit_event_id_fkey','f','auth_audit_event_id','public.admin_audit_events'::regclass::oid,'id','a','r')
+       )
+       select 1
+       from expected
+       left join pg_constraint constraint_definition
+         on constraint_definition.conrelid='public.admin_auth_operations'::regclass
+        and constraint_definition.conname=expected.conname
+       where constraint_definition.oid is null
+          or constraint_definition.contype::text<>expected.contype
+          or constraint_definition.condeferrable
+          or constraint_definition.condeferred
+          or not constraint_definition.convalidated
+          or (select string_agg(attribute_definition.attname,',' order by key_column.ordinality)
+              from unnest(constraint_definition.conkey) with ordinality key_column(attnum,ordinality)
+              join pg_attribute attribute_definition
+                on attribute_definition.attrelid=constraint_definition.conrelid
+               and attribute_definition.attnum=key_column.attnum)<>expected.key_columns
+          or expected.referenced_table is not null and (
+               constraint_definition.confrelid<>expected.referenced_table
+            or constraint_definition.confupdtype::text<>expected.update_action
+            or constraint_definition.confdeltype::text<>expected.delete_action
+            or constraint_definition.confmatchtype<>'s'
+            or (select string_agg(attribute_definition.attname,',' order by key_column.ordinality)
+                from unnest(constraint_definition.confkey) with ordinality key_column(attnum,ordinality)
+                join pg_attribute attribute_definition
+                  on attribute_definition.attrelid=constraint_definition.confrelid
+                 and attribute_definition.attnum=key_column.attnum)<>expected.referenced_columns
+          )
+     )
      or (select count(*) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>5
+     or (select string_agg(indexname,'|' order by indexname) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>
+       'admin_auth_operations_actor_requested_idx|admin_auth_operations_one_nonfinal_target_uidx|admin_auth_operations_pkey|admin_auth_operations_request_id_uidx|admin_auth_operations_target_status_idx'
+     or exists (
+       with expected(indexname,indexdef) as (
+         values
+           ('admin_auth_operations_actor_requested_idx','CREATE INDEX admin_auth_operations_actor_requested_idx ON public.admin_auth_operations USING btree (requested_by_profile_id, requested_at DESC, id DESC)'),
+           ('admin_auth_operations_one_nonfinal_target_uidx','CREATE UNIQUE INDEX admin_auth_operations_one_nonfinal_target_uidx ON public.admin_auth_operations USING btree (target_profile_id) WHERE (status = ANY (ARRAY[''open''::text, ''processing''::text, ''retryable_failure''::text]))'),
+           ('admin_auth_operations_pkey','CREATE UNIQUE INDEX admin_auth_operations_pkey ON public.admin_auth_operations USING btree (id)'),
+           ('admin_auth_operations_request_id_uidx','CREATE UNIQUE INDEX admin_auth_operations_request_id_uidx ON public.admin_auth_operations USING btree (request_id)'),
+           ('admin_auth_operations_target_status_idx','CREATE INDEX admin_auth_operations_target_status_idx ON public.admin_auth_operations USING btree (target_profile_id, status, updated_at DESC)')
+       )
+       (select * from expected except
+        select indexname,indexdef from pg_indexes where schemaname='public' and tablename='admin_auth_operations')
+       union all
+       (select indexname,indexdef from pg_indexes where schemaname='public' and tablename='admin_auth_operations'
+        except select * from expected)
+     )
      or (select count(*) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>2
+     or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
+       'guard_admin_auth_operation_b3a:31:O:guard_admin_auth_operation_b3a()|guard_admin_auth_operation_truncate_b3a:34:O:guard_admin_auth_operation_b3a()'
+     or exists (
+       with expected(tgname,definition) as (
+         values
+           ('guard_admin_auth_operation_b3a','CREATE TRIGGER guard_admin_auth_operation_b3a BEFORE INSERT OR DELETE OR UPDATE ON admin_auth_operations FOR EACH ROW EXECUTE FUNCTION guard_admin_auth_operation_b3a()'),
+           ('guard_admin_auth_operation_truncate_b3a','CREATE TRIGGER guard_admin_auth_operation_truncate_b3a BEFORE TRUNCATE ON admin_auth_operations FOR EACH STATEMENT EXECUTE FUNCTION guard_admin_auth_operation_b3a()')
+       )
+       (select * from expected except
+        select tgname,pg_get_triggerdef(oid,true) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)
+       union all
+       (select tgname,pg_get_triggerdef(oid,true) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal
+        except select * from expected)
+     )
      or not (select relrowsecurity from pg_class where oid='public.admin_auth_operations'::regclass)
      or (select count(*) from pg_policies where schemaname='public' and tablename='admin_auth_operations')<>0 then
     raise exception 'sitaa_0010_post_ddl_table_contract_mismatch';
@@ -746,20 +871,49 @@ begin
     'public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure,
     'public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure,
     'public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure,
-    'public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure
+    'public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure
   ] loop
      if not (select p.prosecdef and p.proconfig=array['search_path=pg_catalog, public']::text[] and pg_get_userbyid(p.proowner)='postgres' and l.lanname='plpgsql' from pg_proc p join pg_language l on l.oid=p.prolang where p.oid=function_oid) then
        raise exception 'sitaa_0010_post_ddl_function_contract_mismatch:%',function_oid;
      end if;
   end loop;
+  if (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.guard_admin_auth_operation_b3a()'::regprocedure)<>''
+     or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.get_admin_account_auth_lifecycle_context_b3a(uuid)'::regprocedure)<>'requested_profile_id uuid'
+     or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure)<>'requested_profile_id uuid, requested_transition text, transition_reason text, request_id uuid'
+     or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure)<>'requested_operation_id uuid'
+     or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure)<>'requested_operation_id uuid, caller_profile_id uuid'
+     or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure)<>'requested_operation_id uuid, caller_profile_id uuid, claimed_attempt_count integer, requested_result text, stable_error_code text'
+     or (select p.provolatile from pg_proc p where p.oid='public.get_admin_account_auth_lifecycle_context_b3a(uuid)'::regprocedure)<>'s'
+     or exists(select 1 from pg_proc p where p.oid in (
+       'public.guard_admin_auth_operation_b3a()'::regprocedure,
+       'public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure,
+       'public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure,
+       'public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure,
+       'public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure
+     ) and p.provolatile<>'v') then
+    raise exception 'sitaa_0010_post_ddl_function_signature_mismatch';
+  end if;
+  if pg_get_function_result('public.guard_admin_auth_operation_b3a()'::regprocedure)<>'trigger'
+     or pg_get_function_result('public.get_admin_account_auth_lifecycle_context_b3a(uuid)'::regprocedure)<>
+       'TABLE(target_profile_id uuid, account_kind text, account_status text, is_self boolean, can_deactivate boolean, can_reactivate boolean, denial_code text, has_exact_b1_assignment boolean, active_exact_b1_admin_count bigint, current_or_future_assignment_count bigint, open_responsibility_count bigint, open_participation_count bigint, b3a_available boolean, current_operation_id uuid, operation_code text, operation_status text, completed_stage text, attempt_count integer, retryable boolean, last_error_code text, operation_updated_at timestamp with time zone, can_retry_or_finalize boolean)'
+     or pg_get_function_result('public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure)<>
+       'TABLE(operation_id uuid, target_profile_id uuid, operation_code text, status text, completed_stage text, attempt_count integer, retryable boolean, last_error_code text, updated_at timestamp with time zone)'
+     or pg_get_function_result('public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure)<>
+       'TABLE(operation_id uuid, target_profile_id uuid, operation_code text, status text, completed_stage text, attempt_count integer, retryable boolean, last_error_code text, updated_at timestamp with time zone, claimed boolean)'
+     or pg_get_function_result('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure)<>
+       'TABLE(operation_id uuid, target_profile_id uuid, operation_code text, status text, completed_stage text, attempt_count integer, retryable boolean, last_error_code text, updated_at timestamp with time zone)'
+     or pg_get_function_result('public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure)<>
+       'TABLE(operation_id uuid, target_profile_id uuid, status text, completed_stage text, profile_audit_event_id uuid, auth_audit_event_id uuid, completed_at timestamp with time zone)' then
+    raise exception 'sitaa_0010_post_ddl_function_result_mismatch';
+  end if;
   if exists (
     select 1 from (values
-      ('guard_admin_auth_operation_b3a()','c90a06bb49d1f705d220c63691278d04'),
-      ('get_admin_account_auth_lifecycle_context_b3a(uuid)','8748f265e02c560b319469752902badc'),
-      ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','311caba6baf9a5d220d013d58ff82ec3'),
-      ('claim_admin_auth_operation_b3a(uuid,uuid)','9e56474054dc3dae3e5f000c5322bf8c'),
-      ('record_admin_auth_operation_result_b3a(uuid,uuid,text,text)','3d7113328aa036840d0499a824d8fbce'),
-      ('finalize_admin_account_auth_reactivation_b3a(uuid)','493c12625b205ad4e36f27d86a373ae4')
+      ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
+      ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
+      ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','6442e73504d4eecaf673f03b109c6eef'),
+      ('claim_admin_auth_operation_b3a(uuid,uuid)','7da7aec9b4ff17aa551a4cf820d5cfbd'),
+      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','6467440196296d77662eb4cce77d3226'),
+      ('finalize_admin_account_auth_reactivation_b3a(uuid)','b8223a508478e80edd340e231b66abeb')
     ) expected(signature,body_hash)
     left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
     where p.oid is null or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash
@@ -778,8 +932,8 @@ begin
            ('public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure::oid,'authenticated'::regrole::oid),
            ('public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure::oid,'postgres'::regrole::oid),
            ('public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure::oid,'service_role'::regrole::oid),
-           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure::oid,'postgres'::regrole::oid),
-           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure::oid,'service_role'::regrole::oid)
+           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure::oid,'postgres'::regrole::oid),
+           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure::oid,'service_role'::regrole::oid)
        ), actual(function_oid,grantee) as (
          select p.oid,acl.grantee
          from pg_proc p
@@ -801,7 +955,7 @@ begin
          'public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure,
          'public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure,
          'public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure,
-         'public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure
+         'public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure
        ) and (acl.privilege_type<>'EXECUTE' or acl.is_grantable)
      )
      or has_function_privilege('authenticated','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE')

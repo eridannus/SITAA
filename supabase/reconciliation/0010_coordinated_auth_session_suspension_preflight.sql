@@ -20,6 +20,91 @@ with blocking(category,aggregate_count) as (
     (case when (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where n.nspname='public')+(select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral aclexplode(coalesce(c.relacl,acldefault(case when c.relkind='S' then 's'::"char" else 'r'::"char" end,c.relowner))) a where n.nspname='public' and c.relkind in ('r','p','v','m','S'))=445 then 0 else 1 end)),
   ('post_0009_function_map_drift',case when (select md5(coalesce(string_agg(p.oid::regprocedure::text||':'||md5(regexp_replace(p.prosrc,'\s+','','g')),'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')='71f9763d702e95e4eede51a4a4611694' then 0 else 1 end),
   ('post_0009_function_signature_drift',case when (select md5(coalesce(string_agg(p.oid::regprocedure::text,'|' order by p.oid::regprocedure::text),'')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')='89d8e1d260ccc0af72ee42c394f79f90' then 0 else 1 end),
+  ('post_0009_function_metadata_drift',case when (
+    with entries(value) as (
+      select p.oid::regprocedure::text||':'||pg_get_userbyid(p.proowner)||':'||l.lanname||':'||
+        p.provolatile::text||':'||p.prosecdef::text||':'||coalesce(array_to_string(p.proconfig,E'\n'),'')
+      from pg_proc p
+      join pg_namespace n on n.oid=p.pronamespace
+      join pg_language l on l.oid=p.prolang
+      where n.nspname='public'
+    )
+    select md5(coalesce(string_agg(value,'|' order by value),'')) from entries
+  )='c2095a58fb96e7387513b4bebf33b95d' then 0 else 1 end),
+  ('post_0009_function_acl_drift',case when (
+    with entries(value) as (
+      select p.oid::regprocedure::text||':'||pg_get_userbyid(p.proowner)||':'||
+        pg_get_userbyid(acl.grantor)||':'||
+        case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end||':'||
+        acl.privilege_type||':'||acl.is_grantable::text
+      from pg_proc p
+      join pg_namespace n on n.oid=p.pronamespace
+      cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+      where n.nspname='public'
+    )
+    select count(*)=137 and md5(coalesce(string_agg(value,'|' order by value),''))='4ea1d04b7d1b1632fd5ce01a1dc83e05'
+    from entries
+  ) then 0 else 1 end),
+  ('post_0009_table_acl_drift',case when (
+    with entries(value) as (
+      select c.relname||':'||pg_get_userbyid(c.relowner)||':'||
+        pg_get_userbyid(acl.grantor)||':'||
+        case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end||':'||
+        acl.privilege_type||':'||acl.is_grantable::text
+      from pg_class c
+      join pg_namespace n on n.oid=c.relnamespace
+      cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
+      where n.nspname='public' and c.relkind in ('r','p','v','m')
+    )
+    select count(*)=302 and md5(coalesce(string_agg(value,'|' order by value),''))='e1e24e4406a6b72e539a412396b58a83'
+    from entries
+  ) then 0 else 1 end),
+  ('post_0009_sequence_acl_exact_drift',case when (
+    with entries(value) as (
+      select c.relname||':'||pg_get_userbyid(c.relowner)||':'||
+        pg_get_userbyid(acl.grantor)||':'||
+        case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end||':'||
+        acl.privilege_type||':'||acl.is_grantable::text
+      from pg_class c
+      join pg_namespace n on n.oid=c.relnamespace
+      cross join lateral aclexplode(coalesce(c.relacl,acldefault('s',c.relowner))) acl
+      where n.nspname='public' and c.relkind='S'
+    )
+    select count(*)=6 and md5(coalesce(string_agg(value,'|' order by value),''))='f33fd097dfc9ed8a316ad5a3accab896'
+    from entries
+  ) then 0 else 1 end),
+  ('post_0009_explicit_column_acl_drift',case when not exists (
+    (
+      select c.relname,a.attname,pg_get_userbyid(acl.grantor),
+        case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end,
+        acl.privilege_type,acl.is_grantable
+      from pg_attribute a
+      join pg_class c on c.oid=a.attrelid
+      join pg_namespace n on n.oid=c.relnamespace
+      cross join lateral aclexplode(a.attacl) acl
+      where n.nspname='public' and a.attnum>0 and not a.attisdropped and a.attacl is not null
+    )
+    except
+    values
+      ('profiles','first_names','postgres','authenticated','UPDATE',false),
+      ('profiles','maternal_surname','postgres','authenticated','UPDATE',false),
+      ('profiles','paternal_surname','postgres','authenticated','UPDATE',false)
+  ) and not exists (
+    (values
+      ('profiles','first_names','postgres','authenticated','UPDATE',false),
+      ('profiles','maternal_surname','postgres','authenticated','UPDATE',false),
+      ('profiles','paternal_surname','postgres','authenticated','UPDATE',false)
+    )
+    except
+    select c.relname,a.attname,pg_get_userbyid(acl.grantor),
+      case when acl.grantee=0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end,
+      acl.privilege_type,acl.is_grantable
+    from pg_attribute a
+    join pg_class c on c.oid=a.attrelid
+    join pg_namespace n on n.oid=c.relnamespace
+    cross join lateral aclexplode(a.attacl) acl
+    where n.nspname='public' and a.attnum>0 and not a.attisdropped and a.attacl is not null
+  ) then 0 else 1 end),
   ('post_0009_column_hash_drift',case when (select md5(coalesce(string_agg(table_name||':'||ordinal_position::text||':'||column_name||':'||data_type||':'||udt_name||':'||is_nullable||':'||coalesce(column_default,'')||':'||coalesce(character_maximum_length::text,'')||':'||coalesce(numeric_precision::text,'')||':'||coalesce(numeric_scale::text,'')||':'||coalesce(datetime_precision::text,''),'|' order by table_name,ordinal_position),'')) from information_schema.columns where table_schema='public')='847b9f5c4ec9d428c522f714de59fd1f' then 0 else 1 end),
   ('post_0009_constraint_hash_drift',case when (select md5(coalesce(string_agg(c.relname||':'||k.conname||':'||case k.contype when 'p' then 'primary_key' when 'f' then 'foreign_key' when 'u' then 'unique' when 'c' then 'check' end||':'||pg_get_constraintdef(k.oid,true),'|' order by c.relname,k.conname),'')) from pg_constraint k join pg_class c on c.oid=k.conrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and k.contype in ('p','f','u','c'))='64f099164063d0cf500478dda3b5d25c' then 0 else 1 end),
   ('post_0009_index_hash_drift',case when (select md5(coalesce(string_agg(schemaname||':'||tablename||':'||indexname||':'||indexdef,'|' order by schemaname,tablename,indexname),'')) from pg_indexes where schemaname='public')='653875a8435cf43bda4fe55950f65802' then 0 else 1 end),

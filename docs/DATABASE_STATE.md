@@ -60,6 +60,8 @@ Las matrices manuales de concurrencia B.2a/B.2b siguen sin ejecutarse y no const
 - retiro de `EXECUTE` directo de `authenticated` sobre la mutación B.2b;
 - una Edge Function autenticada como único límite para Auth Admin y `service_role`;
 - reintentos idempotentes que reanudan desde la última etapa persistida;
+- cercado por intento para impedir que un resultado Auth tardío se aplique a un claim posterior;
+- timestamps autoritativos de reloj de pared posteriores a los locks e inmutabilidad estricta de evidencia;
 - evidencia administrativa minimizada y separación explícita entre la transición del perfil y la sincronización Auth.
 
 La barrera 0008 sigue siendo el límite operativo inmediato. La coordinación no simula atomicidad entre PostgreSQL y Auth: desactivar primero bloquea el perfil y después intenta suspender Auth; reactivar primero restaura Auth y sólo entonces activa el perfil. El modelo SQL conserva estados recuperables y terminales sanitizados, pero el adaptador hospedado provisional emite únicamente fallos reintentables hasta verificar una taxonomía terminal y un camino de recuperación. Nunca se persisten errores crudos.

@@ -10,6 +10,23 @@ const artifacts = {
   verify: "supabase/reconciliation/0010_coordinated_auth_session_suspension_verify.sql",
   rollback: "supabase/reconciliation/0010_coordinated_auth_session_suspension_rollback.sql",
 };
+const coreArtifacts = [
+  artifacts.migration,
+  artifacts.preflight,
+  artifacts.verify,
+  artifacts.rollback,
+  "supabase/functions/admin-account-auth-lifecycle/index.ts",
+  "supabase/functions/admin-account-auth-lifecycle/auth-admin-adapter.ts",
+  "scripts/check-auth-lifecycle-b3a.mjs",
+  "scripts/check-sql-0010.mjs",
+  "docs/TEST_PLAN_0010.md",
+  "app/admin/accounts/[id]/lifecycle/page.tsx",
+  "app/admin/accounts/[id]/lifecycle/actions.ts",
+  "app/admin/accounts/[id]/lifecycle/account-lifecycle-form.tsx",
+  "lib/admin/account-lifecycle.ts",
+  "lib/admin/account-lifecycle-permissions.ts",
+  "types/admin.ts",
+];
 const sources = Object.fromEntries(Object.entries(artifacts).map(([key, relative]) => [key, fs.readFileSync(path.join(root, relative), "utf8")]));
 const edge = fs.readFileSync(path.join(root, "supabase/functions/admin-account-auth-lifecycle/index.ts"), "utf8");
 const adapter = fs.readFileSync(path.join(root, "supabase/functions/admin-account-auth-lifecycle/auth-admin-adapter.ts"), "utf8");
@@ -128,6 +145,29 @@ assert.match(sources.migration, /^--[\s\S]*\nbegin;/);
 assert.match(sources.migration.trimEnd(), /commit;$/);
 assert.match(sources.preflight, /begin transaction read only;/);
 assert.match(sources.preflight.trimEnd(), /rollback;$/);
+for (const category of [
+  "post_0009_inventory_drift",
+  "post_0009_function_signature_drift",
+  "post_0009_function_map_drift",
+  "post_0009_function_metadata_drift",
+  "post_0009_function_acl_drift",
+  "post_0009_column_hash_drift",
+  "post_0009_constraint_hash_drift",
+  "post_0009_index_hash_drift",
+  "post_0009_trigger_hash_drift",
+  "post_0009_policy_hash_drift",
+  "post_0009_table_acl_drift",
+  "post_0009_explicit_column_acl_drift",
+  "post_0009_sequence_acl_exact_drift",
+  "canonical_auth_trigger_drift",
+  "admin_audit_contract_drift",
+  "controlled_seed_drift",
+  "conflicting_0010_table",
+  "conflicting_0010_functions",
+]) {
+  assert.ok(sources.preflight.includes(`'${category}'`), `Preflight incompleto: ${category}`);
+}
+assert.match(sources.preflight, /metadata_hash|c2095a58fb96e7387513b4bebf33b95d|post_0009_function_metadata_drift/);
 assert.match(sources.verify, /^--[\s\S]*\nbegin;/);
 assert.match(sources.verify.trimEnd(), /rollback;$/);
 assert.match(sources.rollback.trimEnd(), /commit;$/);
@@ -156,6 +196,82 @@ assert.match(sources.migration, /public\.guard_admin_auth_operation_b3a\(\)'::re
 assert.match(sources.verify, /public\.guard_admin_auth_operation_b3a\(\)'::regprocedure::oid,'postgres'::regrole::oid/);
 assert.doesNotMatch(`${sources.migration}\n${sources.verify}`, /has_function_privilege\('PUBLIC'/i);
 assert.match(sources.migration, /id:uuid:NO\|request_id:uuid:NO[\s\S]*updated_at:timestamp with time zone:NO/);
+for (const constraint of [
+  "admin_auth_operations_pkey",
+  "admin_auth_operations_request_id_key",
+  "admin_auth_operations_requested_by_profile_id_fkey",
+  "admin_auth_operations_completed_by_profile_id_fkey",
+  "admin_auth_operations_target_profile_id_fkey",
+  "admin_auth_operations_profile_audit_event_id_fkey",
+  "admin_auth_operations_auth_audit_event_id_fkey",
+  "admin_auth_operations_operation_check",
+  "admin_auth_operations_status_check",
+  "admin_auth_operations_stage_check",
+  "admin_auth_operations_reason_check",
+  "admin_auth_operations_attempt_check",
+  "admin_auth_operations_error_check",
+  "admin_auth_operations_stage_operation_check",
+  "admin_auth_operations_evidence_check",
+  "admin_auth_operations_timestamp_check",
+]) {
+  for (const artifact of ["migration", "verify", "rollback"]) {
+    assert.ok(sources[artifact].includes(constraint), `Falta restricción exacta en ${artifact}: ${constraint}`);
+  }
+}
+for (const index of [
+  "admin_auth_operations_pkey",
+  "admin_auth_operations_request_id_uidx",
+  "admin_auth_operations_target_status_idx",
+  "admin_auth_operations_actor_requested_idx",
+  "admin_auth_operations_one_nonfinal_target_uidx",
+]) {
+  for (const artifact of ["migration", "verify", "rollback"]) {
+    assert.ok(sources[artifact].includes(index), `Falta índice exacto en ${artifact}: ${index}`);
+  }
+}
+for (const trigger of [
+  "guard_admin_auth_operation_b3a",
+  "guard_admin_auth_operation_truncate_b3a",
+]) {
+  assert.ok(sources.migration.includes(`create trigger ${trigger}`), `Falta trigger exacto: ${trigger}`);
+  assert.ok(sources.verify.includes(trigger), `Falta verificar trigger exacto: ${trigger}`);
+  assert.ok(sources.rollback.includes(trigger), `Falta resguardar trigger exacto: ${trigger}`);
+}
+for (const artifact of ["migration", "verify", "rollback"]) {
+  assert.match(
+    sources[artifact],
+    /requested_at:now\(\)[\s\S]{0,180}updated_at:now\(\)/,
+    `Falta contrato exacto de defaults del ledger en ${artifact}`,
+  );
+  assert.match(
+    sources[artifact],
+    /admin_auth_operations_requested_by_profile_id_fkey[\s\S]*public\.profiles'::regclass::oid,'id','a','r'/,
+    `Falta mapa FK exacto del ledger en ${artifact}`,
+  );
+  assert.match(
+    sources[artifact],
+    /CREATE UNIQUE INDEX admin_auth_operations_one_nonfinal_target_uidx ON public\.admin_auth_operations USING btree \(target_profile_id\) WHERE \(status = ANY/,
+    `Falta definición exacta del índice parcial en ${artifact}`,
+  );
+  assert.match(
+    sources[artifact],
+    /CREATE TRIGGER guard_admin_auth_operation_b3a BEFORE INSERT OR DELETE OR UPDATE ON admin_auth_operations FOR EACH ROW EXECUTE FUNCTION guard_admin_auth_operation_b3a\(\)/,
+    `Falta definición exacta del trigger fila en ${artifact}`,
+  );
+}
+for (const checkDefinition of [
+  /constraint admin_auth_operations_operation_check check \(operation_code in \('deactivate','reactivate'\)\)/,
+  /constraint admin_auth_operations_status_check check \(status in \('open','processing','retryable_failure','succeeded','terminal_failure'\)\)/,
+  /constraint admin_auth_operations_stage_check check \(completed_stage in \('prepared','profile_suspended','auth_synchronized','completed'\)\)/,
+  /constraint admin_auth_operations_reason_check check \(/,
+  /constraint admin_auth_operations_attempt_check check \(attempt_count>=0\)/,
+  /constraint admin_auth_operations_error_check check \(/,
+  /constraint admin_auth_operations_stage_operation_check check \(/,
+  /constraint admin_auth_operations_evidence_check check \(/,
+  /constraint admin_auth_operations_timestamp_check check \(/,
+]) {
+  assert.match(sources.migration, checkDefinition, `Falta definición CHECK exacta: ${checkDefinition}`);
+}
 assert.match(sources.migration, /operation_code='reactivate'[\s\S]{0,240}completed_stage in \('prepared','auth_synchronized','completed'\)/,
   "Reactivación debe poder persistir Auth sincronizado antes del evento de perfil");
 assert.match(sources.migration, /writer is null or writer not in \('prepare','claim','record','finalize'\)/,
@@ -169,6 +285,49 @@ assert.ok(prepareBody.indexOf("pg_advisory_xact_lock") < prepareBody.indexOf("op
   "El lock de ciclo debe preceder la consulta autoritativa request_id");
 assert.match(sources.migration, /requested_result is null or requested_result not in/);
 assert.match(sources.migration, /stable_error_code is null[\s\S]*retryable_failure/);
+assert.doesNotMatch(
+  `${sources.migration}\n${sources.verify}\n${sources.rollback}`,
+  /record_admin_auth_operation_result_b3a\(uuid,uuid,text,text\)/,
+  "No puede sobrevivir la firma de cuatro argumentos",
+);
+assert.match(
+  sources.migration,
+  /claimed_attempt_count is null or claimed_attempt_count<=0/,
+  "El resultado debe exigir un intento positivo",
+);
+assert.match(
+  sources.migration,
+  /claimed_attempt_count<>operation_row\.attempt_count[\s\S]{0,180}sitaa_auth_operation_stale_attempt/,
+  "El resultado debe cercarse contra el intento reclamado",
+);
+assert.match(edge, /claimed_attempt_count:\s*operation\.attemptCount/);
+assert.match(edge, /attemptCount:\s*operation\.attemptCount/);
+assert.match(sources.verify, /0010_verify_stale_attempt_mutated_state/);
+assert.match(sources.verify, /sitaa_auth_operation_stale_attempt/);
+const stalePendingError = `sitaa_account_lifecycle_pending_target_${"forbidden"}`;
+assert.equal(
+  `${sources.migration}\n${sources.verify}\n${sources.rollback}\n${edge}`.includes(stalePendingError),
+  false,
+  "No puede sobrevivir el error pendiente obsoleto",
+);
+assert.match(sources.migration, /sitaa_account_lifecycle_pending_target' using errcode='P0001'/);
+assert.match(sources.verify, /sqlerrm<>'sitaa_account_lifecycle_pending_target' or sqlstate<>'P0001'/);
+for (const field of [
+  "profile_audit_event_id",
+  "auth_audit_event_id",
+  "auth_synchronized_at",
+  "completed_at",
+]) {
+  assert.match(
+    sources.migration,
+    new RegExp(`old\\.${field} is not null and new\\.${field} is distinct from old\\.${field}`),
+    `${field} debe ser inmutable una vez establecido`,
+  );
+}
+assert.match(sources.migration, /sitaa_auth_operation_terminal_after_sync/);
+assert.match(sources.verify, /0010_verify_terminal_after_sync_mutated_state/);
+assert.match(sources.verify, /0010_verify_auth_audit_replacement_unexpected/);
+assert.match(sources.verify, /0010_verify_profile_audit_replacement_unexpected/);
 assert.doesNotMatch(sources.migration, /operation\.status<>'succeeded'[\s\S]{0,160}order by operation\.requested_at/,
   "El contexto debe seleccionar la operación más reciente antes de derivar su estado");
 assert.match(sources.migration, /defaclobjtype::text/);
@@ -211,9 +370,10 @@ const functionSignatures = [
   ["get_admin_account_auth_lifecycle_context_b3a", "get_admin_account_auth_lifecycle_context_b3a(uuid)"],
   ["prepare_admin_account_auth_lifecycle_b3a", "prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)"],
   ["claim_admin_auth_operation_b3a", "claim_admin_auth_operation_b3a(uuid,uuid)"],
-  ["record_admin_auth_operation_result_b3a", "record_admin_auth_operation_result_b3a(uuid,uuid,text,text)"],
+  ["record_admin_auth_operation_result_b3a", "record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)"],
   ["finalize_admin_account_auth_reactivation_b3a", "finalize_admin_account_auth_reactivation_b3a(uuid)"],
 ];
+const finalBodyHashes = [];
 for (const [name, signature] of functionSignatures) {
   const start = sources.migration.indexOf(`create function public.${name}`);
   const bodyStart = sources.migration.indexOf("as $function$", start) + "as $function$".length;
@@ -222,7 +382,15 @@ for (const [name, signature] of functionSignatures) {
   const bodyHash = crypto.createHash("md5")
     .update(sources.migration.slice(bodyStart, bodyEnd).replace(/\s+/g, ""))
     .digest("hex");
+  const body = sources.migration.slice(bodyStart, bodyEnd);
+  if (["prepare_admin_account_auth_lifecycle_b3a", "claim_admin_auth_operation_b3a",
+    "record_admin_auth_operation_result_b3a", "finalize_admin_account_auth_reactivation_b3a"].includes(name)) {
+    assert.match(body, /clock_timestamp\(\)/, `${signature} debe usar reloj de pared`);
+    assert.doesNotMatch(body, /\bnow\(\)|\bcurrent_timestamp\b/i,
+      `${signature} no puede usar tiempo de inicio de transacción`);
+  }
   const expectedPair = `('${signature}','${bodyHash}')`;
+  finalBodyHashes.push([signature, bodyHash]);
   assert.ok(sources.migration.includes(expectedPair), `Hash post-DDL desactualizado: ${signature}`);
   assert.ok(sources.verify.includes(expectedPair), `Hash de verificador desactualizado: ${signature}`);
   assert.ok(sources.rollback.includes(expectedPair), `Hash de rollback desactualizado: ${signature}`);
@@ -244,10 +412,18 @@ for (const marker of [
   "0010_verify_unknown_writer_unexpected",
   "0010_verify_writer_not_cleared",
   "0010_verify_null_result_unexpected",
+  "0010_verify_null_attempt_unexpected",
+  "0010_verify_zero_attempt_unexpected",
   "0010_verify_null_retryable_code_unexpected",
   "0010_verify_null_terminal_code_unexpected",
   "0010_verify_success_error_code_unexpected",
   "0010_verify_auth_synchronized_immediate_recovery_failed",
+  "0010_verify_stale_attempt_unexpected",
+  "0010_verify_stale_attempt_mutated_state",
+  "0010_verify_terminal_after_sync_unexpected",
+  "0010_verify_terminal_after_sync_mutated_state",
+  "0010_verify_auth_audit_replacement_unexpected",
+  "0010_verify_profile_audit_replacement_unexpected",
   "0010_verify_final_operation_replay_failed",
   "0010_verify_latest_success_selection_failed",
   "0010_verify_terminal_result_failed",
@@ -275,4 +451,22 @@ for (const [file, expected] of immutable) {
   assert.equal(digest, expected, `Migración inmutable modificada: ${file}`);
 }
 assert.equal(fs.readdirSync(path.join(root, "supabase/migrations")).some((name) => /^0011_/.test(name)), false);
+assert.equal(coreArtifacts.length, 15);
+console.log("SHA-256 de artefactos núcleo 0010:");
+for (const relative of coreArtifacts) {
+  const digest = crypto.createHash("sha256")
+    .update(fs.readFileSync(path.join(root, relative)))
+    .digest("hex");
+  console.log(`  ${digest}  ${relative}`);
+}
+console.log("Matriz final de cuerpos 0010:");
+for (const [signature, bodyHash] of finalBodyHashes) console.log(`  ${bodyHash}  ${signature}`);
+console.log("Alineación migración/verificador/rollback: OK");
+console.log("Orden de locks del rollback: ledger -> auditoría -> guarda completa: OK");
+console.log("Taxonomía provisional Auth sólo reintentable: OK");
+console.log("Cercado por claimed_attempt_count: OK");
+console.log("Auditoría de cuerpos dollar-quoted:");
+for (const [name, source] of Object.entries(sources)) {
+  console.log(`  ${name}: ${extractDollarQuotedBodies(source, name).length}`);
+}
 console.log("Contrato SQL estático de 0010: OK");

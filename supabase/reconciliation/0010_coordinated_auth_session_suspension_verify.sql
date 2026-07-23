@@ -10,9 +10,82 @@ begin
      or (select count(*) from information_schema.columns where table_schema='public' and table_name='admin_auth_operations')<>18
      or (select string_agg(column_name||':'||data_type||':'||is_nullable,'|' order by ordinal_position) from information_schema.columns where table_schema='public' and table_name='admin_auth_operations')<>
        'id:uuid:NO|request_id:uuid:NO|requested_by_profile_id:uuid:NO|completed_by_profile_id:uuid:YES|target_profile_id:uuid:NO|operation_code:text:NO|status:text:NO|completed_stage:text:NO|reason:text:NO|attempt_count:integer:NO|last_error_code:text:YES|profile_audit_event_id:uuid:YES|auth_audit_event_id:uuid:YES|requested_at:timestamp with time zone:NO|processing_started_at:timestamp with time zone:YES|auth_synchronized_at:timestamp with time zone:YES|completed_at:timestamp with time zone:YES|updated_at:timestamp with time zone:NO'
+     or (select string_agg(column_name||':'||coalesce(column_default,''),'|' order by ordinal_position) from information_schema.columns where table_schema='public' and table_name='admin_auth_operations')<>
+       'id:gen_random_uuid()|request_id:|requested_by_profile_id:|completed_by_profile_id:|target_profile_id:|operation_code:|status:''open''::text|completed_stage:''prepared''::text|reason:|attempt_count:0|last_error_code:|profile_audit_event_id:|auth_audit_event_id:|requested_at:now()|processing_started_at:|auth_synchronized_at:|completed_at:|updated_at:now()'
      or (select count(*) from pg_constraint where conrelid='public.admin_auth_operations'::regclass)<>16
+     or (select string_agg(conname||':'||contype::text,'|' order by conname) from pg_constraint where conrelid='public.admin_auth_operations'::regclass)<>
+       'admin_auth_operations_attempt_check:c|admin_auth_operations_auth_audit_event_id_fkey:f|admin_auth_operations_completed_by_profile_id_fkey:f|admin_auth_operations_error_check:c|admin_auth_operations_evidence_check:c|admin_auth_operations_operation_check:c|admin_auth_operations_pkey:p|admin_auth_operations_profile_audit_event_id_fkey:f|admin_auth_operations_reason_check:c|admin_auth_operations_request_id_key:u|admin_auth_operations_requested_by_profile_id_fkey:f|admin_auth_operations_stage_check:c|admin_auth_operations_stage_operation_check:c|admin_auth_operations_status_check:c|admin_auth_operations_target_profile_id_fkey:f|admin_auth_operations_timestamp_check:c'
+     or exists (
+       with expected(conname,contype,key_columns,referenced_table,referenced_columns,update_action,delete_action) as (
+         values
+           ('admin_auth_operations_pkey','p','id',null::oid,null::text,null::text,null::text),
+           ('admin_auth_operations_request_id_key','u','request_id',null::oid,null::text,null::text,null::text),
+           ('admin_auth_operations_requested_by_profile_id_fkey','f','requested_by_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_completed_by_profile_id_fkey','f','completed_by_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_target_profile_id_fkey','f','target_profile_id','public.profiles'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_profile_audit_event_id_fkey','f','profile_audit_event_id','public.admin_audit_events'::regclass::oid,'id','a','r'),
+           ('admin_auth_operations_auth_audit_event_id_fkey','f','auth_audit_event_id','public.admin_audit_events'::regclass::oid,'id','a','r')
+       )
+       select 1
+       from expected
+       left join pg_constraint constraint_definition
+         on constraint_definition.conrelid='public.admin_auth_operations'::regclass
+        and constraint_definition.conname=expected.conname
+       where constraint_definition.oid is null
+          or constraint_definition.contype::text<>expected.contype
+          or constraint_definition.condeferrable
+          or constraint_definition.condeferred
+          or not constraint_definition.convalidated
+          or (select string_agg(attribute_definition.attname,',' order by key_column.ordinality)
+              from unnest(constraint_definition.conkey) with ordinality key_column(attnum,ordinality)
+              join pg_attribute attribute_definition
+                on attribute_definition.attrelid=constraint_definition.conrelid
+               and attribute_definition.attnum=key_column.attnum)<>expected.key_columns
+          or expected.referenced_table is not null and (
+               constraint_definition.confrelid<>expected.referenced_table
+            or constraint_definition.confupdtype::text<>expected.update_action
+            or constraint_definition.confdeltype::text<>expected.delete_action
+            or constraint_definition.confmatchtype<>'s'
+            or (select string_agg(attribute_definition.attname,',' order by key_column.ordinality)
+                from unnest(constraint_definition.confkey) with ordinality key_column(attnum,ordinality)
+                join pg_attribute attribute_definition
+                  on attribute_definition.attrelid=constraint_definition.confrelid
+                 and attribute_definition.attnum=key_column.attnum)<>expected.referenced_columns
+          )
+     )
      or (select count(*) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>5
+     or (select string_agg(indexname,'|' order by indexname) from pg_indexes where schemaname='public' and tablename='admin_auth_operations')<>
+       'admin_auth_operations_actor_requested_idx|admin_auth_operations_one_nonfinal_target_uidx|admin_auth_operations_pkey|admin_auth_operations_request_id_uidx|admin_auth_operations_target_status_idx'
+     or exists (
+       with expected(indexname,indexdef) as (
+         values
+           ('admin_auth_operations_actor_requested_idx','CREATE INDEX admin_auth_operations_actor_requested_idx ON public.admin_auth_operations USING btree (requested_by_profile_id, requested_at DESC, id DESC)'),
+           ('admin_auth_operations_one_nonfinal_target_uidx','CREATE UNIQUE INDEX admin_auth_operations_one_nonfinal_target_uidx ON public.admin_auth_operations USING btree (target_profile_id) WHERE (status = ANY (ARRAY[''open''::text, ''processing''::text, ''retryable_failure''::text]))'),
+           ('admin_auth_operations_pkey','CREATE UNIQUE INDEX admin_auth_operations_pkey ON public.admin_auth_operations USING btree (id)'),
+           ('admin_auth_operations_request_id_uidx','CREATE UNIQUE INDEX admin_auth_operations_request_id_uidx ON public.admin_auth_operations USING btree (request_id)'),
+           ('admin_auth_operations_target_status_idx','CREATE INDEX admin_auth_operations_target_status_idx ON public.admin_auth_operations USING btree (target_profile_id, status, updated_at DESC)')
+       )
+       (select * from expected except
+        select indexname,indexdef from pg_indexes where schemaname='public' and tablename='admin_auth_operations')
+       union all
+       (select indexname,indexdef from pg_indexes where schemaname='public' and tablename='admin_auth_operations'
+        except select * from expected)
+     )
      or (select count(*) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>2
+     or (select string_agg(tgname||':'||tgtype::text||':'||tgenabled||':'||tgfoid::regprocedure::text,'|' order by tgname) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)<>
+       'guard_admin_auth_operation_b3a:31:O:guard_admin_auth_operation_b3a()|guard_admin_auth_operation_truncate_b3a:34:O:guard_admin_auth_operation_b3a()'
+     or exists (
+       with expected(tgname,definition) as (
+         values
+           ('guard_admin_auth_operation_b3a','CREATE TRIGGER guard_admin_auth_operation_b3a BEFORE INSERT OR DELETE OR UPDATE ON admin_auth_operations FOR EACH ROW EXECUTE FUNCTION guard_admin_auth_operation_b3a()'),
+           ('guard_admin_auth_operation_truncate_b3a','CREATE TRIGGER guard_admin_auth_operation_truncate_b3a BEFORE TRUNCATE ON admin_auth_operations FOR EACH STATEMENT EXECUTE FUNCTION guard_admin_auth_operation_b3a()')
+       )
+       (select * from expected except
+        select tgname,pg_get_triggerdef(oid,true) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal)
+       union all
+       (select tgname,pg_get_triggerdef(oid,true) from pg_trigger where tgrelid='public.admin_auth_operations'::regclass and not tgisinternal
+        except select * from expected)
+     )
      or not (select relrowsecurity from pg_class where oid='public.admin_auth_operations'::regclass)
      or (select count(*) from pg_policies where schemaname='public' and tablename='admin_auth_operations')<>0 then
     raise exception '0010_verify_table_shape_mismatch';
@@ -42,7 +115,7 @@ begin
     'public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure,
     'public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure,
     'public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure,
-    'public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure
+    'public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure
   ] loop
     if not (select p.prosecdef and pg_get_userbyid(p.proowner)='postgres'
       and p.proconfig=array['search_path=pg_catalog, public']::text[]
@@ -53,12 +126,12 @@ begin
   end loop;
   if exists (
     select 1 from (values
-      ('guard_admin_auth_operation_b3a()','c90a06bb49d1f705d220c63691278d04'),
-      ('get_admin_account_auth_lifecycle_context_b3a(uuid)','8748f265e02c560b319469752902badc'),
-      ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','311caba6baf9a5d220d013d58ff82ec3'),
-      ('claim_admin_auth_operation_b3a(uuid,uuid)','9e56474054dc3dae3e5f000c5322bf8c'),
-      ('record_admin_auth_operation_result_b3a(uuid,uuid,text,text)','3d7113328aa036840d0499a824d8fbce'),
-      ('finalize_admin_account_auth_reactivation_b3a(uuid)','493c12625b205ad4e36f27d86a373ae4')
+      ('guard_admin_auth_operation_b3a()','d80211e442b6d9334123d8e0d4ada4c8'),
+      ('get_admin_account_auth_lifecycle_context_b3a(uuid)','44fd317ebc207cbf572551835fb9be7d'),
+      ('prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)','6442e73504d4eecaf673f03b109c6eef'),
+      ('claim_admin_auth_operation_b3a(uuid,uuid)','7da7aec9b4ff17aa551a4cf820d5cfbd'),
+      ('record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)','6467440196296d77662eb4cce77d3226'),
+      ('finalize_admin_account_auth_reactivation_b3a(uuid)','b8223a508478e80edd340e231b66abeb')
     ) expected(signature,body_hash)
     left join pg_proc p on p.oid=to_regprocedure('public.'||expected.signature)
     where p.oid is null or md5(regexp_replace(p.prosrc,'\s+','','g'))<>expected.body_hash
@@ -66,27 +139,30 @@ begin
     raise exception '0010_verify_function_body_mismatch';
   end if;
 
-  if (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.get_admin_account_auth_lifecycle_context_b3a(uuid)'::regprocedure)<>'requested_profile_id uuid'
+  if (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.guard_admin_auth_operation_b3a()'::regprocedure)<>''
+     or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.get_admin_account_auth_lifecycle_context_b3a(uuid)'::regprocedure)<>'requested_profile_id uuid'
      or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure)<>'requested_profile_id uuid, requested_transition text, transition_reason text, request_id uuid'
      or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure)<>'requested_operation_id uuid'
      or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure)<>'requested_operation_id uuid, caller_profile_id uuid'
-     or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure)<>'requested_operation_id uuid, caller_profile_id uuid, requested_result text, stable_error_code text'
+     or (select pg_get_function_identity_arguments(p.oid) from pg_proc p where p.oid='public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure)<>'requested_operation_id uuid, caller_profile_id uuid, claimed_attempt_count integer, requested_result text, stable_error_code text'
      or (select p.provolatile from pg_proc p where p.oid='public.get_admin_account_auth_lifecycle_context_b3a(uuid)'::regprocedure)<>'s'
      or exists(select 1 from pg_proc p where p.oid in (
+       'public.guard_admin_auth_operation_b3a()'::regprocedure,
        'public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure,
        'public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure,
        'public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure,
-       'public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure
+       'public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure
      ) and p.provolatile<>'v') then
      raise exception '0010_verify_signature_or_volatility_mismatch';
   end if;
-  if pg_get_function_result('public.get_admin_account_auth_lifecycle_context_b3a(uuid)'::regprocedure)<>
+  if pg_get_function_result('public.guard_admin_auth_operation_b3a()'::regprocedure)<>'trigger'
+     or pg_get_function_result('public.get_admin_account_auth_lifecycle_context_b3a(uuid)'::regprocedure)<>
        'TABLE(target_profile_id uuid, account_kind text, account_status text, is_self boolean, can_deactivate boolean, can_reactivate boolean, denial_code text, has_exact_b1_assignment boolean, active_exact_b1_admin_count bigint, current_or_future_assignment_count bigint, open_responsibility_count bigint, open_participation_count bigint, b3a_available boolean, current_operation_id uuid, operation_code text, operation_status text, completed_stage text, attempt_count integer, retryable boolean, last_error_code text, operation_updated_at timestamp with time zone, can_retry_or_finalize boolean)'
      or pg_get_function_result('public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure)<>
        'TABLE(operation_id uuid, target_profile_id uuid, operation_code text, status text, completed_stage text, attempt_count integer, retryable boolean, last_error_code text, updated_at timestamp with time zone)'
      or pg_get_function_result('public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure)<>
        'TABLE(operation_id uuid, target_profile_id uuid, operation_code text, status text, completed_stage text, attempt_count integer, retryable boolean, last_error_code text, updated_at timestamp with time zone, claimed boolean)'
-     or pg_get_function_result('public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure)<>
+     or pg_get_function_result('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure)<>
        'TABLE(operation_id uuid, target_profile_id uuid, operation_code text, status text, completed_stage text, attempt_count integer, retryable boolean, last_error_code text, updated_at timestamp with time zone)'
      or pg_get_function_result('public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure)<>
        'TABLE(operation_id uuid, target_profile_id uuid, status text, completed_stage text, profile_audit_event_id uuid, auth_audit_event_id uuid, completed_at timestamp with time zone)' then
@@ -135,8 +211,8 @@ begin
            ('public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure::oid,'authenticated'::regrole::oid),
            ('public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure::oid,'postgres'::regrole::oid),
            ('public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure::oid,'service_role'::regrole::oid),
-           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure::oid,'postgres'::regrole::oid),
-           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure::oid,'service_role'::regrole::oid)
+           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure::oid,'postgres'::regrole::oid),
+           ('public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure::oid,'service_role'::regrole::oid)
        ), actual(function_oid,grantee) as (
          select p.oid,acl.grantee from pg_proc p
          cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
@@ -156,7 +232,7 @@ begin
          'public.prepare_admin_account_auth_lifecycle_b3a(uuid,text,text,uuid)'::regprocedure,
          'public.finalize_admin_account_auth_reactivation_b3a(uuid)'::regprocedure,
          'public.claim_admin_auth_operation_b3a(uuid,uuid)'::regprocedure,
-         'public.record_admin_auth_operation_result_b3a(uuid,uuid,text,text)'::regprocedure
+         'public.record_admin_auth_operation_result_b3a(uuid,uuid,integer,text,text)'::regprocedure
        ) and (acl.privilege_type<>'EXECUTE' or acl.is_grantable)
      )
      or has_function_privilege('authenticated','public.transition_admin_account_lifecycle_b2b(uuid,text,text)','EXECUTE')
@@ -357,7 +433,7 @@ begin
   end if;
   begin perform public.claim_admin_auth_operation_b3a(gen_random_uuid(),pg_temp.case_id('admin_a')); raise exception '0010_verify_authenticated_claim_unexpected';
   exception when insufficient_privilege then null; end;
-  begin perform public.record_admin_auth_operation_result_b3a(gen_random_uuid(),pg_temp.case_id('admin_a'),'retryable_failure','auth_temporarily_unavailable'); raise exception '0010_verify_authenticated_record_unexpected';
+  begin perform public.record_admin_auth_operation_result_b3a(gen_random_uuid(),pg_temp.case_id('admin_a'),1,'retryable_failure','auth_temporarily_unavailable'); raise exception '0010_verify_authenticated_record_unexpected';
   exception when insufficient_privilege then null; end;
 end;
 $context_and_acl$;
@@ -392,7 +468,10 @@ $deactivate_prepare$;
 reset role;
 
 do $writer_guard_and_one_open_target$
-declare source_row public.admin_auth_operations%rowtype; writer_value text;
+declare
+  source_row public.admin_auth_operations%rowtype;
+  writer_value text;
+  replacement_audit_id uuid;
 begin
   select * into strict source_row from public.admin_auth_operations where id=(select operation_id from pg_temp.sitaa_0010_results where label='deactivate');
 
@@ -433,6 +512,25 @@ begin
       raise exception '0010_verify_writer_column_allowlist_unexpected:%',writer_value;
     exception when check_violation then null; end;
   end loop;
+
+  insert into public.admin_audit_events(
+    actor_profile_id,target_profile_id,action_code,outcome,reason,role_assignment_id,metadata
+  ) values(
+    pg_temp.case_id('admin_a'),pg_temp.case_id('ordinary'),
+    'account_deactivated','success','Evidencia sintética alternativa 0010',null,
+    jsonb_build_object('changed_fields',jsonb_build_array('account_status'))
+  ) returning id into replacement_audit_id;
+  perform set_config('sitaa.b3a_writer','record',true);
+  begin
+    update public.admin_auth_operations
+    set profile_audit_event_id=replacement_audit_id
+    where id=source_row.id;
+    raise exception '0010_verify_profile_audit_replacement_unexpected';
+  exception when check_violation then null; end;
+  if (select profile_audit_event_id from public.admin_auth_operations where id=source_row.id)
+     is distinct from source_row.profile_audit_event_id then
+    raise exception '0010_verify_profile_audit_replacement_changed_row';
+  end if;
 
   -- Con writer prepare válido, el índice parcial conserva una sola operación no final.
   perform set_config('sitaa.b3a_writer','prepare',true);
@@ -486,20 +584,35 @@ $invalid_state_stage_evidence_matrix$;
 
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
 do $deactivate_service$
-declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='deactivate'); claim record; result record;
+declare
+  op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='deactivate');
+  claim record;
+  result record;
+  previous_updated_at timestamptz;
 begin
+  select updated_at into previous_updated_at from public.admin_auth_operations where id=op;
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
-  if claim.completed_stage<>'profile_suspended' or claim.attempt_count<>1 then raise exception '0010_verify_claim_failed'; end if;
+  if claim.completed_stage<>'profile_suspended' or claim.attempt_count<>1
+     or claim.updated_at<previous_updated_at then raise exception '0010_verify_claim_failed'; end if;
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
   if claim.claimed or claim.status<>'processing' or claim.attempt_count<>1 then
     raise exception '0010_verify_fresh_processing_contract_failed';
   end if;
-  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'retryable_failure','auth_temporarily_unavailable');
-  if result.status<>'retryable_failure' or result.completed_stage<>'profile_suspended' then raise exception '0010_verify_retryable_failed'; end if;
+  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'retryable_failure','auth_temporarily_unavailable');
+  if result.status<>'retryable_failure' or result.completed_stage<>'profile_suspended'
+     or result.updated_at<claim.updated_at then raise exception '0010_verify_retryable_failed'; end if;
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
-  if claim.attempt_count<>2 then raise exception '0010_verify_retry_claim_failed'; end if;
-  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_b'),'auth_succeeded',null);
-  if result.status<>'succeeded' or result.completed_stage<>'completed' then raise exception '0010_verify_deactivation_completion_failed'; end if;
+  if claim.attempt_count<>2 or claim.updated_at<result.updated_at then raise exception '0010_verify_retry_claim_failed'; end if;
+  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_b'),claim.attempt_count,'auth_succeeded',null);
+  if result.status<>'succeeded' or result.completed_stage<>'completed'
+     or result.updated_at<claim.updated_at
+     or exists(
+       select 1 from public.admin_auth_operations
+       where id=op and (
+         auth_synchronized_at is null or completed_at is null
+         or auth_synchronized_at<>completed_at or completed_at<>updated_at
+       )
+     ) then raise exception '0010_verify_deactivation_completion_failed'; end if;
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
   if claim.claimed or claim.status<>'succeeded' or claim.completed_stage<>'completed' then
     raise exception '0010_verify_final_operation_replay_failed';
@@ -576,7 +689,7 @@ declare result_row record;
 begin
   select * into result_row from public.record_admin_auth_operation_result_b3a(
     (select operation_id from pg_temp.sitaa_0010_results where label='status_replay'),pg_temp.case_id('admin_a'),
-    'retryable_failure','auth_temporarily_unavailable'
+    1,'retryable_failure','auth_temporarily_unavailable'
   );
   if result_row.status<>'retryable_failure' then raise exception '0010_verify_retryable_fixture_failed'; end if;
 end;
@@ -599,7 +712,11 @@ do $status_replay_complete$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='status_replay');
 begin
   perform public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
-  perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_b'),'auth_succeeded',null);
+  perform public.record_admin_auth_operation_result_b3a(
+    op,pg_temp.case_id('admin_b'),
+    (select attempt_count from public.admin_auth_operations where id=op),
+    'auth_succeeded',null
+  );
 end;
 $status_replay_complete$;
 reset role;
@@ -628,14 +745,14 @@ $terminal_prepare$;
 reset role;
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
 do $terminal_service$
-declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='terminal'); result record;
+declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='terminal'); claim record; result record;
 begin
-  perform public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
+  select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
   begin
-    perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'terminal_failure','provider raw detail');
+    perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'terminal_failure','provider raw detail');
     raise exception '0010_verify_raw_error_code_unexpected';
   exception when invalid_parameter_value then null; end;
-  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'terminal_failure','auth_update_rejected');
+  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'terminal_failure','auth_update_rejected');
   if result.status<>'terminal_failure' or result.completed_stage<>'profile_suspended' or result.last_error_code<>'auth_update_rejected' then
     raise exception '0010_verify_terminal_result_failed';
   end if;
@@ -681,10 +798,10 @@ $terminal_recovery_prepare$;
 reset role;
 select pg_temp.set_actor('admin_b','service_role'); set local role service_role;
 do $terminal_recovery_auth$
-declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='terminal_recovery');
+declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='terminal_recovery'); claim record;
 begin
-  perform public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
-  perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_b'),'auth_succeeded',null);
+  select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
+  perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_b'),claim.attempt_count,'auth_succeeded',null);
 end;
 $terminal_recovery_auth$;
 reset role;
@@ -719,15 +836,19 @@ do $reactivate_service$
 declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='reactivate'); claim record; result record;
 begin
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
-  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),null,null);
+  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),null,'retryable_failure','auth_temporarily_unavailable');
+    raise exception '0010_verify_null_attempt_unexpected'; exception when invalid_parameter_value then null; end;
+  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),0,'retryable_failure','auth_temporarily_unavailable');
+    raise exception '0010_verify_zero_attempt_unexpected'; exception when invalid_parameter_value then null; end;
+  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,null,null);
     raise exception '0010_verify_null_result_unexpected'; exception when invalid_parameter_value then null; end;
-  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'retryable_failure',null);
+  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'retryable_failure',null);
     raise exception '0010_verify_null_retryable_code_unexpected'; exception when invalid_parameter_value then null; end;
-  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'terminal_failure',null);
+  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'terminal_failure',null);
     raise exception '0010_verify_null_terminal_code_unexpected'; exception when invalid_parameter_value then null; end;
-  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'auth_succeeded','auth_temporarily_unavailable');
+  begin perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'auth_succeeded','auth_temporarily_unavailable');
     raise exception '0010_verify_success_error_code_unexpected'; exception when invalid_parameter_value then null; end;
-  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'auth_succeeded',null);
+  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'auth_succeeded',null);
   if result.status<>'processing' or result.completed_stage<>'auth_synchronized'
      or (select account_status from public.profiles where id=pg_temp.case_id('inactive_target'))<>'inactive' then raise exception '0010_verify_auth_restore_stage_failed'; end if;
 end;
@@ -758,14 +879,84 @@ $restore_failure_prepare$;
 reset role;
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
 do $restore_failure_auth$
-declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure'); result record; recovered_claim record;
+declare
+  op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
+  initial_claim record;
+  result record;
+  recovered_claim record;
+  operation_hash_before text;
+  audit_hash_before text;
+  auth_audit_id_before uuid;
+  replacement_audit_id uuid;
 begin
-  perform public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
-  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'auth_succeeded',null);
+  select * into initial_claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
+  select * into result from public.record_admin_auth_operation_result_b3a(
+    op,pg_temp.case_id('admin_a'),initial_claim.attempt_count,'auth_succeeded',null
+  );
   if result.completed_stage<>'auth_synchronized' then raise exception '0010_verify_restore_failure_auth_stage_failed'; end if;
   select * into recovered_claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
   if not recovered_claim.claimed or recovered_claim.completed_stage<>'auth_synchronized' or recovered_claim.attempt_count<>2 then
     raise exception '0010_verify_auth_synchronized_immediate_recovery_failed';
+  end if;
+  select md5(row_to_json(operation)::text),operation.auth_audit_event_id
+  into operation_hash_before,auth_audit_id_before
+  from public.admin_auth_operations operation where operation.id=op;
+  select md5(coalesce(string_agg(row_to_json(audit_event)::text,'|' order by audit_event.id),''))
+  into audit_hash_before
+  from public.admin_audit_events audit_event;
+
+  begin
+    perform public.record_admin_auth_operation_result_b3a(
+      op,pg_temp.case_id('admin_a'),initial_claim.attempt_count,
+      'retryable_failure','database_finalize_pending'
+    );
+    raise exception '0010_verify_stale_attempt_unexpected';
+  exception when sqlstate '55000' then
+    if sqlerrm<>'sitaa_auth_operation_stale_attempt' then raise; end if;
+  end;
+  if operation_hash_before is distinct from
+       (select md5(row_to_json(operation)::text) from public.admin_auth_operations operation where operation.id=op)
+     or audit_hash_before is distinct from
+       (select md5(coalesce(string_agg(row_to_json(audit_event)::text,'|' order by audit_event.id),''))
+        from public.admin_audit_events audit_event) then
+    raise exception '0010_verify_stale_attempt_mutated_state';
+  end if;
+
+  begin
+    perform public.record_admin_auth_operation_result_b3a(
+      op,pg_temp.case_id('admin_b'),recovered_claim.attempt_count,
+      'terminal_failure','auth_update_rejected'
+    );
+    raise exception '0010_verify_terminal_after_sync_unexpected';
+  exception when sqlstate '55000' then
+    if sqlerrm<>'sitaa_auth_operation_terminal_after_sync' then raise; end if;
+  end;
+  if operation_hash_before is distinct from
+       (select md5(row_to_json(operation)::text) from public.admin_auth_operations operation where operation.id=op)
+     or audit_hash_before is distinct from
+       (select md5(coalesce(string_agg(row_to_json(audit_event)::text,'|' order by audit_event.id),''))
+        from public.admin_audit_events audit_event) then
+    raise exception '0010_verify_terminal_after_sync_mutated_state';
+  end if;
+
+  insert into public.admin_audit_events(
+    actor_profile_id,target_profile_id,action_code,outcome,reason,role_assignment_id,metadata
+  ) values(
+    pg_temp.case_id('admin_b'),pg_temp.case_id('ordinary'),
+    'account_auth_restored','success','Evidencia Auth sintética alternativa 0010',null,
+    jsonb_build_object('operation_id',op,'operation_code','reactivate','changed_fields',jsonb_build_array('auth_access'))
+  ) returning id into replacement_audit_id;
+  perform set_config('sitaa.b3a_writer','record',true);
+  begin
+    update public.admin_auth_operations
+    set auth_audit_event_id=replacement_audit_id
+    where id=op;
+    raise exception '0010_verify_auth_audit_replacement_unexpected';
+  exception when check_violation then null; end;
+  perform set_config('sitaa.b3a_writer','',true);
+  if (select auth_audit_event_id from public.admin_auth_operations where id=op)
+     is distinct from auth_audit_id_before then
+    raise exception '0010_verify_auth_audit_replacement_changed_row';
   end if;
 end;
 $restore_failure_auth$;
@@ -788,10 +979,24 @@ reset role;
 update auth.users set email_confirmed_at=now() where id=pg_temp.case_id('restore_failure_target');
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
 do $restore_failure_retry$
-declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure'); claim record; result record;
+declare
+  op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='restore_failure');
+  claim record;
+  result record;
+  auth_audit_id_before uuid;
 begin
-  select * into result from public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'retryable_failure','database_finalize_pending');
-  if result.status<>'retryable_failure' or result.completed_stage<>'auth_synchronized' then raise exception '0010_verify_finalize_retryable_failed'; end if;
+  select auth_audit_event_id into auth_audit_id_before
+  from public.admin_auth_operations where id=op;
+  select * into result from public.record_admin_auth_operation_result_b3a(
+    op,pg_temp.case_id('admin_a'),
+    (select attempt_count from public.admin_auth_operations where id=op),
+    'retryable_failure','database_finalize_pending'
+  );
+  if result.status<>'retryable_failure' or result.completed_stage<>'auth_synchronized'
+     or (select auth_audit_event_id from public.admin_auth_operations where id=op)
+        is distinct from auth_audit_id_before then
+    raise exception '0010_verify_finalize_retryable_failed';
+  end if;
   select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_b'));
   if claim.completed_stage<>'auth_synchronized' or claim.attempt_count<>3 then raise exception '0010_verify_retry_repeated_auth_stage'; end if;
 end;
@@ -822,10 +1027,10 @@ $authority_loss_prepare$;
 reset role;
 select pg_temp.set_actor('admin_a','service_role'); set local role service_role;
 do $authority_loss_auth$
-declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss');
+declare op uuid:=(select operation_id from pg_temp.sitaa_0010_results where label='authority_loss'); claim record;
 begin
-  perform public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
-  perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),'auth_succeeded',null);
+  select * into claim from public.claim_admin_auth_operation_b3a(op,pg_temp.case_id('admin_a'));
+  perform public.record_admin_auth_operation_result_b3a(op,pg_temp.case_id('admin_a'),claim.attempt_count,'auth_succeeded',null);
 end;
 $authority_loss_auth$;
 reset role;

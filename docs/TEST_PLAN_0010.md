@@ -11,7 +11,9 @@ Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción
 - no se ha probado suspensión, refresh, JWT ni restauración en Supabase hospedado;
 - B.3a permanece abierta y la prueba Auth desechable es bloqueante antes de producción.
 
-La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador esperaba `sitaa_account_lifecycle_pending_target_forbidden` aunque la implementación emitía `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
+La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador usaba un nombre obsoleto para el rechazo de objetivo pendiente, mientras la implementación emitía el contrato canónico `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
+
+Una segunda revisión recibió un paquete desactualizado respecto del repositorio canónico: contenía hashes anteriores en verificador/rollback, carecía del lock de auditoría, conservaba resultados terminales en el adaptador y mostraba archivos de aplicación B.2b. La captura obligatoria previa a esta corrección confirmó que el árbol canónico ya tenía sincronizados esos elementos. Antes de cualquier ejecución se añadió el cercado por intento, el reloj de pared posterior a locks y la inmutabilidad estricta de evidencia. No se ejecutaron preflight, SQL, Edge Function ni Auth Admin.
 
 El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
 
@@ -56,7 +58,7 @@ En una ventana de mantenimiento revisada, ejecutar primero `0010_coordinated_aut
 - debe terminar con `ROLLBACK`;
 - no debe mostrar UUID, PII, secretos ni filas operativas.
 
-Validar inventario post‑0009 18/165/80/43/11/54/25/18/51, privilegios 137/267/6/445, hashes, ACL, Auth/perfil, triggers, B.1, B.2a, B.2b, auditoría, semillas y ausencia de objetos 0010. Guardar resultado sanitizado antes de considerar la aplicación.
+Validar inventario post‑0009 18/165/80/43/11/54/25/18/51, privilegios 137/267/6/445, firmas/cuerpos/metadata de las 54 funciones, ACL nominal exacto de funciones/tablas/secuencias, tres grants explícitos de columna de nombres propios, Auth/perfil, triggers, B.1, B.2a, B.2b, auditoría, semillas y ausencia de objetos 0010. Los hashes nominales se derivaron del snapshot vivo canónico post‑0009 ya versionado; no se regeneró ni modificó. El default ACL no tiene un hash canónico inventado: se bloquean defaults peligrosos y la migración captura su hash completo para exigir preservación exacta post-DDL. Guardar resultado sanitizado antes de considerar la aplicación.
 
 ## 3. Migración y verificador transaccional
 
@@ -79,6 +81,9 @@ El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS s
 - reactivación preparada no activa el perfil;
 - éxito Auth simulado llega a `auth_synchronized` y finaliza una sola vez;
 - recuperación inmediata de `processing/auth_synchronized` sin repetir Auth, lease fresco no sincronizado no reclamable y replay de operaciones finales;
+- cercado de resultado con `claimed_attempt_count`: un intento anterior recibe `sitaa_auth_operation_stale_attempt` sin cambiar ledger, auditoría ni timestamps, y el intento vigente puede continuar;
+- timestamps monotónicos con un único `clock_timestamp()` capturado después de los locks en cada mutación; `now()`/`current_timestamp` no son relojes autoritativos de lease;
+- UUID y timestamps de evidencia no reemplazables después de adquirir valor, fallo terminal imposible tras `auth_synchronized` y fallo reintentable de finalización que conserva la evidencia Auth original;
 - selección de la operación más reciente antes de derivar el estado, de modo que un éxito posterior suprima un fallo terminal anterior;
 - rechazo explícito de resultado `NULL`, códigos `NULL`, código en éxito y códigos fuera de allowlist;
 - reintento por un segundo administrador exacto, con actor Auth igual al ejecutor real y actor B.2b igual a quien realizó la transición de perfil;
@@ -98,6 +103,7 @@ Type-check del paquete Edge con el mecanismo local soportado. Sin invocarlo cont
 - campos exactos para `start` y `retry`;
 - actor derivado exclusivamente del JWT verificado;
 - cliente de usuario para preparación/finalización y cliente privilegiado confinado para claim/result/Auth Admin;
+- `attempt_count` devuelto por claim se envía sin transformación al RPC de resultado y la respuesta debe devolver el mismo intento;
 - persistencia, refresh y detección URL deshabilitados en el cliente privilegiado;
 - adaptador usa `updateUserById()`, no `signOut()` sin JWT objetivo;
 - respuestas/logs sólo con operación, fase, código y timestamp sanitizados;
@@ -134,7 +140,9 @@ También verificar fallo terminal, recuperación después de timeout de `process
 
 ### Pruebas multisesión reservadas y no ejecutadas
 
-En una base desechable, dos sesiones deben usar simultáneamente el mismo `request_id` y payload normalizado. La primera adquiere el advisory lock; la segunda espera y, al continuar, devuelve exactamente el mismo `operation_id` en vez de una violación UNIQUE. Repetir con payload distinto y exigir `sitaa_auth_operation_request_id_conflict`. Otra pareja de sesiones debe comprobar lease fresco, recuperación después de cinco minutos y recuperación inmediata de `processing/auth_synchronized`. El verificador de una sola transacción cubre reutilización determinista y conflicto, pero no demuestra espera real ni orden intersesión. Ninguna de estas pruebas se ejecutó durante este hardening.
+En una base desechable, dos sesiones deben usar simultáneamente el mismo `request_id` y payload normalizado. La primera adquiere el advisory lock; la segunda espera y, al continuar, devuelve exactamente el mismo `operation_id` en vez de una violación UNIQUE. Repetir con payload distinto y exigir `sitaa_auth_operation_request_id_conflict`.
+
+Otra pareja de sesiones debe iniciar la transacción de la sesión que espera antes de que el holder libere el lock. Al continuar, el waiter debe capturar tiempo de pared posterior al lock: `processing_started_at` no puede quedar retrodatado, la operación más reciente debe conservar el orden correcto y un lease recién adquirido no puede parecer vencido ni reclamarse prematuramente. Repetir la recuperación después de cinco minutos y la recuperación inmediata de `processing/auth_synchronized`. El verificador de una sola transacción cubre reutilización, conflicto, cercado de intentos y monotonicidad local, pero no demuestra espera real ni orden intersesión. Ninguna de estas pruebas se ejecutó durante este hardening.
 
 ## 6. Smoke tests de producción
 

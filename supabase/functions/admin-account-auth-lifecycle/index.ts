@@ -78,7 +78,12 @@ function exactSingleRow(data: unknown, fields: readonly string[]): Record<string
 function parseSnapshot(
   data: unknown,
   fields: readonly string[],
-  expected?: { operationId?: string; targetProfileId?: string; operationCode?: OperationCode },
+  expected?: {
+    operationId?: string;
+    targetProfileId?: string;
+    operationCode?: OperationCode;
+    attemptCount?: number;
+  },
 ): OperationSnapshot | null {
   const row = exactSingleRow(data, fields);
   if (!row || typeof row.operation_id !== "string" || !UUID_PATTERN.test(row.operation_id)
@@ -94,7 +99,8 @@ function parseSnapshot(
     || !isTimestamp(row.updated_at)
     || (expected?.operationId !== undefined && row.operation_id !== expected.operationId)
     || (expected?.targetProfileId !== undefined && row.target_profile_id !== expected.targetProfileId)
-    || (expected?.operationCode !== undefined && row.operation_code !== expected.operationCode)) return null;
+    || (expected?.operationCode !== undefined && row.operation_code !== expected.operationCode)
+    || (expected?.attemptCount !== undefined && row.attempt_count !== expected.attemptCount)) return null;
   return {
     operationId: row.operation_id,
     targetProfileId: row.target_profile_id,
@@ -170,6 +176,7 @@ async function recordResult(
   const { data, error } = await client.rpc("record_admin_auth_operation_result_b3a", {
     requested_operation_id: operation.operationId,
     caller_profile_id: actorProfileId,
+    claimed_attempt_count: operation.attemptCount,
     requested_result: requestedResult,
     stable_error_code: stableErrorCode,
   });
@@ -178,6 +185,7 @@ async function recordResult(
     operationId: operation.operationId,
     targetProfileId: operation.targetProfileId,
     operationCode: operation.operationCode,
+    attemptCount: operation.attemptCount,
   });
 }
 
@@ -204,9 +212,14 @@ async function finalizeReactivation(
   const replayResponse = replayed ? finalResponse(replayed) : null;
   if (replayResponse) return replayResponse;
 
+  if (!replayed || !replayed.claimed || replayed.status !== "processing"
+    || replayed.completedStage !== "auth_synchronized") {
+    return response(200, "result_persistence_failed", "pending", operation.operationId);
+  }
+
   const persisted = await recordResult(
     privilegedClient,
-    operation,
+    replayed,
     actorProfileId,
     "retryable_failure",
     "database_finalize_pending",
