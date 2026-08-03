@@ -5,12 +5,13 @@
 Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción. En el estado actual:
 
 - la aplicación compatible se desplegó correctamente;
-- la Edge Function está desplegada y `ACTIVE`, pero no se ha invocado;
+- la Edge Function está desplegada y `ACTIVE`; la matriz central la invocó en el proyecto desechable;
 - 0010 fue aplicada y el registro local de aplicación termina en `COMMIT`;
 - el primer verificador hospedado terminó con código de salida 3 en `restore_failure_finalize`: el arnés esperaba `P0001`, pero la función emitió correctamente `42501/sitaa_account_lifecycle_auth_unconfirmed`; no alcanzó el `ROLLBACK` final y la desconexión de `psql` descartó la transacción abierta;
-- no se ejecutó ninguna operación Auth Admin;
-- no se ha probado suspensión, refresh, JWT ni restauración en Supabase hospedado;
-- el verificador corregido fue aprobado; la matriz Auth desechable, los smoke tests y la reconciliación post‑0010 permanecen pendientes, por lo que B.3a sigue abierta.
+- el verificador PostgreSQL corregido fue aprobado;
+- la matriz Hosted Auth central fue aprobada una sola vez en un proyecto desechable y dejó el checkpoint sanitizado `supabase/reconciliation/0010_hosted_auth_core_evidence.md`;
+- la primera operación real revocó definitivamente la elegibilidad del rollback 0010;
+- las matrices de fallos, concurrencia, límites hospedados, smoke tests y reconciliación post‑0010 permanecen pendientes, por lo que B.3a sigue abierta.
 
 La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador usaba un nombre obsoleto para el rechazo de objetivo pendiente, mientras la implementación emitía el contrato canónico `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
 
@@ -32,7 +33,7 @@ El diagnóstico de sólo lectura posterior al aborto confirmó `ledger_exists = 
 
 La reejecución corregida completó todos los escenarios con el handler exacto `insufficient_privilege/42501`, imprimió exactamente un `ROLLBACK` final, terminó con código de salida 0 y no produjo ninguna línea `ERROR`. El verificador PostgreSQL quedó aprobado y no persistió fixtures, privilegios temporales, operaciones o eventos de auditoría.
 
-El verificador SQL demuestra contratos de base y simula resultados controlados; no demuestra la semántica hospedada de `ban_duration`, sesiones o refresh tokens.
+El verificador SQL demuestra contratos de base y simula resultados controlados. La matriz central posterior aportó evidencia hospedada concreta para suspensión y restauración, sin convertir ese resultado empírico en una garantía universal del proveedor.
 
 ## 1. Validación estática y local
 
@@ -81,9 +82,9 @@ La ejecución aprobada validó el inventario post‑0009 18/165/80/43/11/54/25/1
 
 ## 3. Migración y verificador transaccional
 
-La aplicación compatible, la Edge Function y 0010 fueron desplegadas/aplicadas en ese orden; el registro local de la migración confirma el `COMMIT`. El verificador corregido también está aprobado con su `ROLLBACK` final explícito. El siguiente orden operativo autorizado es:
+La aplicación compatible, la Edge Function y 0010 fueron desplegadas/aplicadas en ese orden; el registro local de la migración confirma el `COMMIT`. El verificador corregido también está aprobado con su `ROLLBACK` final explícito. El orden operativo restante es:
 
-1. ejecutar la matriz Auth hospedada desechable;
+1. completar las matrices hospedadas pendientes de fallos, concurrencia y límites;
 2. completar los smoke tests de producción aprobados;
 3. generar y reconciliar el snapshot post‑0010.
 
@@ -151,6 +152,21 @@ Type-check del paquete Edge con el mecanismo local soportado. Sin invocarlo cont
 
 Usar un proyecto desechable, un objetivo sintético sin datos reales y dos sesiones/dispositivos independientes. Descartar el entorno completo al terminar; no borrar selectivamente auditoría append-only de producción.
 
+### Estado de la matriz Auth hospedada
+
+El checkpoint central del 3 de agosto de 2026 está en `supabase/reconciliation/0010_hosted_auth_core_evidence.md`. La ejecución aprobó la suspensión/restauración central, pero no toda la matriz de veinte casos.
+
+| Clasificación | Pruebas |
+| --- | --- |
+| Aprobadas por la matriz central | 1 Login base; 2 Refresh base; 3 JWT existente; 4 Refresh suspendido; 5 Login nuevo suspendido; 6 Segunda sesión; 7 Barrera SITAA; 8 Restauración; 9 Refresh anterior restaurado; 10 Login nuevo restaurado; 11 `activated_at`; 12 Historia. |
+| Cubierta previamente por el verificador PostgreSQL | 16 ACL 0009. |
+| Parcial | 19 Ausencia de secretos: evidencia, salida del arnés y auditoría sanitizadas; faltan bundles, variables y logs productivos. 20 Sanitización: auditoría, evidencia y salida del arnés sanitizadas; falta observar la interfaz desplegada mediante smoke test hospedado. |
+| Pendientes | 13 Fallo Auth inyectado; 14 Fallo de finalización; 15 Recuperación por segundo administrador; 17 Usuarios ordinarios en el límite hospedado; 18 Límite `service_role` hospedado; cierre de 19 y 20. |
+
+También están pendientes el timeout de `processing`, la concurrencia de dos sesiones, el mismo `request_id` con payload igual y distinto, la pérdida de autoridad después de esperar locks y los replays de aplicación por pérdida de respuesta.
+
+Durante la suspensión, las dos sesiones, sus refresh tokens y dos logins nuevos fueron rechazados con `user_banned`, mientras las operaciones protegidas de SITAA intentadas con los dos tokens quedaron denegadas (`2/2`). La evidencia persistida no distingue si cada denegación ocurrió en el gateway Auth o en la base; el verificador PostgreSQL demuestra por separado la barrera de perfil inactivo y la ejecución hospedada demuestra que ninguno de los dos tokens obtuvo acceso. Después de restaurar, un login fresco funcionó, pero los refresh tokens anteriores no recuperaron acceso: una cuenta reactivada debe iniciar sesión nuevamente. `user_banned` y la no recuperación de refresh tokens son observaciones de esta ejecución hospedada concreta, no garantías permanentes para versiones futuras de Supabase.
+
 | # | Prueba | Evidencia requerida |
 | ---: | --- | --- |
 | 1 | Login base | Login del objetivo sintético exitoso antes de suspender. |
@@ -212,7 +228,7 @@ Debe rechazar llaves adicionales, códigos/estados desconocidos, UUID ausente do
 
 ## 6. Smoke tests de producción
 
-Sólo después de aprobar la matriz Auth hospedada:
+Después del checkpoint central aprobado y de completar los casos hospedados que correspondan al riesgo del despliegue:
 
 - autoridad B.1 ve contexto y operación sanitizada;
 - desactivar bloquea SITAA de inmediato, conserva datos y muestra sincronización pendiente/completa con precisión;
@@ -226,12 +242,12 @@ Sólo después de aprobar la matriz Auth hospedada:
 
 B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT`, verificador con `ROLLBACK`, despliegue Edge, matriz Auth desechable completa, smoke tests y snapshot post‑0010 reconciliado. Hasta entonces:
 
-- no afirmar invalidación de JWT, refresh o restauración;
+- describir el rechazo de JWT, refresh y login, y la restauración observada, sólo como evidencia empírica de la ejecución hospedada documentada;
 - no usar la función en producción;
-- describir el verificador PostgreSQL como aprobado, pero no B.3a como cerrada;
+- describir el verificador PostgreSQL y la matriz central como aprobados, pero no B.3a como cerrada;
 - no crear 0011;
 - B.3b y Fase C permanecen fuera de alcance.
 
-El rollback 0010 sólo puede considerarse antes de la primera operación o evento B.3a real; después queda prohibido por diseño.
+La matriz central creó las primeras operaciones y eventos B.3a reales; el rollback 0010 quedó revocado y está prohibido por diseño.
 Antes de revisar historia, el rollback adquiere `ACCESS EXCLUSIVE NOWAIT` primero sobre `admin_auth_operations` y después sobre `admin_audit_events`; mantiene ambos locks durante la guarda completa, las dos comprobaciones históricas y la eliminación controlada.
 Su guarda predestructiva exige 135 entradas y hash `5c2ce865124e0669c787d12fe4c46b59` para las funciones preexistentes sin el mutador 0009 ni las seis funciones 0010, una única entrada `EXECUTE` no delegable del owner para el mutador 0009 y la matriz exacta de las seis funciones 0010. El mapa completo post‑0009 de 137 entradas y hash `4ea1d04b7d1b1632fd5ce01a1dc83e05` se exige únicamente después de retirar 0010 y restaurar `authenticated` sobre el mutador 0009.

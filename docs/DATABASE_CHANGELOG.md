@@ -58,10 +58,10 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0009` están aplicadas, verificadas, reconciliadas e inmutables. Fase B.2b está cerrada dentro de su alcance aprobado y `0010` es el siguiente número disponible. Todo cambio futuro debe:
+`0001`–`0010` están aplicadas e inmutables. `0001`–`0009` están verificadas y reconciliadas; `0010` tiene el verificador PostgreSQL y la matriz Hosted Auth central aprobados, pero su reconciliación post‑0010 permanece pendiente. No se debe crear `0011` mientras B.3a siga abierta. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
-2. crear una nueva migración numerada, sin reescribir `0001`–`0009`;
+2. crear una nueva migración numerada, sin reescribir `0001`–`0010`;
 3. incluir verificación y rollback cuando sea apropiado;
 4. aplicarse manualmente a Supabase;
 5. regenerar el snapshot vivo después de cambios significativos;
@@ -228,7 +228,7 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Retira únicamente el futuro `EXECUTE` directo de `authenticated` sobre `transition_admin_account_lifecycle_b2b(uuid,text,text)`; el contexto 0009 permanece disponible.
 - Incluye preflight de sólo lectura, verificador transaccional sin Auth Admin, rollback protegido, Edge Function autenticada, adaptador Auth aislado y `TEST_PLAN_0010.md`.
 - La aplicación mantiene un fallback 0009 temporal únicamente cuando la ausencia del contrato B.3a se confirma explícitamente; después de 0010, cualquier fallo del límite confiable falla cerrado.
-- La restauración usa el valor tipado `ban_duration = 'none'`, pero no se ha comprobado contra Supabase hospedado. Se ejecutaron dos preflight de sólo lectura y el diagnóstico acotado.
+- En la fase de preparación todavía no se había comprobado contra Supabase hospedado el valor tipado `ban_duration = 'none'`. Se ejecutaron dos preflight de sólo lectura y el diagnóstico acotado.
 - Hardening local previo a aplicación: se alineó el error de objetivo pendiente con `sitaa_account_lifecycle_pending_target`/`P0001`; writer GUC nulo-seguro y limpiado; DML por writer con allowlist exacta; lookup de `request_id` posterior al advisory lock; selección de operación actual sin descartar éxitos; recuperación inmediata de `auth_synchronized`; validación total de resultados y parsers Edge estrictos.
 - La evidencia Auth usa al ejecutor real del intento. El adaptador provisional no emite `terminal_failure` para 400/401/403/404/422 ni errores desconocidos; toda persistencia de resultado se valida antes de responder. El rollback bloquea ledger y auditoría con `ACCESS EXCLUSIVE NOWAIT` antes de la guarda completa.
 - La segunda revisión llegó con un paquete desactualizado respecto del árbol canónico: hashes anteriores, rollback sin lock de auditoría, adaptador terminal y aplicación B.2b. La captura previa confirmó que esos defectos ya no estaban en el repositorio; no se ejecutó preflight ni SQL.
@@ -244,9 +244,21 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Diagnóstico de default ACL: también terminó con `ROLLBACK` y código 0; confirmó `current_user = postgres`, `session_user = postgres` y cinco grupos de diez filas (`postgres/public`, `postgres/storage`, `supabase_admin/graphql`, `supabase_admin/graphql_public`, `supabase_admin/public`). El predicado anterior mezclaba propietarios/esquemas ajenos y defaults de secuencia.
 - Corrección del preflight: `dangerous_default_acl` sólo considera defaults de `postgres`, globales o de `public`, para tablas/funciones, y bloquea grantees fuera de `PUBLIC`, `anon`, `authenticated`, `service_role` y el owner. No se ejecutó `ALTER DEFAULT PRIVILEGES`; la normalización ACL de tabla/funciones y el hash completo de `pg_default_acl` permanecen obligatorios.
 - Segunda evidencia remota 0010 aprobada: el preflight corregido devolvió exactamente 34 filas, dejó sus 30 categorías bloqueantes en cero y produjo `dangerous_default_acl = 0`. Los cuatro conteos informativos fueron `active_exact_b1_administrators = 1`, `existing_b2b_lifecycle_events = 4`, `inactive_accounts = 0` e `inactive_accounts_with_active_or_future_assignments = 0`. Terminó con `ROLLBACK`, código 0 y sin `ERROR`; no expuso UUID, filas operativas, PII, credenciales, tokens o secretos y no cambió objetos, filas o privilegios.
-- La aplicación compatible se desplegó correctamente; la Edge Function fue desplegada y figura `ACTIVE`, sin invocarse. 0010 se aplicó y su registro local termina en `COMMIT`. No se ejecutó Auth Admin ni una operación real B.3a.
+- Antes de la matriz central, la aplicación compatible se había desplegado correctamente, la Edge Function figuraba `ACTIVE` y aún no había sido invocada. 0010 ya se había aplicado y su registro local terminaba en `COMMIT`; en ese momento no se había ejecutado Auth Admin ni una operación real B.3a.
 - El primer verificador hospedado terminó con código de salida 3 en `restore_failure_finalize`: el contrato real emitió `42501/sitaa_account_lifecycle_auth_unconfirmed`, pero el arnés usó `exception when raise_exception`, que sólo captura `P0001`. No alcanzó el `ROLLBACK` final y la desconexión de `psql` descartó la transacción abierta; el fallo corresponde al arnés, no a la migración aplicada.
 - Corrección posterior sin ejecución remota: `restore_failure_finalize` captura `insufficient_privilege` y exige SQLSTATE `42501` y mensaje estable exactos. El checker añade fixture negativa del handler anterior, fixture positiva del corregido y auditoría de los contratos `P0001`, `42501`, `22023`, `23505`, `23514` y `55000`.
 - Diagnóstico posterior al aborto: `ledger_exists = true`, seis funciones B.3a, cero filas del ledger y cero eventos de auditoría Auth B.3a; terminó con `ROLLBACK` y código 0. Confirmó que 0010 siguió aplicada y que ningún fixture, operación o evento sobrevivió.
 - Verificador corregido aprobado: completó todos los escenarios con el handler exacto `insufficient_privilege/42501`, imprimió exactamente un `ROLLBACK` final, terminó con código 0 y no produjo líneas `ERROR`. No persistió fixtures, privilegios temporales, operaciones ni auditoría.
-- Estado: el gate de verificación PostgreSQL está aprobado, pero B.3a permanece abierta. No hubo suspensión/restauración real, invocación Edge ni Auth Admin. Continúan pendientes la matriz Auth hospedada, smoke tests y reconciliación post‑0010; no crear 0011 ni describir B.3a como cerrada.
+- Estado al cerrar el verificador: el gate PostgreSQL estaba aprobado y todavía no se había ejecutado suspensión/restauración real ni Auth Admin. La matriz Hosted Auth central posterior se documenta a continuación; B.3a permanece abierta por los casos restantes, smoke tests y reconciliación post‑0010.
+
+## Matriz Hosted Auth central de 0010 — 2026-08-03
+
+- Se ejecutó una sola vez en un proyecto Supabase desechable, no en producción, con el arnés `2026-08-03-hosted-auth-core-v4`, Node.js `v24.18.0` y Supabase JS `2.110.1`.
+- La evidencia central local tiene 2008 bytes y SHA-256 `55315c6e4b9c34278d920f231bac48c7349a1f9da3b0d3d7e2516c90e2ea7cac`; el postcheck local tiene 333 bytes y SHA-256 `29c38e45dd6b8b5ae3aec4dd57380aef46c1ed198e89be03b1a45477ed49a389`.
+- La baseline aprobó dos sesiones independientes, login, `getUser`, refresh y RPC base, con cero operaciones B.3a antes de la confirmación irreversible.
+- La suspensión se completó: el ban quedó activo y ambas sesiones, sus refresh tokens y dos logins nuevos fueron rechazados con `user_banned`; las operaciones protegidas de SITAA intentadas con los dos tokens quedaron denegadas (`2/2`).
+- La restauración se completó: el ban se eliminó y un login fresco fue aprobado; los refresh tokens anteriores continuaron rechazados. Esta semántica es evidencia empírica de la ejecución concreta y no una garantía futura del proveedor.
+- Se preservaron identidad Auth, `activated_at`, asignaciones e historia operativa. El postcheck registró dos operaciones completadas, cuatro eventos esperados, cero operaciones no exitosas, cero eventos Auth de fallo, perfil activo, dos usuarios, dos identidades, contrato de identidad válido y autoridad B.1 `2/2`; terminó en transacción de sólo lectura con `ROLLBACK`.
+- La evidencia, la salida del arnés y la auditoría fueron revisadas sin correos, UUID, tokens, claves, contraseñas, URI, cookies, cabeceras `Authorization`, metadata sensible ni errores crudos. El resumen versionado está en `supabase/reconciliation/0010_hosted_auth_core_evidence.md`; los dos `*.local.txt` continúan ignorados por Git.
+- La primera operación real revocó definitivamente la elegibilidad del rollback 0010.
+- B.3a sigue abierta: faltan fallos inyectados, fallo de finalización, recuperación por otro administrador, usuarios ordinarios y `service_role` en el límite hospedado, cierre de ausencia de secretos, timeout, concurrencia, conflictos/replays de `request_id`, pérdida de autoridad tras locks, smoke tests y reconciliación post‑0010.
