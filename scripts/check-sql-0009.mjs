@@ -5,6 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const normalizeEol = (value) => value.replace(/\r\n?/g, "\n");
+const readText = (relative) => normalizeEol(
+  fs.readFileSync(path.join(root, relative), "utf8"),
+);
 const paths = {
   migration: "supabase/migrations/0009_admin_account_lifecycle_transitions.sql",
   preflight: "supabase/reconciliation/0009_admin_account_lifecycle_transitions_preflight.sql",
@@ -13,7 +17,7 @@ const paths = {
 };
 const sql = Object.fromEntries(Object.entries(paths).map(([key, value]) => [
   key,
-  fs.readFileSync(path.join(root, value), "utf8"),
+  readText(value),
 ]));
 const snapshotPaths = {
   constraints: "supabase/reconciliation/live/live_constraints.sql",
@@ -23,7 +27,7 @@ const snapshotPaths = {
 };
 const snapshots = Object.fromEntries(Object.entries(snapshotPaths).map(([key, value]) => [
   key,
-  fs.readFileSync(path.join(root, value), "utf8"),
+  readText(value),
 ]));
 
 function md5(value) {

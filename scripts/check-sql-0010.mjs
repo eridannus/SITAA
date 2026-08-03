@@ -28,9 +28,15 @@ const coreArtifacts = [
   "lib/admin/account-lifecycle-permissions.ts",
   "types/admin.ts",
 ];
-const sources = Object.fromEntries(Object.entries(artifacts).map(([key, relative]) => [key, fs.readFileSync(path.join(root, relative), "utf8")]));
-const edge = fs.readFileSync(path.join(root, "supabase/functions/admin-account-auth-lifecycle/index.ts"), "utf8");
-const adapter = fs.readFileSync(path.join(root, "supabase/functions/admin-account-auth-lifecycle/auth-admin-adapter.ts"), "utf8");
+const normalizeEol = (value) => value.replace(/\r\n?/g, "\n");
+const readText = (relative) => normalizeEol(
+  fs.readFileSync(path.join(root, relative), "utf8"),
+);
+const sources = Object.fromEntries(
+  Object.entries(artifacts).map(([key, relative]) => [key, readText(relative)]),
+);
+const edge = readText("supabase/functions/admin-account-auth-lifecycle/index.ts");
+const adapter = readText("supabase/functions/admin-account-auth-lifecycle/auth-admin-adapter.ts");
 
 function immutableTextSha256(text) {
   const canonicalLfText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");

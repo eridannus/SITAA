@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
+const normalizeEol = (value) => value.replace(/\r\n?/g, "\n");
+const read = (relative) => normalizeEol(
+  fs.readFileSync(path.join(root, relative), "utf8"),
+);
 const edge = read("supabase/functions/admin-account-auth-lifecycle/index.ts");
 const adapter = read("supabase/functions/admin-account-auth-lifecycle/auth-admin-adapter.ts");
 const config = read("supabase/config.toml");
@@ -88,16 +91,89 @@ const edgeInvocationBody = data.slice(edgeInvocationStart);
 assert.doesNotMatch(edgeInvocationBody, /error\.message|error\.context\.text|error\.context\.headers/);
 assert.match(action, /if \(context\.b3aAvailable\)[\s\S]*runAdminAccountAuthLifecycle[\s\S]*else \{[\s\S]*transitionAdminAccountLifecycleLegacyBeforeB3a/);
 assert.match(action, /const nextValues = result\.operationId[\s\S]*: values/);
-const startBranch = action.slice(
-  action.indexOf("} else {\n      if (context.b3aAvailable)"),
-  action.indexOf("  } catch (error)"),
+
+function extractStartBranch(source, label) {
+  const normalized = normalizeEol(source);
+  const retryStart = normalized.indexOf("if (values.mode === \"retry\")");
+  const startMarker = "\n    } else {\n";
+  const startMarkerIndex = normalized.indexOf(startMarker, retryStart);
+  const start = startMarkerIndex >= 0 ? startMarkerIndex + 1 : -1;
+  const end = normalized.indexOf("  } catch (error)", start);
+  assert.ok(retryStart >= 0, `${label}: no se encontró el branch retry anterior`);
+  assert.ok(start >= 0, `${label}: no se encontró el inicio del branch start`);
+  assert.ok(end > start, `${label}: no se encontró un cierre válido del branch start`);
+  return normalized.slice(start, end);
+}
+
+function assertStartBranchContract(source, label) {
+  const branch = extractStartBranch(source, label);
+  const b3aAvailability = branch.indexOf("if (context.b3aAvailable)");
+  const edgeInvocation = branch.indexOf("runAdminAccountAuthLifecycle");
+  const presentationEligibility = branch.indexOf("const allowed =");
+  for (const [boundaryLabel, boundary] of [
+    ["disponibilidad B.3a", b3aAvailability],
+    ["invocación Edge B.3a", edgeInvocation],
+    ["elegibilidad de presentación", presentationEligibility],
+  ]) {
+    assert.ok(boundary >= 0, `${label}: falta ${boundaryLabel}`);
+  }
+  assert.ok(b3aAvailability < presentationEligibility,
+    "B.3a debe invocarse antes de cualquier elegibilidad de presentación");
+  assert.ok(edgeInvocation < presentationEligibility,
+    "El replay start B.3a debe llegar al límite Edge aunque el contexto ya cambió");
+  assert.match(branch, /else \{[\s\S]*const allowed = values\.transition === "deactivate"[\s\S]*if \(!allowed\)[\s\S]*transitionAdminAccountLifecycleLegacyBeforeB3a/,
+    "Sólo el flujo legado conserva canDeactivate/canReactivate");
+  return branch;
+}
+
+const startBranchLfFixture = `if (values.mode === "retry") {
+      await retryOperation();
+    } else {
+      if (context.b3aAvailable) {
+        await runAdminAccountAuthLifecycle();
+      } else {
+        const allowed = values.transition === "deactivate"
+          ? context.canDeactivate
+          : context.canReactivate;
+        if (!allowed) throw new Error("legacy_denied");
+        await transitionAdminAccountLifecycleLegacyBeforeB3a();
+      }
+  } catch (error)`;
+const startBranchCrlfFixture = startBranchLfFixture.replace(/\n/g, "\r\n");
+const startBranchCrFixture = startBranchLfFixture.replace(/\n/g, "\r");
+assert.equal(
+  extractStartBranch(startBranchLfFixture, "fixture LF"),
+  extractStartBranch(startBranchCrlfFixture, "fixture CRLF"),
+  "La extracción del branch start debe ser idéntica con LF y CRLF",
 );
-assert.ok(startBranch.indexOf("if (context.b3aAvailable)") < startBranch.indexOf("const allowed ="),
-  "B.3a debe invocarse antes de cualquier elegibilidad de presentación");
-assert.ok(startBranch.indexOf("runAdminAccountAuthLifecycle") < startBranch.indexOf("const allowed ="),
-  "El replay start B.3a debe llegar al límite Edge aunque el contexto ya cambió");
-assert.match(startBranch, /else \{[\s\S]*const allowed = values\.transition === "deactivate"[\s\S]*if \(!allowed\)[\s\S]*transitionAdminAccountLifecycleLegacyBeforeB3a/,
-  "Sólo el flujo legado conserva canDeactivate/canReactivate");
+assert.equal(
+  extractStartBranch(startBranchLfFixture, "fixture LF"),
+  extractStartBranch(startBranchCrFixture, "fixture CR"),
+  "La extracción del branch start debe ser idéntica con LF y CR",
+);
+assert.doesNotThrow(() => assertStartBranchContract(startBranchLfFixture, "fixture LF"));
+assert.doesNotThrow(() => assertStartBranchContract(startBranchCrlfFixture, "fixture CRLF"));
+assert.doesNotThrow(() => assertStartBranchContract(startBranchCrFixture, "fixture CR"));
+
+const invalidStartBranchOrderFixture = `if (values.mode === "retry") {
+      await retryOperation();
+    } else {
+      const allowed = values.transition === "deactivate"
+        ? context.canDeactivate
+        : context.canReactivate;
+      if (context.b3aAvailable) {
+        await runAdminAccountAuthLifecycle();
+      } else {
+        if (!allowed) throw new Error("legacy_denied");
+        await transitionAdminAccountLifecycleLegacyBeforeB3a();
+      }
+  } catch (error)`;
+assert.throws(
+  () => assertStartBranchContract(invalidStartBranchOrderFixture, "fixture de orden inválido"),
+  /B\.3a debe invocarse antes de cualquier elegibilidad de presentación/,
+);
+
+assertStartBranchContract(action, "Server Action canónica");
 assert.match(action, /!context\.b3aAvailable \|\| context\.currentOperationId !== values\.operation_id[\s\S]*\|\| context\.operationCode !== values\.transition/);
 assert.doesNotMatch(action, /canRetryOrFinalize/,
   "canRetryOrFinalize es sólo presentación y no puede cercar la Server Action");
