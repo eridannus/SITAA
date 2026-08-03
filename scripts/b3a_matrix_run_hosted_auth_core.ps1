@@ -1,5 +1,6 @@
 ﻿param(
-  [switch]$ValidateOnly
+  [switch]$ValidateOnly,
+  [switch]$ConnectionProbeOnly
 )
 
 Set-StrictMode -Version Latest
@@ -20,13 +21,61 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
-import { createClient } from "@supabase/supabase-js";
 
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
-const HARNESS_VERSION = "2026-07-25-hosted-auth-core-v3";
+const HARNESS_VERSION = "2026-08-03-hosted-auth-core-v4";
 const EXPECTED_SUPABASE_JS_VERSION = "2.110.1";
 const OPERATOR_ABORT_EXIT_CODE = 2;
+const DEFAULT_POSTGRES_PORT = 5432;
+const POSTGRES_PROCESS_TIMEOUT_MS = 45_000;
+const POSTGRES_MAX_BUFFER_BYTES = 1024 * 1024;
+const POSTGRES_SSL_MODES = new Set(["require", "verify-ca", "verify-full"]);
+const POSTGRES_ENVIRONMENT_KEYS = new Set([
+  "PGHOST",
+  "PGHOSTADDR",
+  "PGPORT",
+  "PGDATABASE",
+  "PGUSER",
+  "PGPASSWORD",
+  "PGPASSFILE",
+  "PGSERVICE",
+  "PGSERVICEFILE",
+  "PGOPTIONS",
+  "PGSSLMODE",
+  "PGCONNECT_TIMEOUT",
+  "PGAPPNAME",
+  "PGCLIENTENCODING",
+  "PG_COLOR",
+]);
+const POSTGRES_READ_ONLY_GATE_PREFIXES = new Set([
+  "B3A_GATE",
+  "B3A_BASELINE",
+  "B3A_DEACTIVATED",
+  "B3A_RESTORED",
+  "B3A_CORE_POSTCHECK",
+  "B3A_FAILURE_DIAGNOSTIC",
+]);
+const POSTGRES_RESULT_PREFIXES = new Set([
+  ...POSTGRES_READ_ONLY_GATE_PREFIXES,
+  "B3A_PSQL_TRANSPORT",
+]);
+const POSTGRES_FAILURE_CODES = new Set([
+  "readonly_database_process_timeout",
+  "readonly_database_password_unavailable",
+  "readonly_database_connection_failed",
+  "readonly_database_script_failed",
+  "readonly_database_check_failed",
+]);
+const PSQL_ARGUMENTS = Object.freeze([
+  "-X",
+  "-qAt",
+  "-w",
+  "-v",
+  "ON_ERROR_STOP=1",
+  "-f",
+  "-",
+]);
 const EXPECTED_POSTCHECK =
   "B3A_0010_POSTCHECK|2|2|2|2|2|0|0|0|0|0|6|1|1|0|2|0|19|60";
 const EXPECTED_EMAILS = new Map([
@@ -41,6 +90,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FORBIDDEN_EVIDENCE =
   /@|https?:|bearer|authorization|cookie|password|secret|service[_-]?role|access[_-]?token|refresh[_-]?token|eyj[a-z0-9_-]*\./i;
+const SAFE_EVIDENCE_TERMS = ["readonly_database_password_unavailable"];
 const SAFE_AUTH_CODES = new Set([
   "user_banned",
   "session_unavailable",
@@ -85,11 +135,12 @@ const CLIENT_OPTIONS = {
 const runtimeState = {
   phase: "before_confirmation",
   irreversibleEvidencePersisted: false,
-  dbUrl: null,
+  databaseConnection: null,
   adminAId: null,
   adminBId: null,
   evidencePath: null,
 };
+let createSupabaseClient = null;
 
 class SafeFailure extends Error {
   constructor(code) {
@@ -173,9 +224,17 @@ function classifyAuthError(error) {
   return classified;
 }
 
+function containsForbiddenEvidence(line) {
+  const filtered = SAFE_EVIDENCE_TERMS.reduce(
+    (value, term) => value.replaceAll(term, ""),
+    line,
+  );
+  return FORBIDDEN_EVIDENCE.test(filtered);
+}
+
 function assertSafeEvidenceLine(line) {
   requireCondition(
-    /^[A-Za-z0-9_./:=|-]+$/.test(line) && !FORBIDDEN_EVIDENCE.test(line),
+    /^[A-Za-z0-9_./:=|-]+$/.test(line) && !containsForbiddenEvidence(line),
     "unsafe_evidence_rejected",
   );
   return line;
@@ -210,11 +269,13 @@ function targetSessionsAreDistinct(sessionB1, sessionB2) {
 }
 
 function createIsolatedClient(projectUrl, publicKey) {
-  return createClient(projectUrl, publicKey, CLIENT_OPTIONS);
+  requireCondition(typeof createSupabaseClient === "function", "supabase_js_not_loaded");
+  return createSupabaseClient(projectUrl, publicKey, CLIENT_OPTIONS);
 }
 
 function createBearerClient(projectUrl, publicKey, accessToken) {
-  return createClient(projectUrl, publicKey, {
+  requireCondition(typeof createSupabaseClient === "function", "supabase_js_not_loaded");
+  return createSupabaseClient(projectUrl, publicKey, {
     ...CLIENT_OPTIONS,
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
   });
@@ -251,6 +312,19 @@ function readSupabaseJsVersion(repoRoot) {
     "supabase_js_version_rejected",
   );
   return installedPackage.version;
+}
+
+async function loadSupabaseJs(repoRoot) {
+  const version = readSupabaseJsVersion(repoRoot);
+  let module;
+  try {
+    module = await import("@supabase/supabase-js");
+  } catch {
+    fail("supabase_js_package_missing");
+  }
+  requireCondition(typeof module?.createClient === "function", "supabase_js_export_invalid");
+  createSupabaseClient = module.createClient;
+  return version;
 }
 
 function utcNow() {
@@ -304,17 +378,116 @@ function expectedAccountsCte(adminA, adminB) {
   )`;
 }
 
-function psqlEnvironment(dbUrl) {
-  const environment = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (!key.startsWith("SITAA_B3A_")) environment[key] = value;
+function parsePostgresConnectionUri(dbUrl) {
+  requireCondition(typeof dbUrl === "string" && dbUrl.length > 0, "database_url_rejected");
+  let parsed;
+  try {
+    parsed = new URL(dbUrl);
+  } catch {
+    fail("database_url_rejected");
   }
-  environment.PGDATABASE = dbUrl;
-  environment.PGCLIENTENCODING = "UTF8";
+
+  requireCondition(
+    parsed.protocol === "postgresql:" || parsed.protocol === "postgres:",
+    "database_url_rejected",
+  );
+  requireCondition(parsed.hostname.length > 0, "database_url_rejected");
+  requireCondition(parsed.username.length > 0, "database_url_rejected");
+  requireCondition(parsed.password.length > 0, "database_url_rejected");
+  requireCondition(parsed.hash === "", "database_url_rejected");
+
+  const decode = (value) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      fail("database_url_rejected");
+    }
+  };
+  const username = decode(parsed.username);
+  const password = decode(parsed.password);
+  const encodedDatabase = parsed.pathname.startsWith("/")
+    ? parsed.pathname.slice(1)
+    : parsed.pathname;
+  requireCondition(
+    encodedDatabase.length > 0 && !encodedDatabase.includes("/"),
+    "database_url_rejected",
+  );
+  const database = decode(encodedDatabase);
+  requireCondition(username.length > 0 && password.length > 0, "database_url_rejected");
+  requireCondition(database === "postgres", "database_url_rejected");
+  requireCondition(
+    !/[\u0000-\u001f\u007f]/.test(`${username}${password}${database}`),
+    "database_url_rejected",
+  );
+
+  const portText = parsed.port || String(DEFAULT_POSTGRES_PORT);
+  requireCondition(/^\d{1,5}$/.test(portText), "database_url_rejected");
+  const port = Number(portText);
+  requireCondition(Number.isInteger(port) && port >= 1 && port <= 65535, "database_url_rejected");
+
+  const queryKeys = [...parsed.searchParams.keys()];
+  requireCondition(queryKeys.every((key) => key === "sslmode"), "database_url_rejected");
+  const sslModes = parsed.searchParams.getAll("sslmode");
+  requireCondition(sslModes.length <= 1, "database_url_rejected");
+  const sslmode = sslModes[0] || "require";
+  requireCondition(POSTGRES_SSL_MODES.has(sslmode), "database_url_rejected");
+
+  const identityTokens = `${username}.${parsed.hostname}`
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  requireCondition(identityTokens.includes(EXPECTED_PROJECT_REF), "database_url_rejected");
+
+  return Object.freeze({
+    hostname: parsed.hostname,
+    port: String(port),
+    username,
+    password,
+    database,
+    sslmode,
+  });
+}
+
+function postgresChildEnvironment(connection, sourceEnvironment = process.env) {
+  const environment = {};
+  for (const [key, value] of Object.entries(sourceEnvironment)) {
+    const upperKey = key.toUpperCase();
+    if (upperKey.startsWith("SITAA_B3A_")) continue;
+    if (POSTGRES_ENVIRONMENT_KEYS.has(upperKey)) continue;
+    environment[key] = value;
+  }
+  Object.assign(environment, {
+    PGHOST: connection.hostname,
+    PGPORT: connection.port,
+    PGUSER: connection.username,
+    PGPASSWORD: connection.password,
+    PGDATABASE: connection.database,
+    PGSSLMODE: connection.sslmode,
+    PGCONNECT_TIMEOUT: "10",
+    PGOPTIONS: "-c statement_timeout=30000 -c lock_timeout=5000",
+    PGAPPNAME: "sitaa_b3a_hosted_auth_core",
+    PGCLIENTENCODING: "UTF8",
+    PG_COLOR: "never",
+  });
   return environment;
 }
 
-function runReadOnlySql(dbUrl, sql, expectedPrefix) {
+function classifyPsqlFailure(result) {
+  if (result?.error?.code === "ETIMEDOUT") {
+    return "readonly_database_process_timeout";
+  }
+  const stderr = String(result?.stderr ?? "");
+  if (/password authentication failed|no password supplied|password (?:is )?required|fe_sendauth|contraseña/i.test(stderr)) {
+    return "readonly_database_password_unavailable";
+  }
+  if (result?.status === 0 && !result?.error) return null;
+  if (result?.status === 2) return "readonly_database_connection_failed";
+  if (result?.status === 3) return "readonly_database_script_failed";
+  return "readonly_database_check_failed";
+}
+
+function executeReadOnlySql(connection, sql, expectedPrefix) {
+  requireCondition(POSTGRES_RESULT_PREFIXES.has(expectedPrefix), "database_prefix_rejected");
   const normalized = sql.replace(/\r\n?/g, "\n").trim();
   requireCondition(/^begin;\nset transaction read only;/i.test(normalized), "sql_not_read_only");
   requireCondition(/\nrollback;$/i.test(normalized), "sql_missing_rollback");
@@ -327,17 +500,22 @@ function runReadOnlySql(dbUrl, sql, expectedPrefix) {
 
   const result = spawnSync(
     "psql",
-    ["-X", "-qAt", "-v", "ON_ERROR_STOP=1", "-f", "-"],
+    PSQL_ARGUMENTS,
     {
       cwd: process.env.SITAA_B3A_REPO_ROOT,
       encoding: "utf8",
-      env: psqlEnvironment(dbUrl),
+      env: postgresChildEnvironment(connection),
       input: `${normalized}\n`,
       windowsHide: true,
-      maxBuffer: 1024 * 1024,
+      timeout: POSTGRES_PROCESS_TIMEOUT_MS,
+      maxBuffer: POSTGRES_MAX_BUFFER_BYTES,
     },
   );
-  requireCondition(!result.error && result.status === 0, "readonly_database_check_failed");
+  const failureCode = classifyPsqlFailure(result);
+  if (failureCode) {
+    requireCondition(POSTGRES_FAILURE_CODES.has(failureCode), "readonly_database_check_failed");
+    fail(failureCode);
+  }
   const lines = String(result.stdout ?? "")
     .replace(/\r\n?/g, "\n")
     .split("\n")
@@ -346,6 +524,38 @@ function runReadOnlySql(dbUrl, sql, expectedPrefix) {
   const matches = lines.filter((line) => line.startsWith(`${expectedPrefix}|`));
   requireCondition(matches.length === 1, "readonly_database_result_invalid");
   return matches[0].split("|");
+}
+
+function runReadOnlySql(connection, sql, expectedPrefix) {
+  requireCondition(
+    POSTGRES_READ_ONLY_GATE_PREFIXES.has(expectedPrefix),
+    "database_prefix_rejected",
+  );
+  console.log(`POSTGRES_READ_ONLY_GATE|${expectedPrefix}|STARTED`);
+  const result = executeReadOnlySql(connection, sql, expectedPrefix);
+  console.log(`POSTGRES_READ_ONLY_GATE|${expectedPrefix}|APPROVED`);
+  return result;
+}
+
+function runConnectionProbe(connection) {
+  const result = executeReadOnlySql(
+    connection,
+    `BEGIN;
+SET TRANSACTION READ ONLY;
+SELECT concat_ws(
+  '|',
+  'B3A_PSQL_TRANSPORT',
+  current_database(),
+  current_user
+);
+ROLLBACK;`,
+    "B3A_PSQL_TRANSPORT",
+  );
+  requireCondition(
+    result.join("|") === "B3A_PSQL_TRANSPORT|postgres|postgres",
+    "readonly_database_result_invalid",
+  );
+  console.log("B3A_PSQL_TRANSPORT|APPROVED");
 }
 
 async function readMasked(promptText) {
@@ -908,6 +1118,165 @@ function runSelfTests() {
     localSupabaseJsVersion === EXPECTED_SUPABASE_JS_VERSION,
     "supabase_js_version_fixture_failed",
   );
+
+  const fixtureUsername = `postgres.${EXPECTED_PROJECT_REF}`;
+  const fixturePassword = "fixture@pass:word/query?hash#percent%";
+  const fixtureHost = "aws-0-us-east-1.pooler.supabase.com";
+  const encodedUsername = `postgres%2E${EXPECTED_PROJECT_REF}`;
+  const encodedPassword = "fixture%40pass%3Aword%2Fquery%3Fhash%23percent%25";
+  const validConnectionUri =
+    `postgresql://${encodedUsername}:${encodedPassword}@${fixtureHost}:6543/postgres?sslmode=require`;
+  const connection = parsePostgresConnectionUri(validConnectionUri);
+  requireCondition(
+    connection.hostname === fixtureHost
+      && connection.port === "6543"
+      && connection.username === fixtureUsername
+      && connection.password === fixturePassword
+      && connection.database === "postgres"
+      && connection.sslmode === "require",
+    "postgres_uri_valid_fixture_failed",
+  );
+  const defaultPortConnection = parsePostgresConnectionUri(
+    `postgres://${encodedUsername}:${encodedPassword}@${fixtureHost}/postgres`,
+  );
+  requireCondition(
+    defaultPortConnection.port === "5432" && defaultPortConnection.sslmode === "require",
+    "postgres_uri_default_fixture_failed",
+  );
+
+  const rejectedConnectionUris = [
+    `https://${encodedUsername}:${encodedPassword}@${fixtureHost}:6543/postgres`,
+    `postgresql://${encodedUsername}@${fixtureHost}:6543/postgres`,
+    `postgresql://${encodedUsername}:${encodedPassword}@/postgres`,
+    `postgresql://${encodedUsername}:${encodedPassword}@${fixtureHost}:70000/postgres`,
+    `postgresql://${encodedUsername}:${encodedPassword}@${fixtureHost}:6543/sitaa`,
+    `postgresql://postgres.wrongprojectref:${encodedPassword}@${fixtureHost}:6543/postgres`,
+    `postgresql://postgres%ZZ${EXPECTED_PROJECT_REF}:${encodedPassword}@${fixtureHost}:6543/postgres`,
+    `postgresql://${encodedUsername}:fixture%ZZ@${fixtureHost}:6543/postgres`,
+    `postgresql://${encodedUsername}:${encodedPassword}@${fixtureHost}:6543/postgres?sslmode=disable`,
+    `postgresql://${encodedUsername}:${encodedPassword}@${fixtureHost}:6543/postgres#fragment`,
+  ];
+  for (const rejectedUri of rejectedConnectionUris) {
+    let rejected = false;
+    try {
+      parsePostgresConnectionUri(rejectedUri);
+    } catch (error) {
+      rejected = error instanceof SafeFailure && error.code === "database_url_rejected";
+    }
+    requireCondition(rejected, "postgres_uri_rejection_fixture_failed");
+  }
+
+  const inheritedEnvironment = {
+    Path: "fixture-path",
+    pgHost: "inherited-host",
+    PGHOSTADDR: "127.0.0.1",
+    PgPort: "9999",
+    pgdatabase: "inherited-database",
+    PGUser: "inherited-user",
+    pgPassword: "inherited-password",
+    PGPASSFILE: "inherited-passfile",
+    pgService: "inherited-service",
+    PGSERVICEFILE: "inherited-servicefile",
+    PgOptions: "inherited-options",
+    pgsslmode: "disable",
+    PGCONNECT_TIMEOUT: "999",
+    pgAppName: "inherited-app",
+    PgClientEncoding: "LATIN1",
+    pg_color: "always",
+    SITAA_B3A_DB_URL: "fixture-sensitive-uri",
+    FIXTURE_SAFE_VARIABLE: "preserved",
+  };
+  const inheritedSnapshot = new Map(Object.entries(inheritedEnvironment));
+  const processEnvironmentSnapshot = new Map(Object.entries(process.env));
+  const childEnvironment = postgresChildEnvironment(connection, inheritedEnvironment);
+  postgresChildEnvironment(connection);
+  requireCondition(
+    Object.keys(inheritedEnvironment).length === inheritedSnapshot.size
+      && [...inheritedSnapshot].every(([key, value]) => inheritedEnvironment[key] === value)
+      && Object.keys(process.env).length === processEnvironmentSnapshot.size
+      && [...processEnvironmentSnapshot].every(([key, value]) => process.env[key] === value),
+    "postgres_environment_mutation_fixture_failed",
+  );
+  const childPostgresKeys = Object.keys(childEnvironment)
+    .filter((key) => key.toUpperCase().startsWith("PG"));
+  const childPostgresUpperKeys = childPostgresKeys.map((key) => key.toUpperCase());
+  const expectedChildPostgresKeys = [
+    "PGAPPNAME",
+    "PGCLIENTENCODING",
+    "PGCONNECT_TIMEOUT",
+    "PGDATABASE",
+    "PGHOST",
+    "PGOPTIONS",
+    "PGPASSWORD",
+    "PGPORT",
+    "PGSSLMODE",
+    "PGUSER",
+    "PG_COLOR",
+  ].sort();
+  requireCondition(
+    new Set(childPostgresUpperKeys).size === childPostgresUpperKeys.length
+      && childPostgresUpperKeys.sort().join("|") === expectedChildPostgresKeys.join("|")
+      && childEnvironment.PGDATABASE === "postgres"
+      && childEnvironment.PGPASSWORD === fixturePassword
+      && childEnvironment.PGUSER === fixtureUsername
+      && childEnvironment.PGHOST === fixtureHost
+      && childEnvironment.PGPORT === "6543"
+      && childEnvironment.PGSSLMODE === "require"
+      && childEnvironment.PGCONNECT_TIMEOUT === "10"
+      && childEnvironment.PGOPTIONS === "-c statement_timeout=30000 -c lock_timeout=5000"
+      && childEnvironment.PGAPPNAME === "sitaa_b3a_hosted_auth_core"
+      && childEnvironment.PGCLIENTENCODING === "UTF8"
+      && childEnvironment.PG_COLOR === "never"
+      && childEnvironment.FIXTURE_SAFE_VARIABLE === "preserved"
+      && !Object.keys(childEnvironment).some((key) => key.toUpperCase().startsWith("SITAA_B3A_")),
+    "postgres_environment_fixture_failed",
+  );
+  requireCondition(
+    PSQL_ARGUMENTS.includes("-w")
+      && !PSQL_ARGUMENTS.some((argument) =>
+        argument.includes(validConnectionUri)
+          || argument.includes(fixturePassword)
+          || argument.includes(fixtureUsername))
+      && Number.isFinite(POSTGRES_PROCESS_TIMEOUT_MS)
+      && POSTGRES_PROCESS_TIMEOUT_MS > 0
+      && POSTGRES_MAX_BUFFER_BYTES === 1024 * 1024,
+    "postgres_process_fixture_failed",
+  );
+  requireCondition(
+    POSTGRES_READ_ONLY_GATE_PREFIXES.size === 6
+      && [...POSTGRES_READ_ONLY_GATE_PREFIXES].every((prefix) =>
+        assertSafeEvidenceLine(`POSTGRES_READ_ONLY_GATE|${prefix}|STARTED`)
+          === `POSTGRES_READ_ONLY_GATE|${prefix}|STARTED`
+          && assertSafeEvidenceLine(`POSTGRES_READ_ONLY_GATE|${prefix}|APPROVED`)
+            === `POSTGRES_READ_ONLY_GATE|${prefix}|APPROVED`),
+    "postgres_gate_marker_fixture_failed",
+  );
+  const psqlFailureFixtures = [
+    [{ error: { code: "ETIMEDOUT" }, status: null, stderr: "" },
+      "readonly_database_process_timeout"],
+    [{ error: null, status: 2, stderr: "no password supplied" },
+      "readonly_database_password_unavailable"],
+    [{ error: null, status: 2, stderr: "connection unavailable" },
+      "readonly_database_connection_failed"],
+    [{ error: null, status: 3, stderr: "script rejected" },
+      "readonly_database_script_failed"],
+    [{ error: { code: "ENOENT" }, status: null, stderr: "" },
+      "readonly_database_check_failed"],
+  ];
+  for (const [fixture, expected] of psqlFailureFixtures) {
+    const classified = classifyPsqlFailure(fixture);
+    requireCondition(
+      classified === expected
+        && POSTGRES_FAILURE_CODES.has(classified)
+        && assertSafeEvidenceLine(`POSTGRES_FAILURE|${classified}`)
+          === `POSTGRES_FAILURE|${classified}`,
+      "postgres_failure_classification_fixture_failed",
+    );
+  }
+  requireCondition(
+    classifyPsqlFailure({ error: null, status: 0, stderr: "" }) === null,
+    "postgres_success_classification_fixture_failed",
+  );
   const taxonomyCases = [
     [{ code: "refresh_token_not_found" }, "session_unavailable"],
     [{ code: "refresh_token_already_used" }, "session_unavailable"],
@@ -1066,10 +1435,10 @@ function runSelfTests() {
     `HARNESS_VERSION|${HARNESS_VERSION}`,
     `NODE_RUNTIME|${process.version}`,
     `SUPABASE_JS_VERSION|${localSupabaseJsVersion}`,
-    "MATRIX_STARTED_UTC|2026-07-25T00:00:00.000Z",
-    "DEACTIVATION_COMPLETED_UTC|2026-07-25T00:01:00.000Z",
-    "REACTIVATION_COMPLETED_UTC|2026-07-25T00:02:00.000Z",
-    "MATRIX_COMPLETED_UTC|2026-07-25T00:03:00.000Z",
+    "MATRIX_STARTED_UTC|2026-08-03T00:00:00.000Z",
+    "DEACTIVATION_COMPLETED_UTC|2026-08-03T00:01:00.000Z",
+    "REACTIVATION_COMPLETED_UTC|2026-08-03T00:02:00.000Z",
+    "MATRIX_COMPLETED_UTC|2026-08-03T00:03:00.000Z",
     "ROLLBACK_0010_ELIGIBILITY|STILL_AVAILABLE",
     "ROLLBACK_0010_ELIGIBILITY|REVOKED",
     "ROLLBACK_0010_ELIGIBILITY|UNKNOWN_DO_NOT_ROLLBACK",
@@ -1082,19 +1451,34 @@ function runSelfTests() {
   console.log("B3A_HOSTED_AUTH_CORE_FIXTURES|APPROVED");
 }
 
+function connectionProbeMain() {
+  const repoRoot = path.resolve(process.env.SITAA_B3A_REPO_ROOT ?? "");
+  requireCondition(repoRoot.length > 0 && process.cwd() === repoRoot, "repository_root_required");
+  requireCondition(fs.existsSync(path.join(repoRoot, "package.json")), "repository_root_invalid");
+  requireCondition(
+    (process.env.SITAA_B3A_PROJECT_REF ?? "") === EXPECTED_PROJECT_REF,
+    "project_ref_rejected",
+  );
+  const databaseConnection = parsePostgresConnectionUri(
+    process.env.SITAA_B3A_DB_URL ?? "",
+  );
+  runConnectionProbe(databaseConnection);
+}
+
 async function main() {
   runtimeState.phase = "before_confirmation";
   const matrixStartedUtc = utcNow();
   const repoRoot = path.resolve(process.env.SITAA_B3A_REPO_ROOT ?? "");
   requireCondition(repoRoot.length > 0 && process.cwd() === repoRoot, "repository_root_required");
   requireCondition(fs.existsSync(path.join(repoRoot, "package.json")), "repository_root_invalid");
-  const supabaseJsVersion = readSupabaseJsVersion(repoRoot);
 
   const projectRef = process.env.SITAA_B3A_PROJECT_REF ?? "";
-  const dbUrl = process.env.SITAA_B3A_DB_URL ?? "";
   requireCondition(projectRef === EXPECTED_PROJECT_REF, "project_ref_rejected");
-  requireCondition(dbUrl.length > 0 && dbUrl.includes(EXPECTED_PROJECT_REF), "database_url_rejected");
-  runtimeState.dbUrl = dbUrl;
+  const databaseConnection = parsePostgresConnectionUri(
+    process.env.SITAA_B3A_DB_URL ?? "",
+  );
+  runtimeState.databaseConnection = databaseConnection;
+  const supabaseJsVersion = await loadSupabaseJs(repoRoot);
 
   const reconciliationRoot = path.join(repoRoot, "supabase", "reconciliation");
   const coreEvidencePath = path.join(
@@ -1140,7 +1524,7 @@ async function main() {
   runtimeState.adminBId = adminB.id;
 
   const gate = parseDelimited(
-    runReadOnlySql(dbUrl, lifecycleGateSql(adminA.id, adminB.id), "B3A_GATE"),
+    runReadOnlySql(databaseConnection, lifecycleGateSql(adminA.id, adminB.id), "B3A_GATE"),
     "B3A_GATE",
     13,
   );
@@ -1210,7 +1594,7 @@ async function main() {
   requireCondition(contextIsAccessible(baseContext, adminB.id), "target_base_rpc_denied");
 
   const baseline = parseDelimited(
-    runReadOnlySql(dbUrl, baselineSql(adminA, adminB), "B3A_BASELINE"),
+    runReadOnlySql(databaseConnection, baselineSql(adminA, adminB), "B3A_BASELINE"),
     "B3A_BASELINE",
     12,
   );
@@ -1290,6 +1674,8 @@ async function main() {
     adminASession = null;
     sessionB1 = null;
     sessionB2 = null;
+    runtimeState.databaseConnection = null;
+    createSupabaseClient = null;
     process.exitCode = confirmationOutcome.exitCode;
     return;
   }
@@ -1355,7 +1741,7 @@ async function main() {
 
   const deactivated = parseDelimited(
     runReadOnlySql(
-      dbUrl,
+      databaseConnection,
       deactivationSql(
         adminA.id,
         adminB.id,
@@ -1517,7 +1903,7 @@ async function main() {
 
   const restored = parseDelimited(
     runReadOnlySql(
-      dbUrl,
+      databaseConnection,
       restorationSql(adminA, adminB, deactivation, reactivation),
       "B3A_RESTORED",
     ),
@@ -1545,7 +1931,11 @@ async function main() {
 
   runtimeState.phase = "final_postcheck";
   const finalPostcheck = parseDelimited(
-    runReadOnlySql(dbUrl, finalPostcheckSql(adminA, adminB), "B3A_CORE_POSTCHECK"),
+    runReadOnlySql(
+      databaseConnection,
+      finalPostcheckSql(adminA, adminB),
+      "B3A_CORE_POSTCHECK",
+    ),
     "B3A_CORE_POSTCHECK",
     11,
   );
@@ -1572,7 +1962,7 @@ async function main() {
     `MATRIX_COMPLETED_UTC|${matrixCompletedUtc}`,
   ];
   for (const line of postcheckLines) {
-    requireCondition(!FORBIDDEN_EVIDENCE.test(line), "unsafe_postcheck_evidence_rejected");
+    requireCondition(!containsForbiddenEvidence(line), "unsafe_postcheck_evidence_rejected");
   }
   fs.writeFileSync(postcheckEvidencePath, `${postcheckLines.join("\n")}\n`, {
     encoding: "utf8",
@@ -1586,6 +1976,8 @@ async function main() {
   adminASession = null;
   sessionB1 = null;
   sessionB2 = null;
+  runtimeState.databaseConnection = null;
+  createSupabaseClient = null;
   void suspendedJwtB1;
   void suspendedJwtB2;
 }
@@ -1605,7 +1997,7 @@ function appendFailureEvidence(line) {
 async function handleFailure(error) {
   const code = error instanceof SafeFailure ? error.code : "unexpected_failure";
   const safeCode = /^[a-z][a-z0-9_]{0,63}$/.test(code)
-    && !FORBIDDEN_EVIDENCE.test(code)
+    && !containsForbiddenEvidence(code)
     ? code
     : "unexpected_failure";
   appendFailureEvidence(`HOSTED_AUTH_CORE_MATRIX|REJECTED|${safeCode}`);
@@ -1617,7 +2009,7 @@ async function handleFailure(error) {
     try {
       const diagnostic = parseDelimited(
         runReadOnlySql(
-          runtimeState.dbUrl,
+          runtimeState.databaseConnection,
           irreversibleDiagnosticSql(runtimeState.adminAId, runtimeState.adminBId),
           "B3A_FAILURE_DIAGNOSTIC",
         ),
@@ -1648,6 +2040,8 @@ async function handleFailure(error) {
       );
     }
   }
+  runtimeState.databaseConnection = null;
+  createSupabaseClient = null;
   process.exitCode = 1;
 }
 
@@ -1656,6 +2050,18 @@ if (process.argv.includes("--self-test")) {
     runSelfTests();
   } catch {
     console.error("B3A_HOSTED_AUTH_CORE_FIXTURES|REJECTED");
+    process.exitCode = 1;
+  }
+} else if (process.argv.includes("--connection-probe")) {
+  try {
+    connectionProbeMain();
+  } catch (error) {
+    const code = error instanceof SafeFailure
+      && /^[a-z][a-z0-9_]{0,63}$/.test(error.code)
+      && !containsForbiddenEvidence(error.code)
+      ? error.code
+      : "connection_probe_failed";
+    console.error(`B3A_PSQL_TRANSPORT|REJECTED|${code}`);
     process.exitCode = 1;
   }
 } else {
@@ -1721,6 +2127,9 @@ try {
   if ($currentRoot -ne $repoRoot) {
     throw "Ejecuta el arnés desde la raíz del repositorio."
   }
+  if ($ValidateOnly -and $ConnectionProbeOnly) {
+    throw "ValidateOnly y ConnectionProbeOnly son mutuamente excluyentes."
+  }
 
   Assert-ScriptEncoding
   Assert-TemporaryPath -Candidate $temporaryRoot
@@ -1764,6 +2173,14 @@ try {
   }
 
   $env:SITAA_B3A_REPO_ROOT = $repoRoot
+  if ($ConnectionProbeOnly) {
+    & node $nodeModulePath --connection-probe
+    if ($LASTEXITCODE -ne 0) {
+      throw "El probe PostgreSQL de sólo lectura no fue aprobado."
+    }
+    return
+  }
+
   & node $nodeModulePath
   $nodeExitCode = $LASTEXITCODE
   if ($nodeExitCode -eq 2) {
