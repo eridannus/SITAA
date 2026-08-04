@@ -38,7 +38,7 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 
-const VERSION = "2026-08-04-b3a-failure-target-bootstrap-v5";
+const VERSION = "2026-08-04-b3a-failure-target-bootstrap-v6";
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
 const EXPECTED_SUPABASE_JS_VERSION = "2.110.1";
@@ -416,24 +416,86 @@ async function loadSupabaseJs(repoRoot) {
   return version;
 }
 
+function isThreeSegmentJwt(value) {
+  return typeof value === "string" && /^[^.]+\.[^.]+\.[^.]+$/.test(value);
+}
+
+function validatePublicApiKey(value) {
+  requireCondition(
+    typeof value === "string"
+      && (/^sb_publishable_.+$/.test(value) || isThreeSegmentJwt(value)),
+    "publishable_key_shape_rejected",
+  );
+  return value;
+}
+
+function validatePrivilegedApiKey(value) {
+  requireCondition(
+    typeof value === "string"
+      && (/^sb_secret_.+$/.test(value) || isThreeSegmentJwt(value)),
+    "privileged_key_shape_rejected",
+  );
+  return value;
+}
+
+function isOpaqueApiKey(value) {
+  return typeof value === "string"
+    && (value.startsWith("sb_publishable_") || value.startsWith("sb_secret_"));
+}
+
+function boundedRequestInit(init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
+  requireCondition(Number.isSafeInteger(timeoutMs) && timeoutMs > 0, "auth_request_timeout_invalid");
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = init.signal
+    ? AbortSignal.any([init.signal, timeoutSignal])
+    : timeoutSignal;
+  return { ...init, headers: new Headers(init.headers), signal };
+}
+
+function apiKeyAwareRequestInit(apiKey, init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
+  const requestInit = boundedRequestInit(init, timeoutMs);
+  if (
+    isOpaqueApiKey(apiKey)
+      && requestInit.headers.get("authorization") === `Bearer ${apiKey}`
+  ) {
+    requestInit.headers.delete("authorization");
+  }
+  return requestInit;
+}
+
+function boundedFetchWith(fetchImplementation, apiKey, input, init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
+  requireCondition(typeof fetchImplementation === "function", "auth_fetch_implementation_invalid");
+  return fetchImplementation(input, apiKeyAwareRequestInit(apiKey, init, timeoutMs));
+}
+
+function createApiKeyAwareBoundedFetch(
+  apiKey,
+  fetchImplementation = globalThis.fetch,
+  timeoutMs = AUTH_REQUEST_TIMEOUT_MS,
+) {
+  requireCondition(typeof fetchImplementation === "function", "auth_fetch_implementation_invalid");
+  return (input, init = {}) => boundedFetchWith(
+    fetchImplementation,
+    apiKey,
+    input,
+    init,
+    timeoutMs,
+  );
+}
+
 function createClient(projectUrl, key) {
   requireCondition(typeof createSupabaseClient === "function", "supabase_js_not_loaded");
   return createSupabaseClient(projectUrl, key, {
     ...CLIENT_OPTIONS,
-    global: { fetch: boundedFetch },
+    global: { fetch: createApiKeyAwareBoundedFetch(key) },
   });
 }
 
-function boundedRequestInit(init = {}) {
-  const timeoutSignal = AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS);
-  const signal = init.signal
-    ? AbortSignal.any([init.signal, timeoutSignal])
-    : timeoutSignal;
-  return { ...init, signal };
-}
-
-function boundedFetch(input, init = {}) {
-  return globalThis.fetch(input, boundedRequestInit(init));
+function authRequestFailureCode(error, fallbackCode) {
+  const name = typeof error?.name === "string" ? error.name : "";
+  return name === "AbortError" || name === "TimeoutError"
+    ? "auth_request_timeout"
+    : fallbackCode;
 }
 
 function parseFixtureUsers(contents) {
@@ -1215,22 +1277,20 @@ function hasRepairArtifacts(repairPath, snapshotPath) {
 
 async function collectSecrets(repoRoot) {
   const supabaseJsVersion = await loadSupabaseJs(repoRoot);
-  let projectUrl = await readMasked("Project URL exacta: ");
-  let publicKey = await readMasked("Publishable/anon key: ");
-  let serviceKey = await readMasked("Service role/secret key: ");
-  let targetPassword = await readMasked("Contraseña de Target C: ");
+  const projectUrl = (await readMasked("Project URL exacta: ")).trim();
+  const publicKey = validatePublicApiKey((await readMasked("Publishable/anon key: ")).trim());
+  const serviceKey = validatePrivilegedApiKey((await readMasked("Service role/secret key: ")).trim());
+  const targetPassword = await readMasked("Contraseña de Target C: ");
   requireCondition(projectUrl === EXPECTED_PROJECT_URL, "project_url_rejected");
-  requireCondition(publicKey.length > 0 && serviceKey.length > 0, "auth_keys_required");
   requireCondition(targetPassword.length >= 16, "target_password_rejected");
   return { supabaseJsVersion, projectUrl, publicKey, serviceKey, targetPassword };
 }
 
 async function collectAbandonSecrets(repoRoot) {
   const supabaseJsVersion = await loadSupabaseJs(repoRoot);
-  const projectUrl = await readMasked("Project URL exacta: ");
-  const serviceKey = await readMasked("Service role/secret key: ");
+  const projectUrl = (await readMasked("Project URL exacta: ")).trim();
+  const serviceKey = validatePrivilegedApiKey((await readMasked("Service role/secret key: ")).trim());
   requireCondition(projectUrl === EXPECTED_PROJECT_URL, "project_url_rejected");
-  requireCondition(serviceKey.length > 0, "auth_keys_required");
   return { supabaseJsVersion, projectUrl, serviceKey };
 }
 
@@ -1247,17 +1307,33 @@ async function authAdminBootstrapPreflight(serviceClient, knownUsers = null) {
 }
 
 async function publishableKeyBootstrapPreflight(publicClient) {
-  const result = await publicClient
-    .from("system_health")
-    .select("status")
-    .eq("status", "ok")
-    .limit(1);
+  let result;
+  try {
+    result = await publicClient
+      .from("system_health")
+      .select("status")
+      .limit(1);
+  } catch (error) {
+    fail(authRequestFailureCode(error, "publishable_key_bootstrap_preflight_rejected"));
+  }
+  if (result?.error) {
+    fail(authRequestFailureCode(result.error, "publishable_key_bootstrap_preflight_rejected"));
+  }
   requireCondition(
-    !result.error && Array.isArray(result.data) && result.data.length === 1
-      && Object.keys(result.data[0] ?? {}).join("|") === "status"
-      && result.data[0].status === "ok",
-    "publishable_key_bootstrap_preflight_rejected",
+    Array.isArray(result?.data) && result.data.length <= 1,
+    "system_health_response_malformed",
   );
+  if (result.data.length === 1) {
+    const row = result.data[0];
+    requireCondition(
+      row && typeof row === "object" && !Array.isArray(row)
+        && Object.keys(row).length === 1
+        && Object.hasOwn(row, "status")
+        && typeof row.status === "string",
+      "system_health_response_malformed",
+    );
+    requireCondition(row.status === "ok", "system_health_not_ok");
+  }
   console.log("PUBLISHABLE_KEY_BOOTSTRAP_PREFLIGHT|APPROVED");
 }
 
@@ -1749,7 +1825,7 @@ async function runSelfTests(repoRoot) {
   const baseline = normalizeEol(baselineSql(adminA, adminB)).trim();
   requireCondition(baseline.startsWith("begin;\nset transaction read only;") && baseline.endsWith("rollback;"), "baseline_fixture_rejected");
   requireCondition(
-    VERSION === "2026-08-04-b3a-failure-target-bootstrap-v5"
+    VERSION === "2026-08-04-b3a-failure-target-bootstrap-v6"
       && TARGET_EMAIL_PATTERN.test(email)
       && !TARGET_EMAIL_PATTERN.test("b3a-failure-target-arbitrary-abcdefabcdef@example.invalid")
       && generateTargetEmail().match(TARGET_EMAIL_PATTERN),
@@ -1860,36 +1936,158 @@ async function runSelfTests(repoRoot) {
   postgresChildEnvironment(connection);
   const processEnvironmentAfter = JSON.stringify(Object.entries(process.env).sort(([left], [right]) => left.localeCompare(right)));
   requireCondition(processEnvironmentBefore === processEnvironmentAfter, "process_environment_mutated_fixture_rejected");
-  const bounded = boundedRequestInit();
+  const opaquePublicFixture = "sb_publishable_fixture_public";
+  const opaqueSecretFixture = "sb_secret_fixture_service";
+  const legacyAnonFixture = "legacyAnonHeader.legacyAnonPayload.legacyAnonSignature";
+  const legacyServiceFixture = "legacyServiceHeader.legacyServicePayload.legacyServiceSignature";
+  const userJwtFixture = "userHeader.userPayload.userSignature";
   requireCondition(
-    bounded.signal instanceof AbortSignal
-      && AUTH_REQUEST_TIMEOUT_MS > 0
-      && boundedFetch.toString().includes("boundedRequestInit"),
-    "auth_timeout_fixture_rejected",
+    validatePublicApiKey(opaquePublicFixture) === opaquePublicFixture
+      && validatePublicApiKey(legacyAnonFixture) === legacyAnonFixture
+      && validatePrivilegedApiKey(opaqueSecretFixture) === opaqueSecretFixture
+      && validatePrivilegedApiKey(legacyServiceFixture) === legacyServiceFixture,
+    "api_key_shape_fixture_rejected",
   );
+  expectSafeFailure(() => validatePublicApiKey(opaqueSecretFixture), "publishable_key_shape_rejected");
+  expectSafeFailure(() => validatePrivilegedApiKey(opaquePublicFixture), "privileged_key_shape_rejected");
+  const captureTransportFacts = async (apiKey, authorization) => {
+    const originalHeaders = new Headers({
+      apikey: apiKey,
+      aUtHoRiZaTiOn: authorization,
+      "x-fixture": "preserved",
+    });
+    const originalInit = { method: "GET", headers: originalHeaders };
+    const facts = {
+      apikeyPreserved: false,
+      authorizationAbsent: false,
+      authorizationPreserved: false,
+      headersCloned: false,
+      initCloned: false,
+      inputUnchanged: false,
+      signalPresent: false,
+      originalsUnchanged: false,
+    };
+    const fakeFetch = async (input, receivedInit) => {
+      facts.apikeyPreserved = receivedInit.headers.get("apikey") === apiKey;
+      facts.authorizationAbsent = !receivedInit.headers.has("authorization");
+      facts.authorizationPreserved = receivedInit.headers.get("authorization") === authorization;
+      facts.headersCloned = receivedInit.headers !== originalHeaders;
+      facts.initCloned = receivedInit !== originalInit;
+      facts.inputUnchanged = input === "https://fixture.invalid/transport";
+      facts.signalPresent = receivedInit.signal instanceof AbortSignal;
+      return Object.freeze({ ok: true });
+    };
+    await createApiKeyAwareBoundedFetch(apiKey, fakeFetch)(
+      "https://fixture.invalid/transport",
+      originalInit,
+    );
+    facts.originalsUnchanged = originalHeaders.get("authorization") === authorization
+      && originalHeaders.get("apikey") === apiKey
+      && !("signal" in originalInit);
+    return Object.freeze(facts);
+  };
+  const opaquePublicFacts = await captureTransportFacts(
+    opaquePublicFixture,
+    `Bearer ${opaquePublicFixture}`,
+  );
+  const opaqueSecretFacts = await captureTransportFacts(
+    opaqueSecretFixture,
+    `Bearer ${opaqueSecretFixture}`,
+  );
+  const legacyAnonFacts = await captureTransportFacts(
+    legacyAnonFixture,
+    `Bearer ${legacyAnonFixture}`,
+  );
+  const legacyServiceFacts = await captureTransportFacts(
+    legacyServiceFixture,
+    `Bearer ${legacyServiceFixture}`,
+  );
+  const userJwtFacts = await captureTransportFacts(
+    opaquePublicFixture,
+    `Bearer ${userJwtFixture}`,
+  );
+  requireCondition(
+    opaquePublicFacts.apikeyPreserved && opaquePublicFacts.authorizationAbsent
+      && opaqueSecretFacts.apikeyPreserved && opaqueSecretFacts.authorizationAbsent
+      && legacyAnonFacts.apikeyPreserved && legacyAnonFacts.authorizationPreserved
+      && legacyServiceFacts.apikeyPreserved && legacyServiceFacts.authorizationPreserved
+      && userJwtFacts.apikeyPreserved && userJwtFacts.authorizationPreserved
+      && [opaquePublicFacts, opaqueSecretFacts, legacyAnonFacts, legacyServiceFacts, userJwtFacts]
+        .every((facts) => facts.headersCloned && facts.initCloned && facts.inputUnchanged
+          && facts.signalPresent && facts.originalsUnchanged),
+    "api_key_transport_fixture_rejected",
+  );
+  const hangingFetch = (_input, init) => new Promise((_resolve, reject) => {
+    const keepAlive = setTimeout(() => {}, 1_000);
+    init.signal.addEventListener("abort", () => {
+      clearTimeout(keepAlive);
+      reject(init.signal.reason);
+    }, { once: true });
+  });
+  await expectSafeFailureAsync(async () => {
+    try {
+      await createApiKeyAwareBoundedFetch(opaquePublicFixture, hangingFetch, 10)(
+        "https://fixture.invalid/timeout",
+      );
+    } catch (error) {
+      fail(authRequestFailureCode(error, "publishable_key_bootstrap_preflight_rejected"));
+    }
+  }, "auth_request_timeout");
+  const priorController = new AbortController();
+  const combinedInit = apiKeyAwareRequestInit(
+    opaquePublicFixture,
+    { headers: { apikey: opaquePublicFixture }, signal: priorController.signal },
+    1_000,
+  );
+  requireCondition(
+    combinedInit.signal !== priorController.signal && !combinedInit.signal.aborted,
+    "prior_abort_signal_combination_fixture_rejected",
+  );
+  priorController.abort(new DOMException("fixture", "AbortError"));
+  await Promise.resolve();
+  requireCondition(combinedInit.signal.aborted, "prior_abort_signal_propagation_fixture_rejected");
   const publicClientFixture = (result) => ({
     from: (relation) => {
       requireCondition(relation === "system_health", "publishable_relation_fixture_rejected");
       return {
         select: (columns) => {
           requireCondition(columns === "status", "publishable_columns_fixture_rejected");
-          return {
-            eq: (column, value) => {
-              requireCondition(column === "status" && value === "ok", "publishable_filter_fixture_rejected");
-              return { limit: async (limit) => {
-                requireCondition(limit === 1, "publishable_limit_fixture_rejected");
-                return result;
-              } };
-            },
-          };
+          return { limit: async (limit) => {
+            requireCondition(limit === 1, "publishable_limit_fixture_rejected");
+            if (result instanceof Error) throw result;
+            return result;
+          } };
         },
       };
     },
   });
+  await publishableKeyBootstrapPreflight(publicClientFixture({ data: [], error: null }));
   await publishableKeyBootstrapPreflight(publicClientFixture({ data: [{ status: "ok" }], error: null }));
+  await expectSafeFailureAsync(
+    () => publishableKeyBootstrapPreflight(publicClientFixture({ data: [{ status: "degraded" }], error: null })),
+    "system_health_not_ok",
+  );
+  await expectSafeFailureAsync(
+    () => publishableKeyBootstrapPreflight(publicClientFixture({ data: [{ status: "ok", extra: true }], error: null })),
+    "system_health_response_malformed",
+  );
+  await expectSafeFailureAsync(
+    () => publishableKeyBootstrapPreflight(publicClientFixture({ data: [{ status: "ok" }, { status: "ok" }], error: null })),
+    "system_health_response_malformed",
+  );
   await expectSafeFailureAsync(
     () => publishableKeyBootstrapPreflight(publicClientFixture({ data: null, error: { code: "fixture" } })),
     "publishable_key_bootstrap_preflight_rejected",
+  );
+  await expectSafeFailureAsync(
+    () => publishableKeyBootstrapPreflight(publicClientFixture({ data: null, error: { status: 401 } })),
+    "publishable_key_bootstrap_preflight_rejected",
+  );
+  await expectSafeFailureAsync(
+    () => publishableKeyBootstrapPreflight(publicClientFixture(
+      Object.assign(new Error("fixture"), { name: "TimeoutError" }),
+    )),
+    "auth_request_timeout",
   );
 
   const repairFixture = {
@@ -2437,6 +2635,22 @@ async function runSelfTests(repoRoot) {
       && !cleanupSource.includes("readRepair")
       && !cleanupSource.includes("recoverRepairBundle"),
     "post_success_cleanup_authorization_fixture_rejected",
+  );
+  const clientFactorySource = createClient.toString();
+  const keyInputSource = `${collectSecrets.toString()}\n${collectAbandonSecrets.toString()}`;
+  const publicPreflightSource = publishableKeyBootstrapPreflight.toString();
+  requireCondition(
+    clientFactorySource.includes("createApiKeyAwareBoundedFetch(key)")
+      && !clientFactorySource.includes("global: { fetch: boundedFetch")
+      && keyInputSource.includes('readMasked("Project URL exacta: ")).trim()')
+      && keyInputSource.includes('readMasked("Publishable/anon key: ")).trim()')
+      && keyInputSource.includes('readMasked("Service role/secret key: ")).trim()')
+      && !keyInputSource.includes('readMasked("Contraseña de Target C: ")).trim()')
+      && publicPreflightSource.includes('.from("system_health")')
+      && publicPreflightSource.includes('.select("status")')
+      && publicPreflightSource.includes(".limit(1)")
+      && !publicPreflightSource.includes(".eq("),
+    "api_key_client_and_preflight_source_fixture_rejected",
   );
   const createCall = [".auth.admin", ".createUser("].join("");
   requireCondition(

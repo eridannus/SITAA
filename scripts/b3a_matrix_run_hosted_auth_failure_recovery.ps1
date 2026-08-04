@@ -41,8 +41,8 @@ import { spawnSync } from "node:child_process";
 
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
-const HARNESS_VERSION = "2026-08-04-hosted-auth-failure-recovery-v8";
-const TARGET_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v5";
+const HARNESS_VERSION = "2026-08-04-hosted-auth-failure-recovery-v10";
+const TARGET_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v6";
 const EXPECTED_SUPABASE_JS_VERSION = "2.110.1";
 const OPERATOR_ABORT_EXIT_CODE = 2;
 const AUTH_REQUEST_TIMEOUT_MS = 20_000;
@@ -176,6 +176,15 @@ const runtimeState = {
 };
 let createSupabaseClient = null;
 
+const COLLECTED_CREDENTIAL_KEYS = Object.freeze([
+  "projectUrl",
+  "publicKey",
+  "serviceKey",
+  "adminAPassword",
+  "adminBPassword",
+  "targetPassword",
+]);
+
 class SafeFailure extends Error {
   constructor(code) {
     super(code);
@@ -190,6 +199,25 @@ function fail(code) {
 
 function requireCondition(condition, code) {
   if (!condition) fail(code);
+}
+
+function clearCollectedCredentials(credentials) {
+  requireCondition(
+    exactObject(credentials, COLLECTED_CREDENTIAL_KEYS),
+    "collected_credentials_shape_rejected",
+  );
+  for (const key of COLLECTED_CREDENTIAL_KEYS) credentials[key] = "";
+}
+
+function finishControlledMainExit(credentials, exitCode) {
+  requireCondition(
+    exitCode === 0 || exitCode === OPERATOR_ABORT_EXIT_CODE,
+    "controlled_exit_code_rejected",
+  );
+  clearCollectedCredentials(credentials);
+  runtimeState.databaseConnection = null;
+  createSupabaseClient = null;
+  process.exitCode = exitCode;
 }
 
 function normalizeEol(value) {
@@ -338,12 +366,31 @@ async function loadSupabaseJs(repoRoot) {
   return version;
 }
 
-function createIsolatedClient(projectUrl, key) {
-  requireCondition(typeof createSupabaseClient === "function", "supabase_js_not_loaded");
-  return createSupabaseClient(projectUrl, key, {
-    ...CLIENT_OPTIONS,
-    global: { fetch: boundedFetch },
-  });
+function isThreeSegmentJwt(value) {
+  return typeof value === "string" && /^[^.]+\.[^.]+\.[^.]+$/.test(value);
+}
+
+function validatePublicApiKey(value) {
+  requireCondition(
+    typeof value === "string"
+      && (/^sb_publishable_.+$/.test(value) || isThreeSegmentJwt(value)),
+    "publishable_key_shape_rejected",
+  );
+  return value;
+}
+
+function validatePrivilegedApiKey(value) {
+  requireCondition(
+    typeof value === "string"
+      && (/^sb_secret_.+$/.test(value) || isThreeSegmentJwt(value)),
+    "privileged_key_shape_rejected",
+  );
+  return value;
+}
+
+function isOpaqueApiKey(value) {
+  return typeof value === "string"
+    && (value.startsWith("sb_publishable_") || value.startsWith("sb_secret_"));
 }
 
 function boundedRequestInit(init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
@@ -352,16 +399,46 @@ function boundedRequestInit(init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
   const signal = init.signal
     ? AbortSignal.any([init.signal, timeoutSignal])
     : timeoutSignal;
-  return { ...init, signal };
+  return { ...init, headers: new Headers(init.headers), signal };
 }
 
-function boundedFetchWith(fetchImplementation, input, init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
+function apiKeyAwareRequestInit(apiKey, init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
+  const requestInit = boundedRequestInit(init, timeoutMs);
+  if (
+    isOpaqueApiKey(apiKey)
+      && requestInit.headers.get("authorization") === `Bearer ${apiKey}`
+  ) {
+    requestInit.headers.delete("authorization");
+  }
+  return requestInit;
+}
+
+function boundedFetchWith(fetchImplementation, apiKey, input, init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
   requireCondition(typeof fetchImplementation === "function", "auth_fetch_implementation_invalid");
-  return fetchImplementation(input, boundedRequestInit(init, timeoutMs));
+  return fetchImplementation(input, apiKeyAwareRequestInit(apiKey, init, timeoutMs));
 }
 
-function boundedFetch(input, init = {}) {
-  return boundedFetchWith(globalThis.fetch, input, init);
+function createApiKeyAwareBoundedFetch(
+  apiKey,
+  fetchImplementation = globalThis.fetch,
+  timeoutMs = AUTH_REQUEST_TIMEOUT_MS,
+) {
+  requireCondition(typeof fetchImplementation === "function", "auth_fetch_implementation_invalid");
+  return (input, init = {}) => boundedFetchWith(
+    fetchImplementation,
+    apiKey,
+    input,
+    init,
+    timeoutMs,
+  );
+}
+
+function createIsolatedClient(projectUrl, key) {
+  requireCondition(typeof createSupabaseClient === "function", "supabase_js_not_loaded");
+  return createSupabaseClient(projectUrl, key, {
+    ...CLIENT_OPTIONS,
+    global: { fetch: createApiKeyAwareBoundedFetch(key) },
+  });
 }
 
 function authRequestFailureCode(error, fallbackCode) {
@@ -1447,23 +1524,103 @@ async function runSelfTests(repoRoot) {
 
   requireCondition(readSupabaseJsVersion(repoRoot) === EXPECTED_SUPABASE_JS_VERSION, "self_test_dependency_rejected");
   validateCanonicalEdge(repoRoot);
+  const opaquePublicFixture = "sb_publishable_fixture_public";
+  const opaqueSecretFixture = "sb_secret_fixture_service";
+  const legacyAnonFixture = "legacyAnonHeader.legacyAnonPayload.legacyAnonSignature";
+  const legacyServiceFixture = "legacyServiceHeader.legacyServicePayload.legacyServiceSignature";
+  const userJwtFixture = "userHeader.userPayload.userSignature";
+  requireCondition(
+    validatePublicApiKey(opaquePublicFixture) === opaquePublicFixture
+      && validatePublicApiKey(legacyAnonFixture) === legacyAnonFixture
+      && validatePrivilegedApiKey(opaqueSecretFixture) === opaqueSecretFixture
+      && validatePrivilegedApiKey(legacyServiceFixture) === legacyServiceFixture,
+    "api_key_shape_fixture_rejected",
+  );
   const clientOptions = [];
   createSupabaseClient = (_projectUrl, _key, options) => {
     clientOptions.push(options);
     return Object.freeze({ options });
   };
   try {
-    for (let index = 0; index < 4; index += 1) {
-      createIsolatedClient("https://fixture.invalid", `fixture-key-${index}`);
+    for (const key of [opaquePublicFixture, opaquePublicFixture, opaquePublicFixture, opaqueSecretFixture]) {
+      createIsolatedClient("https://fixture.invalid", key);
     }
   } finally {
     createSupabaseClient = null;
   }
   requireCondition(
     clientOptions.length === 4
-      && clientOptions.every((options) => options.global?.fetch === boundedFetch)
+      && clientOptions.every((options) => typeof options.global?.fetch === "function")
+      && new Set(clientOptions.map((options) => options.global.fetch)).size === 4
       && AUTH_REQUEST_TIMEOUT_MS === 20_000,
     "bounded_client_fetch_fixture_failed",
+  );
+  const captureTransportFacts = async (apiKey, authorization) => {
+    const originalHeaders = new Headers({
+      apikey: apiKey,
+      aUtHoRiZaTiOn: authorization,
+      "x-fixture": "preserved",
+    });
+    const originalInit = { method: "GET", headers: originalHeaders };
+    const facts = {
+      apikeyPreserved: false,
+      authorizationAbsent: false,
+      authorizationPreserved: false,
+      headersCloned: false,
+      initCloned: false,
+      inputUnchanged: false,
+      signalPresent: false,
+      originalsUnchanged: false,
+    };
+    const fakeFetch = async (input, receivedInit) => {
+      facts.apikeyPreserved = receivedInit.headers.get("apikey") === apiKey;
+      facts.authorizationAbsent = !receivedInit.headers.has("authorization");
+      facts.authorizationPreserved = receivedInit.headers.get("authorization") === authorization;
+      facts.headersCloned = receivedInit.headers !== originalHeaders;
+      facts.initCloned = receivedInit !== originalInit;
+      facts.inputUnchanged = input === "https://fixture.invalid/transport";
+      facts.signalPresent = receivedInit.signal instanceof AbortSignal;
+      return Object.freeze({ ok: true });
+    };
+    await createApiKeyAwareBoundedFetch(apiKey, fakeFetch)(
+      "https://fixture.invalid/transport",
+      originalInit,
+    );
+    facts.originalsUnchanged = originalHeaders.get("authorization") === authorization
+      && originalHeaders.get("apikey") === apiKey
+      && !("signal" in originalInit);
+    return Object.freeze(facts);
+  };
+  const opaquePublicFacts = await captureTransportFacts(
+    opaquePublicFixture,
+    `Bearer ${opaquePublicFixture}`,
+  );
+  const opaqueSecretFacts = await captureTransportFacts(
+    opaqueSecretFixture,
+    `Bearer ${opaqueSecretFixture}`,
+  );
+  const legacyAnonFacts = await captureTransportFacts(
+    legacyAnonFixture,
+    `Bearer ${legacyAnonFixture}`,
+  );
+  const legacyServiceFacts = await captureTransportFacts(
+    legacyServiceFixture,
+    `Bearer ${legacyServiceFixture}`,
+  );
+  const userJwtFacts = await captureTransportFacts(
+    opaquePublicFixture,
+    `Bearer ${userJwtFixture}`,
+  );
+  requireCondition(
+    opaquePublicFacts.apikeyPreserved && opaquePublicFacts.authorizationAbsent
+      && opaqueSecretFacts.apikeyPreserved && opaqueSecretFacts.authorizationAbsent
+      && legacyAnonFacts.apikeyPreserved && legacyAnonFacts.authorizationPreserved
+      && legacyServiceFacts.apikeyPreserved && legacyServiceFacts.authorizationPreserved
+      && userJwtFacts.apikeyPreserved && userJwtFacts.authorizationPreserved
+      && [opaquePublicFacts, opaqueSecretFacts, legacyAnonFacts, legacyServiceFacts, userJwtFacts]
+        .every((facts) => facts.headersCloned && facts.initCloned && facts.inputUnchanged
+          && facts.signalPresent && facts.originalsUnchanged),
+    "api_key_transport_fixture_rejected",
   );
   const hangingFetch = (_input, init) => new Promise((_resolve, reject) => {
     const keepAlive = setTimeout(() => {}, 1_000);
@@ -1474,13 +1631,19 @@ async function runSelfTests(repoRoot) {
   });
   await expectSafeFailureAsync(
     () => authRequest(
-      () => boundedFetchWith(hangingFetch, "https://fixture.invalid", {}, 10),
+      () => createApiKeyAwareBoundedFetch(opaquePublicFixture, hangingFetch, 10)(
+        "https://fixture.invalid",
+      ),
       "auth_request_fixture_failed",
     ),
     "auth_request_timeout",
   );
   const priorController = new AbortController();
-  const combinedInit = boundedRequestInit({ signal: priorController.signal }, 1_000);
+  const combinedInit = apiKeyAwareRequestInit(
+    opaquePublicFixture,
+    { headers: { apikey: opaquePublicFixture }, signal: priorController.signal },
+    1_000,
+  );
   requireCondition(
     combinedInit.signal !== priorController.signal && !combinedInit.signal.aborted,
     "prior_abort_signal_combination_fixture_failed",
@@ -1883,8 +2046,8 @@ async function runSelfTests(repoRoot) {
   );
   requireCondition(HASH_PATTERN.test(CORE_EVIDENCE.sha256) && HASH_PATTERN.test(CORE_POSTCHECK_EVIDENCE.sha256), "central_hash_fixture_failed");
   requireCondition(
-    HARNESS_VERSION === "2026-08-04-hosted-auth-failure-recovery-v8"
-      && TARGET_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v5"
+    HARNESS_VERSION === "2026-08-04-hosted-auth-failure-recovery-v10"
+      && TARGET_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v6"
       && TARGET_BOOTSTRAP_EVIDENCE.markers.includes(`HARNESS_VERSION|${TARGET_BOOTSTRAP_VERSION}`)
       && TARGET_BOOTSTRAP_POSTCHECK_EVIDENCE.markers.includes(`HARNESS_VERSION|${TARGET_BOOTSTRAP_VERSION}`)
       && TARGET_BOOTSTRAP_REPAIR_ARTIFACTS.length === 6
@@ -1895,10 +2058,110 @@ async function runSelfTests(repoRoot) {
       && !baseline.includes("lower(email) like 'b3a-failure-target-"),
     "bootstrap_version_and_target_pattern_fixture_failed",
   );
+  const clientFactorySource = createIsolatedClient.toString();
+  const authClientMainSource = normalizeEol(main.toString());
+  requireCondition(
+    clientFactorySource.includes("createApiKeyAwareBoundedFetch(key)")
+      && !clientFactorySource.includes("global: { fetch: boundedFetch")
+      && authClientMainSource.includes('readMasked("Project URL exacta: ")).trim()')
+      && authClientMainSource.includes('readMasked("Publishable/anon key: ")).trim()')
+      && authClientMainSource.includes('readMasked("Service role/secret key: ")).trim()')
+      && !authClientMainSource.includes('readMasked("Contraseña de Admin A: ")).trim()')
+      && !authClientMainSource.includes('readMasked("Contraseña de Admin B: ")).trim()')
+      && !authClientMainSource.includes('readMasked("Contraseña de Target C preaprovisionado: ")).trim()')
+      && (authClientMainSource.match(/createIsolatedClient/g) ?? []).length === 4,
+    "api_key_client_source_fixture_failed",
+  );
   const forbiddenCreateUserCall = [".auth.admin", ".createUser("].join("");
   requireCondition(
     !main.toString().includes(forbiddenCreateUserCall),
     "failure_recovery_direct_user_creation_present",
+  );
+  const createCredentialFixture = () => ({
+    projectUrl: "https://fixture.invalid",
+    publicKey: "public-fixture",
+    serviceKey: "service-fixture",
+    adminAPassword: "admin-a-fixture",
+    adminBPassword: "admin-b-fixture",
+    targetPassword: "target-fixture",
+  });
+  const credentialsAreCleared = (credentials) => (
+    exactObject(credentials, COLLECTED_CREDENTIAL_KEYS)
+      && COLLECTED_CREDENTIAL_KEYS.every((key) => credentials[key] === "")
+  );
+  const previousExitCode = process.exitCode;
+  const previousDatabaseConnection = runtimeState.databaseConnection;
+  const previousClientFactory = createSupabaseClient;
+  try {
+    const cleanupFixture = createCredentialFixture();
+    clearCollectedCredentials(cleanupFixture);
+    requireCondition(credentialsAreCleared(cleanupFixture), "credential_cleanup_fixture_failed");
+
+    const runControlledExitFixture = (exitCode) => {
+      const credentials = createCredentialFixture();
+      runtimeState.databaseConnection = Object.freeze({ fixture: true });
+      createSupabaseClient = () => Object.freeze({ fixture: true });
+      let unexpectedFailurePathEntered = false;
+      try {
+        finishControlledMainExit(credentials, exitCode);
+      } catch {
+        unexpectedFailurePathEntered = true;
+      }
+      return Object.freeze({
+        credentials,
+        exitCode: process.exitCode,
+        databaseCleared: runtimeState.databaseConnection === null,
+        clientFactoryCleared: createSupabaseClient === null,
+        unexpectedFailurePathEntered,
+      });
+    };
+
+    const firstAbortFixture = runControlledExitFixture(OPERATOR_ABORT_EXIT_CODE);
+    const secondAbortFixture = runControlledExitFixture(OPERATOR_ABORT_EXIT_CODE);
+    requireCondition(
+      firstAbortFixture.exitCode === OPERATOR_ABORT_EXIT_CODE
+        && secondAbortFixture.exitCode === OPERATOR_ABORT_EXIT_CODE
+        && credentialsAreCleared(firstAbortFixture.credentials)
+        && credentialsAreCleared(secondAbortFixture.credentials)
+        && firstAbortFixture.databaseCleared
+        && secondAbortFixture.databaseCleared
+        && firstAbortFixture.clientFactoryCleared
+        && secondAbortFixture.clientFactoryCleared
+        && !firstAbortFixture.unexpectedFailurePathEntered
+        && !secondAbortFixture.unexpectedFailurePathEntered,
+      "controlled_abort_fixture_failed",
+    );
+
+    const approvedEvidenceFixture = ["FAILURE_RECOVERY_MATRIX|APPROVED"];
+    const successFixture = runControlledExitFixture(0);
+    if (successFixture.unexpectedFailurePathEntered) {
+      approvedEvidenceFixture.push("FAILURE_RECOVERY_MATRIX|REJECTED|unexpected_failure");
+    }
+    requireCondition(
+      successFixture.exitCode === 0
+        && credentialsAreCleared(successFixture.credentials)
+        && successFixture.databaseCleared
+        && successFixture.clientFactoryCleared
+        && !successFixture.unexpectedFailurePathEntered
+        && approvedEvidenceFixture.join("|") === "FAILURE_RECOVERY_MATRIX|APPROVED",
+      "controlled_success_epilogue_fixture_failed",
+    );
+  } finally {
+    process.exitCode = previousExitCode;
+    runtimeState.databaseConnection = previousDatabaseConnection;
+    createSupabaseClient = previousClientFactory;
+  }
+  const controlledExitSource = normalizeEol(finishControlledMainExit.toString());
+  const forbiddenConstCredentialBinding = /\bconst\s+(projectUrl|publicKey|serviceKey|adminAPassword|adminBPassword|targetPassword)\s*=/;
+  requireCondition(
+    authClientMainSource.includes("const credentials = {")
+      && !forbiddenConstCredentialBinding.test(authClientMainSource)
+      && (authClientMainSource.match(/finishControlledMainExit\(credentials, OPERATOR_ABORT_EXIT_CODE\);\s+return;/g) ?? []).length === 2
+      && authClientMainSource.includes('record("FAILURE_RECOVERY_MATRIX|APPROVED");\n  finishControlledMainExit(credentials, 0);\n  return;')
+      && !controlledExitSource.includes("handleFailure")
+      && !controlledExitSource.includes("appendFailureEvidence")
+      && !controlledExitSource.includes("fs."),
+    "controlled_exit_source_fixture_failed",
   );
   console.log("B3A_HOSTED_AUTH_FAILURE_RECOVERY_FIXTURES|APPROVED");
 }
@@ -2047,25 +2310,40 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
   );
   assertNoBootstrapRepairArtifacts(reconciliationRoot);
   const supabaseJsVersion = await loadSupabaseJs(repoRoot);
-  let projectUrl = await readMasked("Project URL exacta: ");
-  let publicKey = await readMasked("Publishable/anon key: ");
-  let serviceKey = await readMasked("Service role/secret key: ");
-  let adminAPassword = await readMasked("Contraseña de Admin A: ");
-  let adminBPassword = await readMasked("Contraseña de Admin B: ");
-  let targetPassword = await readMasked("Contraseña de Target C preaprovisionado: ");
-  requireCondition(projectUrl === EXPECTED_PROJECT_URL, "project_url_rejected");
+  const credentials = {
+    projectUrl: (await readMasked("Project URL exacta: ")).trim(),
+    publicKey: validatePublicApiKey((await readMasked("Publishable/anon key: ")).trim()),
+    serviceKey: validatePrivilegedApiKey((await readMasked("Service role/secret key: ")).trim()),
+    adminAPassword: await readMasked("Contraseña de Admin A: "),
+    adminBPassword: await readMasked("Contraseña de Admin B: "),
+    targetPassword: await readMasked("Contraseña de Target C preaprovisionado: "),
+  };
+  requireCondition(credentials.projectUrl === EXPECTED_PROJECT_URL, "project_url_rejected");
   requireCondition(
-    publicKey.length > 0 && serviceKey.length > 0 && adminAPassword.length > 0
-      && adminBPassword.length > 0 && targetPassword.length > 0,
+    credentials.adminAPassword.length > 0
+      && credentials.adminBPassword.length > 0
+      && credentials.targetPassword.length > 0,
     "credentials_required",
   );
 
-  const adminAClient = createIsolatedClient(projectUrl, publicKey);
-  const adminBClient = createIsolatedClient(projectUrl, publicKey);
-  const targetClient = createIsolatedClient(projectUrl, publicKey);
-  const serviceClient = createIsolatedClient(projectUrl, serviceKey);
-  let adminASession = await signInExact(adminAClient, adminA.email, adminAPassword, adminA.id, "admin_a_login_failed");
-  let adminBSession = await signInExact(adminBClient, adminB.email, adminBPassword, adminB.id, "admin_b_login_failed");
+  const adminAClient = createIsolatedClient(credentials.projectUrl, credentials.publicKey);
+  const adminBClient = createIsolatedClient(credentials.projectUrl, credentials.publicKey);
+  const targetClient = createIsolatedClient(credentials.projectUrl, credentials.publicKey);
+  const serviceClient = createIsolatedClient(credentials.projectUrl, credentials.serviceKey);
+  let adminASession = await signInExact(
+    adminAClient,
+    adminA.email,
+    credentials.adminAPassword,
+    adminA.id,
+    "admin_a_login_failed",
+  );
+  let adminBSession = await signInExact(
+    adminBClient,
+    adminB.email,
+    credentials.adminBPassword,
+    adminB.id,
+    "admin_b_login_failed",
+  );
 
   runtimeState.phase = "target_resume";
   let targetEmail;
@@ -2086,7 +2364,13 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
   );
   requireCondition(UUID_PATTERN.test(targetId) && isApprovedTargetEmail(targetEmail), "failure_target_identity_rejected");
   runtimeState.targetId = targetId;
-  await signInExact(targetClient, targetEmail, targetPassword, targetId, "failure_target_login_failed");
+  await signInExact(
+    targetClient,
+    targetEmail,
+    credentials.targetPassword,
+    targetId,
+    "failure_target_login_failed",
+  );
 
   const targetContract = parseDelimited(
     executeReadOnlySql(databaseConnection, targetContractSql(targetId, targetEmail), "FAILURE_TARGET_CONTRACT"),
@@ -2113,9 +2397,7 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
   console.log("Escribe RESUME_FAILURE_RECOVERY_TARGET para reutilizar Target C.");
   if (!await readConfirmation("RESUME_FAILURE_RECOVERY_TARGET")) {
     console.log("FAILURE_RECOVERY_MATRIX|ABORTED");
-    runtimeState.databaseConnection = null;
-    createSupabaseClient = null;
-    process.exitCode = OPERATOR_ABORT_EXIT_CODE;
+    finishControlledMainExit(credentials, OPERATOR_ABORT_EXIT_CODE);
     return;
   }
 
@@ -2123,15 +2405,7 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
   console.log("Escribe CONTINUE_FAILURE_RECOVERY_IRREVERSIBLE para iniciar operaciones B.3a.");
   if (!await readConfirmation("CONTINUE_FAILURE_RECOVERY_IRREVERSIBLE")) {
     console.log("FAILURE_RECOVERY_MATRIX|ABORTED");
-    projectUrl = "";
-    publicKey = "";
-    serviceKey = "";
-    adminAPassword = "";
-    adminBPassword = "";
-    targetPassword = "";
-    runtimeState.databaseConnection = null;
-    createSupabaseClient = null;
-    process.exitCode = OPERATOR_ABORT_EXIT_CODE;
+    finishControlledMainExit(credentials, OPERATOR_ABORT_EXIT_CODE);
     return;
   }
 
@@ -2587,15 +2861,8 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
   record("READ_ONLY_TRANSACTION|true");
   record("ROLLBACK|true");
   record("FAILURE_RECOVERY_MATRIX|APPROVED");
-
-  projectUrl = "";
-  publicKey = "";
-  serviceKey = "";
-  adminAPassword = "";
-  adminBPassword = "";
-  targetPassword = "";
-  runtimeState.databaseConnection = null;
-  createSupabaseClient = null;
+  finishControlledMainExit(credentials, 0);
+  return;
 }
 
 function appendFailureEvidence(line) {
