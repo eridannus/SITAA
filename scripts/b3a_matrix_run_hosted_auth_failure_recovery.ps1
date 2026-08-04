@@ -18,7 +18,17 @@ $nodeModulePath = Join-Path $temporaryRoot "hosted-auth-failure-recovery.mjs"
 $protectedLocalArtifactNames = @(
   "b3a_matrix_hosted_auth_failure_recovery.local.txt",
   "b3a_matrix_hosted_auth_failure_recovery_postcheck.local.txt",
-  "b3a_matrix_hosted_auth_failure_recovery_confirmation_repair.local.txt"
+  "b3a_matrix_hosted_auth_failure_recovery_confirmation_repair.local.txt",
+  "b3a_matrix_failure_recovery_target_bootstrap.local.txt",
+  "b3a_matrix_failure_recovery_target_bootstrap.next.local.txt",
+  "b3a_matrix_failure_recovery_target_bootstrap_postcheck.local.txt",
+  "b3a_matrix_failure_recovery_target_bootstrap_postcheck.next.local.txt",
+  "b3a_matrix_failure_recovery_target_handler_repair.local.json",
+  "b3a_matrix_failure_recovery_target_handler_repair.next.local.json",
+  "b3a_matrix_failure_recovery_target_handler_repair.previous.local.json",
+  "b3a_matrix_failure_recovery_target_handler_snapshot.local.sql",
+  "b3a_matrix_failure_recovery_target_handler_snapshot.next.local.sql",
+  "b3a_matrix_failure_recovery_target_handler_snapshot.previous.local.sql"
 )
 
 $nodeModule = @'
@@ -31,9 +41,11 @@ import { spawnSync } from "node:child_process";
 
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
-const HARNESS_VERSION = "2026-08-03-hosted-auth-failure-recovery-v3";
+const HARNESS_VERSION = "2026-08-04-hosted-auth-failure-recovery-v8";
+const TARGET_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v5";
 const EXPECTED_SUPABASE_JS_VERSION = "2.110.1";
 const OPERATOR_ABORT_EXIT_CODE = 2;
+const AUTH_REQUEST_TIMEOUT_MS = 20_000;
 const POSTGRES_PROCESS_TIMEOUT_MS = 45_000;
 const POSTGRES_MAX_BUFFER_BYTES = 1024 * 1024;
 const DEFAULT_POSTGRES_PORT = 5432;
@@ -50,13 +62,46 @@ const CORE_POSTCHECK_EVIDENCE = Object.freeze({
   sha256: "29c38e45dd6b8b5ae3aec4dd57380aef46c1ed198e89be03b1a45477ed49a389",
   marker: "B3A_CORE_POSTCHECK|APPROVED",
 });
+const TARGET_BOOTSTRAP_EVIDENCE = Object.freeze({
+  name: "b3a_matrix_failure_recovery_target_bootstrap.local.txt",
+  markers: Object.freeze([
+    `HARNESS_VERSION|${TARGET_BOOTSTRAP_VERSION}`,
+    "FAILURE_TARGET_BOOTSTRAP|APPROVED",
+    "AUTH_HANDLER_STATE|CANONICAL",
+  ]),
+});
+const TARGET_BOOTSTRAP_POSTCHECK_EVIDENCE = Object.freeze({
+  name: "b3a_matrix_failure_recovery_target_bootstrap_postcheck.local.txt",
+  markers: Object.freeze([
+    `HARNESS_VERSION|${TARGET_BOOTSTRAP_VERSION}`,
+    "FAILURE_TARGET_AUTH_CONTRACT|APPROVED",
+    "FAILURE_TARGET_PROFILE_CONTRACT|APPROVED",
+    "FAILURE_TARGET_ASSIGNMENTS|0",
+    "AUTH_HANDLER_STATE|CANONICAL",
+    "READ_ONLY_TRANSACTION|true",
+    "ROLLBACK|true",
+  ]),
+});
+const TARGET_BOOTSTRAP_REPAIR_ARTIFACTS = Object.freeze([
+  "b3a_matrix_failure_recovery_target_handler_repair.local.json",
+  "b3a_matrix_failure_recovery_target_handler_repair.next.local.json",
+  "b3a_matrix_failure_recovery_target_handler_repair.previous.local.json",
+  "b3a_matrix_failure_recovery_target_handler_snapshot.local.sql",
+  "b3a_matrix_failure_recovery_target_handler_snapshot.next.local.sql",
+  "b3a_matrix_failure_recovery_target_handler_snapshot.previous.local.sql",
+]);
+const TARGET_BOOTSTRAP_EVIDENCE_JOURNALS = Object.freeze([
+  "b3a_matrix_failure_recovery_target_bootstrap.next.local.txt",
+  "b3a_matrix_failure_recovery_target_bootstrap_postcheck.next.local.txt",
+]);
 const EXPECTED_EDGE_HASHES = new Map([
   ["index.ts", "5d7118a339f7854519c064c205453bb505f1a7b19185d62bc9177e696a774ad5"],
   ["auth-admin-adapter.ts", "83acccb558c03564b36512d772f84adb8e7b58157efbd592e5e253b7befd4bef"],
 ]);
 const EXPECTED_ADMIN_ALIASES = new Set(["admin_a", "admin_b"]);
-const TARGET_EMAIL_PATTERN = "b3a-failure-target-%@example.invalid";
-const TARGET_FIRST_NAMES = "Objetivo técnico matriz de fallos C";
+const TARGET_EMAIL_SQL_PATTERN = "^b3a-failure-target-[0-9]{17}-[0-9a-f]{12}@example\\.invalid$";
+const TARGET_EMAIL_PATTERN = /^b3a-failure-target-\d{17}-[a-f0-9]{12}@example\.invalid$/;
+const TARGET_FIRST_NAMES = "Objetivo Matriz C";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH_PATTERN = /^[0-9a-f]{32,64}$/i;
@@ -94,7 +139,7 @@ const READ_ONLY_PREFIXES = new Set([
 ]);
 const FAILURE_PHASES = new Set([
   "before_first_confirmation",
-  "target_creation",
+  "target_resume",
   "before_second_confirmation",
   "auth_failure_injection",
   "request_replays",
@@ -214,6 +259,36 @@ function validateExactEvidence(reconciliationRoot, contract) {
   requireCondition(buffer.toString("utf8").includes(contract.marker), "central_evidence_marker_rejected");
 }
 
+function validateBootstrapEvidence(reconciliationRoot, contract) {
+  const filePath = path.join(reconciliationRoot, contract.name);
+  const buffer = readRequiredBuffer(
+    filePath,
+    "failure_target_bootstrap_evidence_missing",
+  );
+  requireCondition(buffer.length > 0 && buffer.length <= 32_768, "failure_target_bootstrap_evidence_size_rejected");
+  const text = normalizeEol(buffer.toString("utf8"));
+  requireCondition(
+    contract.markers.every((marker) => text.includes(marker)),
+    "failure_target_bootstrap_evidence_marker_rejected",
+  );
+  requireCondition(!containsForbiddenEvidence(text), "failure_target_bootstrap_evidence_unsafe");
+  return filePath;
+}
+
+function hashBootstrapEvidence(reconciliationRoot, contract) {
+  const filePath = validateBootstrapEvidence(reconciliationRoot, contract);
+  return hashBuffer(fs.readFileSync(filePath));
+}
+
+function assertNoBootstrapRepairArtifacts(reconciliationRoot) {
+  requireCondition(
+    [...TARGET_BOOTSTRAP_REPAIR_ARTIFACTS, ...TARGET_BOOTSTRAP_EVIDENCE_JOURNALS].every(
+      (name) => !fs.existsSync(path.join(reconciliationRoot, name)),
+    ),
+    "failure_target_bootstrap_repair_pending",
+  );
+}
+
 function validateCanonicalEdge(repoRoot) {
   const edgeRoot = path.join(
     repoRoot,
@@ -265,7 +340,48 @@ async function loadSupabaseJs(repoRoot) {
 
 function createIsolatedClient(projectUrl, key) {
   requireCondition(typeof createSupabaseClient === "function", "supabase_js_not_loaded");
-  return createSupabaseClient(projectUrl, key, CLIENT_OPTIONS);
+  return createSupabaseClient(projectUrl, key, {
+    ...CLIENT_OPTIONS,
+    global: { fetch: boundedFetch },
+  });
+}
+
+function boundedRequestInit(init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
+  requireCondition(Number.isSafeInteger(timeoutMs) && timeoutMs > 0, "auth_request_timeout_invalid");
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = init.signal
+    ? AbortSignal.any([init.signal, timeoutSignal])
+    : timeoutSignal;
+  return { ...init, signal };
+}
+
+function boundedFetchWith(fetchImplementation, input, init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
+  requireCondition(typeof fetchImplementation === "function", "auth_fetch_implementation_invalid");
+  return fetchImplementation(input, boundedRequestInit(init, timeoutMs));
+}
+
+function boundedFetch(input, init = {}) {
+  return boundedFetchWith(globalThis.fetch, input, init);
+}
+
+function authRequestFailureCode(error, fallbackCode) {
+  requireCondition(
+    typeof fallbackCode === "string"
+      && /^[a-z][a-z0-9_]{0,79}$/.test(fallbackCode)
+      && !containsForbiddenEvidence(fallbackCode),
+    "auth_request_fallback_code_invalid",
+  );
+  const name = typeof error?.name === "string" ? error.name : "";
+  if (name === "AbortError" || name === "TimeoutError") return "auth_request_timeout";
+  return fallbackCode;
+}
+
+async function authRequest(callback, fallbackCode) {
+  try {
+    return await callback();
+  } catch (error) {
+    fail(authRequestFailureCode(error, fallbackCode));
+  }
 }
 
 function sqlLiteralUuid(value) {
@@ -550,17 +666,17 @@ select concat_ws('|','FAILURE_RECOVERY_BASELINE',
   (select count(*) from public.admin_auth_operations where status<>'succeeded'),
   (select count(*) from public.admin_audit_events where action_code in (${allActions})),
   (select count(*) from public.admin_audit_events where action_code in (${authActions}) and outcome='failure'),
-  (select count(*) from auth.users where lower(email) like '${TARGET_EMAIL_PATTERN}'),
+  (select count(*) from auth.users where lower(email) ~ '${TARGET_EMAIL_SQL_PATTERN}'),
   (select count(*) from auth.identities identity_row join auth.users auth_user
     on auth_user.id=identity_row.user_id
-    where lower(auth_user.email) like '${TARGET_EMAIL_PATTERN}' and identity_row.provider='email'),
-  (select count(*) from public.profiles where lower(email) like '${TARGET_EMAIL_PATTERN}'),
+    where lower(auth_user.email) ~ '${TARGET_EMAIL_SQL_PATTERN}' and identity_row.provider='email'),
+  (select count(*) from public.profiles where lower(email) ~ '${TARGET_EMAIL_SQL_PATTERN}'),
   (select count(*) from public.role_assignments assignment join public.profiles profile
-    on profile.id=assignment.user_id where lower(profile.email) like '${TARGET_EMAIL_PATTERN}'),
+    on profile.id=assignment.user_id where lower(profile.email) ~ '${TARGET_EMAIL_SQL_PATTERN}'),
   (select count(*) from public.admin_auth_operations operation join public.profiles profile
-    on profile.id=operation.target_profile_id where lower(profile.email) like '${TARGET_EMAIL_PATTERN}'),
+    on profile.id=operation.target_profile_id where lower(profile.email) ~ '${TARGET_EMAIL_SQL_PATTERN}'),
   (select count(*) from auth.users auth_user join public.profiles profile on profile.id=auth_user.id
-    where lower(auth_user.email) like '${TARGET_EMAIL_PATTERN}'
+    where lower(auth_user.email) ~ '${TARGET_EMAIL_SQL_PATTERN}'
       and auth_user.email_confirmed_at is not null
       and (auth_user.banned_until is null or auth_user.banned_until<=clock_timestamp())
       and auth_user.raw_app_meta_data->>'sitaa_account_kind'='technical'
@@ -857,19 +973,19 @@ function confirmationRepairBaselineSql(confirmedAt) {
 begin;
 set transaction read only;
 select concat_ws('|','CONFIRMATION_REPAIR_BASELINE',
-  (select count(*) from auth.users where lower(email) like '${TARGET_EMAIL_PATTERN}'),
+  (select count(*) from auth.users where lower(email) ~ '${TARGET_EMAIL_SQL_PATTERN}'),
   (select count(*) from auth.identities identity_row join auth.users auth_user
     on auth_user.id=identity_row.user_id
-    where lower(auth_user.email) like '${TARGET_EMAIL_PATTERN}' and identity_row.provider='email'),
+    where lower(auth_user.email) ~ '${TARGET_EMAIL_SQL_PATTERN}' and identity_row.provider='email'),
   (select count(*) from public.profiles profile join auth.users auth_user
     on auth_user.id=profile.id
-    where lower(auth_user.email) like '${TARGET_EMAIL_PATTERN}'
+    where lower(auth_user.email) ~ '${TARGET_EMAIL_SQL_PATTERN}'
       and profile.account_kind='technical'
       and profile.account_status='inactive'
       and not profile.is_active),
   (select count(*) from public.admin_auth_operations operation join public.profiles profile
     on profile.id=operation.target_profile_id
-    where lower(profile.email) like '${TARGET_EMAIL_PATTERN}'
+    where lower(profile.email) ~ '${TARGET_EMAIL_SQL_PATTERN}'
       and operation.operation_code='reactivate'
       and operation.status='processing'
       and operation.completed_stage='auth_synchronized'),
@@ -879,7 +995,7 @@ select concat_ws('|','CONFIRMATION_REPAIR_BASELINE',
       else 'conflict'
     end
     from auth.users auth_user
-    where lower(auth_user.email) like '${TARGET_EMAIL_PATTERN}'),'missing'));
+    where lower(auth_user.email) ~ '${TARGET_EMAIL_SQL_PATTERN}'),'missing'));
 rollback;`;
 }
 
@@ -894,7 +1010,7 @@ begin
   select auth_user.id,auth_user.email_confirmed_at
   into strict target,current_confirmed_at
   from auth.users auth_user
-  where lower(auth_user.email) like '${TARGET_EMAIL_PATTERN}'
+  where lower(auth_user.email) ~ '${TARGET_EMAIL_SQL_PATTERN}'
   for update;
   if (select count(*) from public.admin_auth_operations operation
       where operation.target_profile_id=target
@@ -926,11 +1042,11 @@ function confirmationRepairVerifiedSql(confirmedAt) {
 begin;
 set transaction read only;
 select concat_ws('|','TARGET_CONFIRMATION_RESTORED_CHECK',
-  (select count(*) from auth.users where lower(email) like '${TARGET_EMAIL_PATTERN}'
+  (select count(*) from auth.users where lower(email) ~ '${TARGET_EMAIL_SQL_PATTERN}'
     and email_confirmed_at=${sqlLiteralTimestamp(confirmedAt)}),
   (select count(*) from public.admin_auth_operations operation join public.profiles profile
     on profile.id=operation.target_profile_id
-    where lower(profile.email) like '${TARGET_EMAIL_PATTERN}'
+    where lower(profile.email) ~ '${TARGET_EMAIL_SQL_PATTERN}'
       and operation.operation_code='reactivate'
       and operation.status='processing'
       and operation.completed_stage='auth_synchronized'));
@@ -1075,22 +1191,22 @@ function databaseErrorMatches(error, code, message) {
 
 async function prepareOperation(client, targetId, transition, reason, requestId) {
   const normalizedReason = reason.replace(/\s+/g, " ").trim();
-  const result = await client.rpc("prepare_admin_account_auth_lifecycle_b3a", {
+  const result = await authRequest(() => client.rpc("prepare_admin_account_auth_lifecycle_b3a", {
     requested_profile_id: targetId,
     requested_transition: transition,
     transition_reason: normalizedReason,
     request_id: requestId,
-  });
+  }), "prepare_operation_request_failed");
   return result.error
     ? { error: result.error, operation: null }
     : { error: null, operation: parseOperationSnapshot(result.data, { targetId, transition }) };
 }
 
 async function claimOperation(serviceClient, operationId, actorId) {
-  const result = await serviceClient.rpc("claim_admin_auth_operation_b3a", {
+  const result = await authRequest(() => serviceClient.rpc("claim_admin_auth_operation_b3a", {
     requested_operation_id: operationId,
     caller_profile_id: actorId,
-  });
+  }), "claim_operation_request_failed");
   requireCondition(!result.error, "claim_operation_failed");
   const claim = parseClaim(result.data, operationId);
   requireCondition(claim?.claimed === true, "claim_operation_rejected");
@@ -1098,13 +1214,13 @@ async function claimOperation(serviceClient, operationId, actorId) {
 }
 
 async function recordOperationResult(serviceClient, operation, actorId, requestedResult, stableErrorCode) {
-  const result = await serviceClient.rpc("record_admin_auth_operation_result_b3a", {
+  const result = await authRequest(() => serviceClient.rpc("record_admin_auth_operation_result_b3a", {
     requested_operation_id: operation.operationId,
     caller_profile_id: actorId,
     claimed_attempt_count: operation.attemptCount,
     requested_result: requestedResult,
     stable_error_code: stableErrorCode,
-  });
+  }), "record_operation_result_request_failed");
   requireCondition(!result.error, "record_operation_result_failed");
   const snapshot = parseOperationSnapshot(result.data, { operationId: operation.operationId });
   requireCondition(snapshot !== null, "record_operation_result_malformed");
@@ -1112,7 +1228,10 @@ async function recordOperationResult(serviceClient, operation, actorId, requeste
 }
 
 async function edgeResponse(client, payload) {
-  const result = await client.functions.invoke("admin-account-auth-lifecycle", { body: payload });
+  const result = await authRequest(
+    () => client.functions.invoke("admin-account-auth-lifecycle", { body: payload }),
+    "edge_request_failed",
+  );
   let data = result.data;
   let httpStatus = result.error ? null : 200;
   if (result.error) {
@@ -1136,7 +1255,10 @@ async function edgeResponse(client, payload) {
 }
 
 async function signInExact(client, email, password, expectedId, failureCode) {
-  const result = await client.auth.signInWithPassword({ email, password });
+  const result = await authRequest(
+    () => client.auth.signInWithPassword({ email, password }),
+    failureCode,
+  );
   requireCondition(!result.error && result.data?.session && result.data?.user, failureCode);
   requireCondition(result.data.user.id === expectedId, "authenticated_user_mismatch");
   return result.data.session;
@@ -1147,7 +1269,10 @@ async function refreshExact(client, session, expectedId, failureCode) {
     typeof session?.refresh_token === "string" && session.refresh_token.length > 0,
     failureCode,
   );
-  const result = await client.auth.refreshSession({ refresh_token: session.refresh_token });
+  const result = await authRequest(
+    () => client.auth.refreshSession({ refresh_token: session.refresh_token }),
+    failureCode,
+  );
   requireCondition(!result.error && result.data?.session && result.data?.user, failureCode);
   requireCondition(result.data.user.id === expectedId, "refreshed_user_mismatch");
   return result.data.session;
@@ -1157,7 +1282,10 @@ async function listAllAuthUsers(serviceClient) {
   const users = [];
   const perPage = 200;
   for (let page = 1; page <= 100; page += 1) {
-    const result = await serviceClient.auth.admin.listUsers({ page, perPage });
+    const result = await authRequest(
+      () => serviceClient.auth.admin.listUsers({ page, perPage }),
+      "auth_user_inventory_failed",
+    );
     requireCondition(!result.error && Array.isArray(result.data?.users), "auth_user_inventory_failed");
     users.push(...result.data.users);
     if (result.data.users.length < perPage) return users;
@@ -1167,7 +1295,7 @@ async function listAllAuthUsers(serviceClient) {
 
 function isApprovedTargetEmail(value) {
   return typeof value === "string"
-    && /^b3a-failure-target-[a-z0-9-]+@example\.invalid$/.test(value.toLowerCase());
+    && TARGET_EMAIL_PATTERN.test(value.toLowerCase());
 }
 
 function stableValue(value) {
@@ -1207,15 +1335,42 @@ function authFingerprint(user) {
 }
 
 async function exactAdminUser(serviceClient, targetId) {
-  const result = await serviceClient.auth.admin.getUserById(targetId);
+  const result = await authRequest(
+    () => serviceClient.auth.admin.getUserById(targetId),
+    "auth_target_lookup_failed",
+  );
   requireCondition(!result.error && result.data?.user?.id === targetId, "auth_target_lookup_failed");
   return result.data.user;
 }
 
-function generateTargetEmail() {
-  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").toLowerCase();
-  const suffix = crypto.randomBytes(6).toString("hex");
-  return `b3a-failure-target-${stamp}-${suffix}@example.invalid`;
+function authBanIsActive(user) {
+  const bannedUntil = typeof user?.banned_until === "string"
+    ? Date.parse(user.banned_until)
+    : Number.NaN;
+  return Number.isFinite(bannedUntil) && bannedUntil > Date.now();
+}
+
+async function reconcileReactivationAuthUpdate(serviceClient, targetId) {
+  const before = await exactAdminUser(serviceClient, targetId);
+  requireCondition(authBanIsActive(before), "reactivation_target_not_banned");
+  let response = null;
+  let requestFailed = false;
+  let authCalls = 0;
+  try {
+    authCalls += 1;
+    response = await serviceClient.auth.admin.updateUserById(targetId, { ban_duration: "none" });
+  } catch (error) {
+    requestFailed = true;
+    void authRequestFailureCode(error, "reactivation_auth_update_failed");
+  }
+  const after = await exactAdminUser(serviceClient, targetId);
+  requireCondition(after.id === targetId, "reactivation_auth_update_identity_rejected");
+  if (authBanIsActive(after)) fail("reactivation_auth_update_not_applied");
+  if (!requestFailed && !response?.error) {
+    requireCondition(response?.data?.user?.id === targetId, "reactivation_auth_update_response_malformed");
+    return Object.freeze({ classification: "confirmed_response", user: after, authCalls });
+  }
+  return Object.freeze({ classification: "response_lost_but_applied", user: after, authCalls });
 }
 
 function operationStateEquals(parts, expected) {
@@ -1280,11 +1435,173 @@ async function runSelfTests(repoRoot) {
   const otherRequest = "66666666-6666-4666-8666-666666666666";
   const confirmedAt = "2026-08-03T12:00:00.000Z";
   const reason = "Prueba sintética de recuperación B.3a";
+  const expectSafeFailureAsync = async (callback, expectedCode) => {
+    let rejected = false;
+    try {
+      await callback();
+    } catch (error) {
+      rejected = error instanceof SafeFailure && error.code === expectedCode;
+    }
+    requireCondition(rejected, `expected_${expectedCode}_fixture_rejected`);
+  };
 
   requireCondition(readSupabaseJsVersion(repoRoot) === EXPECTED_SUPABASE_JS_VERSION, "self_test_dependency_rejected");
   validateCanonicalEdge(repoRoot);
+  const clientOptions = [];
+  createSupabaseClient = (_projectUrl, _key, options) => {
+    clientOptions.push(options);
+    return Object.freeze({ options });
+  };
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      createIsolatedClient("https://fixture.invalid", `fixture-key-${index}`);
+    }
+  } finally {
+    createSupabaseClient = null;
+  }
+  requireCondition(
+    clientOptions.length === 4
+      && clientOptions.every((options) => options.global?.fetch === boundedFetch)
+      && AUTH_REQUEST_TIMEOUT_MS === 20_000,
+    "bounded_client_fetch_fixture_failed",
+  );
+  const hangingFetch = (_input, init) => new Promise((_resolve, reject) => {
+    const keepAlive = setTimeout(() => {}, 1_000);
+    init.signal.addEventListener("abort", () => {
+      clearTimeout(keepAlive);
+      reject(init.signal.reason);
+    }, { once: true });
+  });
+  await expectSafeFailureAsync(
+    () => authRequest(
+      () => boundedFetchWith(hangingFetch, "https://fixture.invalid", {}, 10),
+      "auth_request_fixture_failed",
+    ),
+    "auth_request_timeout",
+  );
+  const priorController = new AbortController();
+  const combinedInit = boundedRequestInit({ signal: priorController.signal }, 1_000);
+  requireCondition(
+    combinedInit.signal !== priorController.signal && !combinedInit.signal.aborted,
+    "prior_abort_signal_combination_fixture_failed",
+  );
+  priorController.abort(new DOMException("fixture", "AbortError"));
+  await Promise.resolve();
+  requireCondition(combinedInit.signal.aborted, "prior_abort_signal_propagation_fixture_failed");
+  const sensitiveDiagnostic = ["https", "://", "fixture.invalid/path?api", "key=fixture-sensitive-key"].join("");
+  const sanitizedTimeout = authRequestFailureCode(
+    Object.assign(new Error(sensitiveDiagnostic), { name: "TimeoutError" }),
+    "auth_request_fixture_failed",
+  );
+  const sanitizedFailure = authRequestFailureCode(
+    new Error(sensitiveDiagnostic),
+    "auth_request_fixture_failed",
+  );
+  const sanitizedAbort = authRequestFailureCode(
+    Object.assign(new Error(sensitiveDiagnostic), { name: "AbortError" }),
+    "auth_request_fixture_failed",
+  );
+  requireCondition(
+    sanitizedTimeout === "auth_request_timeout"
+      && sanitizedAbort === "auth_request_timeout"
+      && sanitizedFailure === "auth_request_fixture_failed"
+      && containsForbiddenEvidence(sensitiveDiagnostic)
+      && !containsForbiddenEvidence(`${sanitizedTimeout}|${sanitizedAbort}|${sanitizedFailure}`),
+    "auth_request_diagnostic_sanitization_fixture_failed",
+  );
+
+  const futureBan = "2099-01-01T00:00:00.000Z";
+  const reactivationClientFixture = ({ updateResult = null, updateError = null, banRemains = false }) => {
+    const calls = { lookup: 0, update: 0 };
+    const client = {
+      auth: { admin: {
+        getUserById: async (requestedId) => {
+          calls.lookup += 1;
+          return {
+            data: { user: {
+              id: requestedId,
+              banned_until: calls.lookup === 1 || banRemains ? futureBan : null,
+            } },
+            error: null,
+          };
+        },
+        updateUserById: async (requestedId, attributes) => {
+          calls.update += 1;
+          requireCondition(
+            requestedId === target && attributes?.ban_duration === "none",
+            "reactivation_update_payload_fixture_failed",
+          );
+          if (updateError) throw updateError;
+          return updateResult;
+        },
+      } },
+    };
+    return { client, calls };
+  };
+  const confirmedFixture = reactivationClientFixture({
+    updateResult: { data: { user: { id: target } }, error: null },
+  });
+  const confirmedUpdate = await reconcileReactivationAuthUpdate(confirmedFixture.client, target);
+  requireCondition(
+    confirmedUpdate.classification === "confirmed_response"
+      && confirmedUpdate.authCalls === 1
+      && confirmedFixture.calls.update === 1
+      && confirmedFixture.calls.lookup === 2,
+    "reactivation_confirmed_response_fixture_failed",
+  );
+  const lostFixture = reactivationClientFixture({
+    updateError: new DOMException("fixture", "TimeoutError"),
+  });
+  const lostUpdate = await reconcileReactivationAuthUpdate(lostFixture.client, target);
+  requireCondition(
+    lostUpdate.classification === "response_lost_but_applied"
+      && lostUpdate.authCalls === 1
+      && lostFixture.calls.update === 1
+      && lostFixture.calls.lookup === 2,
+    "reactivation_response_lost_fixture_failed",
+  );
+  const errorResponseFixture = reactivationClientFixture({
+    updateResult: { data: null, error: { code: "fixture_provider_error" } },
+  });
+  const errorResponseUpdate = await reconcileReactivationAuthUpdate(errorResponseFixture.client, target);
+  requireCondition(
+    errorResponseUpdate.classification === "response_lost_but_applied"
+      && errorResponseUpdate.authCalls === 1
+      && errorResponseFixture.calls.update === 1
+      && errorResponseFixture.calls.lookup === 2,
+    "reactivation_error_response_lost_fixture_failed",
+  );
+  const notAppliedFixture = reactivationClientFixture({
+    updateResult: { data: { user: { id: target } }, error: null },
+    banRemains: true,
+  });
+  let authSucceededRecords = 0;
+  await expectSafeFailureAsync(async () => {
+    await reconcileReactivationAuthUpdate(notAppliedFixture.client, target);
+    authSucceededRecords += 1;
+  }, "reactivation_auth_update_not_applied");
+  requireCondition(
+    authSucceededRecords === 0
+      && notAppliedFixture.calls.update === 1
+      && notAppliedFixture.calls.lookup === 2,
+    "reactivation_not_applied_recording_fixture_failed",
+  );
+  const reactivationHelperSource = reconcileReactivationAuthUpdate.toString();
+  const matrixMainSource = main.toString();
+  requireCondition(
+    (reactivationHelperSource.match(/updateUserById/g) ?? []).length === 1
+      && (reactivationHelperSource.match(/exactAdminUser/g) ?? []).length === 2
+      && matrixMainSource.indexOf("reconcileReactivationAuthUpdate") >= 0
+      && matrixMainSource.indexOf("REACTIVATION_AUTH_UPDATE_RESULT")
+        > matrixMainSource.indexOf("reconcileReactivationAuthUpdate")
+      && matrixMainSource.indexOf('"auth_succeeded"')
+        > matrixMainSource.indexOf("REACTIVATION_AUTH_UPDATE_RESULT")
+      && !matrixMainSource.includes("updateUserById"),
+    "reactivation_auth_update_order_fixture_failed",
+  );
   const baseline = baselineSql(adminA, adminB);
-  const targetContract = targetContractSql(target, "b3a-failure-target-fixture@example.invalid");
+  const targetEmailFixture = "b3a-failure-target-20260803123456789-abcdefabcdef@example.invalid";
+  const targetContract = targetContractSql(target, targetEmailFixture);
   const snapshot = operationSnapshotSql(target);
   const failureState = authFailureStateSql(target, operation, 1, "AUTH_FAILURE_STATE");
   const recoveredState = authFailureStateSql(target, operation, 2, "AUTH_FAILURE_RECOVERED");
@@ -1328,7 +1645,7 @@ async function runSelfTests(repoRoot) {
       && restoreSql.includes("already_restored")
       && restoreSql.includes("sitaa_failure_fixture_confirmation_restore_conflict")
       && repairRestoreSql.includes(`set email_confirmed_at='${confirmedAt}'::timestamptz`)
-      && repairRestoreSql.includes(TARGET_EMAIL_PATTERN)
+      && repairRestoreSql.includes(TARGET_EMAIL_SQL_PATTERN)
       && repairRestoreSql.includes("for update")
       && repairRestoreSql.includes("already_restored")
       && !/\b(email\s*=|raw_app_meta_data\s*=|raw_user_meta_data\s*=|encrypted_password\s*=|banned_until\s*=)/i.test(`${clearSql}\n${restoreSql}\n${repairRestoreSql}`),
@@ -1565,6 +1882,24 @@ async function runSelfTests(repoRoot) {
     "evidence_fixture_failed",
   );
   requireCondition(HASH_PATTERN.test(CORE_EVIDENCE.sha256) && HASH_PATTERN.test(CORE_POSTCHECK_EVIDENCE.sha256), "central_hash_fixture_failed");
+  requireCondition(
+    HARNESS_VERSION === "2026-08-04-hosted-auth-failure-recovery-v8"
+      && TARGET_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v5"
+      && TARGET_BOOTSTRAP_EVIDENCE.markers.includes(`HARNESS_VERSION|${TARGET_BOOTSTRAP_VERSION}`)
+      && TARGET_BOOTSTRAP_POSTCHECK_EVIDENCE.markers.includes(`HARNESS_VERSION|${TARGET_BOOTSTRAP_VERSION}`)
+      && TARGET_BOOTSTRAP_REPAIR_ARTIFACTS.length === 6
+      && TARGET_BOOTSTRAP_EVIDENCE_JOURNALS.length === 2
+      && isApprovedTargetEmail(targetEmailFixture)
+      && !isApprovedTargetEmail("b3a-failure-target-fixture@example.invalid")
+      && baseline.includes(`lower(email) ~ '${TARGET_EMAIL_SQL_PATTERN}'`)
+      && !baseline.includes("lower(email) like 'b3a-failure-target-"),
+    "bootstrap_version_and_target_pattern_fixture_failed",
+  );
+  const forbiddenCreateUserCall = [".auth.admin", ".createUser("].join("");
+  requireCondition(
+    !main.toString().includes(forbiddenCreateUserCall),
+    "failure_recovery_direct_user_creation_present",
+  );
   console.log("B3A_HOSTED_AUTH_FAILURE_RECOVERY_FIXTURES|APPROVED");
 }
 
@@ -1695,23 +2030,29 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
   }
 
   if (!resumeExistingTarget) {
-    console.log("Escribe CREATE_FAILURE_RECOVERY_TARGET para crear Target C.");
-    if (!await readConfirmation("CREATE_FAILURE_RECOVERY_TARGET")) {
-      console.log("FAILURE_RECOVERY_MATRIX|ABORTED");
-      runtimeState.databaseConnection = null;
-      process.exitCode = OPERATOR_ABORT_EXIT_CODE;
-      return;
-    }
+    console.log("FAILURE_TARGET_BOOTSTRAP_REQUIRED");
+    runtimeState.databaseConnection = null;
+    process.exitCode = OPERATOR_ABORT_EXIT_CODE;
+    return;
   }
 
   assertNoLocalRecoveryArtifacts(evidencePath, postcheckPath, repairPath);
+  validateBootstrapEvidence(
+    reconciliationRoot,
+    TARGET_BOOTSTRAP_EVIDENCE,
+  );
+  validateBootstrapEvidence(
+    reconciliationRoot,
+    TARGET_BOOTSTRAP_POSTCHECK_EVIDENCE,
+  );
+  assertNoBootstrapRepairArtifacts(reconciliationRoot);
   const supabaseJsVersion = await loadSupabaseJs(repoRoot);
   let projectUrl = await readMasked("Project URL exacta: ");
   let publicKey = await readMasked("Publishable/anon key: ");
   let serviceKey = await readMasked("Service role/secret key: ");
   let adminAPassword = await readMasked("Contraseña de Admin A: ");
   let adminBPassword = await readMasked("Contraseña de Admin B: ");
-  let targetPassword = await readMasked("Contraseña nueva de Target C: ");
+  let targetPassword = await readMasked("Contraseña de Target C preaprovisionado: ");
   requireCondition(projectUrl === EXPECTED_PROJECT_URL, "project_url_rejected");
   requireCondition(
     publicKey.length > 0 && serviceKey.length > 0 && adminAPassword.length > 0
@@ -1726,47 +2067,23 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
   let adminASession = await signInExact(adminAClient, adminA.email, adminAPassword, adminA.id, "admin_a_login_failed");
   let adminBSession = await signInExact(adminBClient, adminB.email, adminBPassword, adminB.id, "admin_b_login_failed");
 
-  runtimeState.phase = "target_creation";
+  runtimeState.phase = "target_resume";
   let targetEmail;
   let targetId;
-  if (resumeExistingTarget) {
-    const authUsers = await listAllAuthUsers(serviceClient);
-    const targets = authUsers.filter((user) => isApprovedTargetEmail(user.email));
-    requireCondition(targets.length === 1, "resume_target_inventory_rejected");
-    targetId = targets[0].id;
-    targetEmail = targets[0].email?.toLowerCase();
-    requireCondition(
-      UUID_PATTERN.test(targetId)
-        && isApprovedTargetEmail(targetEmail)
-        && targets[0].email_confirmed_at
-        && !targets[0].banned_until
-        && targets[0].app_metadata?.sitaa_account_kind === "technical"
-        && targets[0].app_metadata?.sitaa_first_names === TARGET_FIRST_NAMES,
-      "resume_target_auth_contract_rejected",
-    );
-  } else {
-    assertNoLocalRecoveryArtifacts(evidencePath, postcheckPath, repairPath);
-    targetEmail = generateTargetEmail();
-    const created = await serviceClient.auth.admin.createUser({
-      email: targetEmail,
-      password: targetPassword,
-      email_confirm: true,
-      app_metadata: {
-        sitaa_account_kind: "technical",
-        sitaa_first_names: TARGET_FIRST_NAMES,
-      },
-    });
-    requireCondition(!created.error && created.data?.user?.id, "failure_target_create_failed");
-    targetId = created.data.user.id;
-    requireCondition(
-      UUID_PATTERN.test(targetId)
-        && created.data.user.email?.toLowerCase() === targetEmail
-        && created.data.user.email_confirmed_at
-        && created.data.user.app_metadata?.sitaa_account_kind === "technical"
-        && created.data.user.app_metadata?.sitaa_first_names === TARGET_FIRST_NAMES,
-      "failure_target_auth_response_rejected",
-    );
-  }
+  const authUsers = await listAllAuthUsers(serviceClient);
+  const targets = authUsers.filter((user) => isApprovedTargetEmail(user.email));
+  requireCondition(targets.length === 1, "resume_target_inventory_rejected");
+  targetId = targets[0].id;
+  targetEmail = targets[0].email?.toLowerCase();
+  requireCondition(
+    UUID_PATTERN.test(targetId)
+      && isApprovedTargetEmail(targetEmail)
+      && targets[0].email_confirmed_at
+      && !targets[0].banned_until
+      && targets[0].app_metadata?.sitaa_account_kind === "technical"
+      && targets[0].app_metadata?.sitaa_first_names === TARGET_FIRST_NAMES,
+    "resume_target_auth_contract_rejected",
+  );
   requireCondition(UUID_PATTERN.test(targetId) && isApprovedTargetEmail(targetEmail), "failure_target_identity_rejected");
   runtimeState.targetId = targetId;
   await signInExact(targetClient, targetEmail, targetPassword, targetId, "failure_target_login_failed");
@@ -1789,21 +2106,17 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
     identityHash: targetContract[11],
     assignmentHash: targetContract[12],
   };
-  console.log(resumeExistingTarget
-    ? "FAILURE_TARGET_RESUMED|APPROVED"
-    : "FAILURE_TARGET_CREATED|APPROVED");
+  console.log("FAILURE_TARGET_RESUMED|APPROVED");
   console.log("FAILURE_TARGET_AUTH_CONTRACT|APPROVED");
   console.log("FAILURE_TARGET_ASSIGNMENTS|0");
 
-  if (resumeExistingTarget) {
-    console.log("Escribe RESUME_FAILURE_RECOVERY_TARGET para reutilizar Target C.");
-    if (!await readConfirmation("RESUME_FAILURE_RECOVERY_TARGET")) {
-      console.log("FAILURE_RECOVERY_MATRIX|ABORTED");
-      runtimeState.databaseConnection = null;
-      createSupabaseClient = null;
-      process.exitCode = OPERATOR_ABORT_EXIT_CODE;
-      return;
-    }
+  console.log("Escribe RESUME_FAILURE_RECOVERY_TARGET para reutilizar Target C.");
+  if (!await readConfirmation("RESUME_FAILURE_RECOVERY_TARGET")) {
+    console.log("FAILURE_RECOVERY_MATRIX|ABORTED");
+    runtimeState.databaseConnection = null;
+    createSupabaseClient = null;
+    process.exitCode = OPERATOR_ABORT_EXIT_CODE;
+    return;
   }
 
   runtimeState.phase = "before_second_confirmation";
@@ -1821,6 +2134,16 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
     process.exitCode = OPERATOR_ABORT_EXIT_CODE;
     return;
   }
+
+  const bootstrapEvidenceHash = hashBootstrapEvidence(
+    reconciliationRoot,
+    TARGET_BOOTSTRAP_EVIDENCE,
+  );
+  const bootstrapPostcheckHash = hashBootstrapEvidence(
+    reconciliationRoot,
+    TARGET_BOOTSTRAP_POSTCHECK_EVIDENCE,
+  );
+  assertNoBootstrapRepairArtifacts(reconciliationRoot);
 
   assertNoLocalRecoveryArtifacts(evidencePath, postcheckPath, repairPath);
   adminASession = await refreshExact(adminAClient, adminASession, adminA.id, "admin_a_pre_matrix_refresh_failed");
@@ -1843,9 +2166,9 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
     irreversibleStartedUtc,
   )) record(line);
   record("FAILURE_RECOVERY_BASELINE|APPROVED");
-  record(resumeExistingTarget
-    ? "FAILURE_TARGET_RESUMED|APPROVED"
-    : "FAILURE_TARGET_CREATED|APPROVED");
+  record("FAILURE_TARGET_RESUMED|APPROVED");
+  record(`FAILURE_TARGET_BOOTSTRAP_EVIDENCE_SHA256|${bootstrapEvidenceHash}`);
+  record(`FAILURE_TARGET_BOOTSTRAP_POSTCHECK_SHA256|${bootstrapPostcheckHash}`);
   record("FAILURE_TARGET_AUTH_CONTRACT|APPROVED");
   record("FAILURE_TARGET_ASSIGNMENTS|0");
   record("ADMIN_A_PRE_MATRIX_REFRESH|APPROVED");
@@ -2058,10 +2381,9 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
     reactivationClaim.attemptCount === 1 && reactivationClaim.completedStage === "prepared",
     "reactivation_claim_rejected",
   );
-  let reactivationAuthCalls = 0;
-  const authRestored = await serviceClient.auth.admin.updateUserById(targetId, { ban_duration: "none" });
-  reactivationAuthCalls += 1;
-  requireCondition(!authRestored.error && authRestored.data?.user?.id === targetId, "reactivation_auth_update_failed");
+  const authUpdate = await reconcileReactivationAuthUpdate(serviceClient, targetId);
+  const reactivationAuthCalls = authUpdate.authCalls;
+  record(`REACTIVATION_AUTH_UPDATE_RESULT|${authUpdate.classification}`);
   const synchronizedOperation = await recordOperationResult(
     serviceClient,
     reactivationClaim,
@@ -2087,7 +2409,7 @@ async function main({ readOnlyProbeOnly = false, resumeExistingTarget = false } 
     "reactivation_synchronized_database_state_rejected",
   );
   const authSynchronizedAt = synchronizedState[4];
-  const targetAuthBeforeInjection = await exactAdminUser(serviceClient, targetId);
+  const targetAuthBeforeInjection = authUpdate.user;
   const originalEmailConfirmedAt = targetAuthBeforeInjection.email_confirmed_at;
   requireCondition(
     typeof originalEmailConfirmedAt === "string" && Number.isFinite(Date.parse(originalEmailConfirmedAt)),
@@ -2489,6 +2811,10 @@ try {
     $nodeModule,
     [System.Text.UTF8Encoding]::new($false)
   )
+  $forbiddenAuthCreate = ".auth.admin" + ".createUser("
+  if ($nodeModule.Contains($forbiddenAuthCreate)) {
+    throw "El módulo failure/recovery no puede crear usuarios Auth."
+  }
   $env:SITAA_B3A_REPO_ROOT = $repoRoot
 
   if ($ValidateOnly) {
