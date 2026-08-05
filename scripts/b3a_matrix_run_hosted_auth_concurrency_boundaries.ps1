@@ -42,7 +42,7 @@ import { spawn, spawnSync } from "node:child_process";
 
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
-const HARNESS_VERSION = "2026-08-05-hosted-auth-concurrency-boundaries-v6";
+const HARNESS_VERSION = "2026-08-05-hosted-auth-concurrency-boundaries-v7";
 const TARGET_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v7";
 const EXPECTED_AUTH_HANDLER_MD5 = "156398fbb0da020e2b8b57db92b87fcd";
 const EXPECTED_AUTH_HANDLER_ACL = "{postgres=X/postgres,service_role=X/postgres}";
@@ -1664,6 +1664,19 @@ function assertCase17ProfileContract(sql) {
   return normalized;
 }
 
+const CASE17_LEDGER_HASH_COMPARISON = "md5(coalesce((select string_agg(to_jsonb(o)::text,'|' order by o.id) from public.admin_auth_operations o),''))=(select ledger_hash from sitaa_b3a_case17_context)";
+const CASE17_AUDIT_HASH_COMPARISON = "md5(coalesce((select string_agg(to_jsonb(a)::text,'|' order by a.id) from public.admin_audit_events a),''))=(select audit_hash from sitaa_b3a_case17_context)";
+
+function assertCase17HashComparisonContract(sql) {
+  const normalized = normalizeEol(sql);
+  requireCondition(
+    normalized.split(CASE17_LEDGER_HASH_COMPARISON).length - 1 === 1
+      && normalized.split(CASE17_AUDIT_HASH_COMPARISON).length - 1 === 1,
+    "case17_hash_comparison_contract_rejected",
+  );
+  return normalized;
+}
+
 function case17OrdinaryUsersSql() {
   const professorIdentifier = syntheticInstitutionalIdentifier("7");
   const studentIdentifier = syntheticInstitutionalIdentifier("8");
@@ -1769,10 +1782,10 @@ reset role;
 select concat_ws('|','CASE17_SQL',
   (select count(*) from sitaa_b3a_case17_outcomes where actor_type='professor'),
   (select count(*) from sitaa_b3a_case17_outcomes where actor_type='student'),
-  (select case when md5(coalesce((select string_agg(to_jsonb(o)::text,'|' order by o.id) from public.admin_auth_operations o),'')=(select ledger_hash from sitaa_b3a_case17_context) then 1 else 0 end),
-  (select case when md5(coalesce((select string_agg(to_jsonb(a)::text,'|' order by a.id) from public.admin_audit_events a),'')=(select audit_hash from sitaa_b3a_case17_context) then 1 else 0 end));
+  (select case when md5(coalesce((select string_agg(to_jsonb(o)::text,'|' order by o.id) from public.admin_auth_operations o),''))=(select ledger_hash from sitaa_b3a_case17_context) then 1 else 0 end),
+  (select case when md5(coalesce((select string_agg(to_jsonb(a)::text,'|' order by a.id) from public.admin_audit_events a),''))=(select audit_hash from sitaa_b3a_case17_context) then 1 else 0 end));
 rollback;`;
-  return assertCase17ProfileContract(sql);
+  return assertCase17HashComparisonContract(assertCase17ProfileContract(sql));
 }
 
 function assertCase18AclContract(sql, postgrestSource = verifyServiceRolePostgrestBoundary.toString()) {
@@ -2533,7 +2546,7 @@ async function runSelfTests(repoRoot) {
   requireCondition(readSupabaseJsVersion(repoRoot) === EXPECTED_SUPABASE_JS_VERSION, "self_test_dependency_rejected");
   validatePackageHashes(repoRoot);
   requireCondition(
-    HARNESS_VERSION === "2026-08-05-hosted-auth-concurrency-boundaries-v6"
+    HARNESS_VERSION === "2026-08-05-hosted-auth-concurrency-boundaries-v7"
       && TARGET_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v7"
       && REQUIRED_EVIDENCE.length === 6
       && EXPECTED_DELTA.operations === 2
@@ -3138,6 +3151,26 @@ async function runSelfTests(repoRoot) {
     "case17_identifier_generation_fixture_rejected",
   );
   const canonicalCase17 = case17OrdinaryUsersSql();
+  const malformedCase17HashComparisons = [
+    canonicalCase17.replace(
+      CASE17_LEDGER_HASH_COMPARISON,
+      CASE17_LEDGER_HASH_COMPARISON.replace("))=(", ")=("),
+    ),
+    canonicalCase17.replace(
+      CASE17_AUDIT_HASH_COMPARISON,
+      CASE17_AUDIT_HASH_COMPARISON.replace("))=(", ")=("),
+    ),
+  ];
+  for (const malformedCase17 of malformedCase17HashComparisons) {
+    requireCondition(
+      malformedCase17 !== canonicalCase17
+        && await expectSafeFailure(
+          () => assertCase17HashComparisonContract(malformedCase17),
+          "case17_hash_comparison_contract_rejected",
+        ),
+      "case17_hash_comparison_negative_fixture_rejected",
+    );
+  }
   let workerRejected = false;
   let lettersRejected = false;
   try {
