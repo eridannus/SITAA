@@ -42,7 +42,7 @@ import { spawn, spawnSync } from "node:child_process";
 
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
-const HARNESS_VERSION = "2026-08-05-hosted-auth-concurrency-boundaries-v4";
+const HARNESS_VERSION = "2026-08-05-hosted-auth-concurrency-boundaries-v6";
 const TARGET_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v7";
 const EXPECTED_AUTH_HANDLER_MD5 = "156398fbb0da020e2b8b57db92b87fcd";
 const EXPECTED_AUTH_HANDLER_ACL = "{postgres=X/postgres,service_role=X/postgres}";
@@ -841,6 +841,163 @@ async function listAllAuthUsers(serviceClient) {
     if (result.data.users.length < perPage) return users;
   }
   fail("auth_user_inventory_unbounded");
+}
+
+function validateListedAuthUserIds(users) {
+  requireCondition(Array.isArray(users) && users.length === 3, "auth_user_inventory_count_rejected");
+  const ids = users.map((user) => {
+    requireCondition(user && typeof user === "object" && !Array.isArray(user) && UUID_PATTERN.test(user.id), "auth_user_inventory_failed");
+    return user.id;
+  });
+  requireCondition(new Set(ids).size === ids.length, "auth_user_inventory_duplicate_rejected");
+  return Object.freeze(ids);
+}
+
+async function getDetailedAuthUser(serviceClient, expectedUserId, failureCode = "auth_user_detail_fetch_failed") {
+  requireCondition(UUID_PATTERN.test(expectedUserId), "auth_user_detail_response_rejected");
+  const result = await authRequest(
+    () => serviceClient.auth.admin.getUserById(expectedUserId),
+    failureCode,
+  );
+  requireCondition(!result?.error, failureCode);
+  const user = result?.data?.user;
+  requireCondition(
+    user
+      && typeof user === "object"
+      && !Array.isArray(user)
+      && UUID_PATTERN.test(user.id)
+      && user.id === expectedUserId
+      && typeof user.email === "string"
+      && user.email.trim().length > 0,
+    "auth_user_detail_response_rejected",
+  );
+  return user;
+}
+
+async function loadDetailedAuthUsers(serviceClient, expectedUserIds) {
+  requireCondition(
+    Array.isArray(expectedUserIds) && expectedUserIds.length === 3 && new Set(expectedUserIds).size === 3,
+    "auth_user_detail_set_rejected",
+  );
+  const users = [];
+  for (const expectedUserId of expectedUserIds) {
+    users.push(await getDetailedAuthUser(serviceClient, expectedUserId, "auth_user_detail_fetch_failed"));
+  }
+  return Object.freeze(users);
+}
+
+function validateDetailedEmailIdentity(user) {
+  requireCondition(
+    user
+      && typeof user === "object"
+      && !Array.isArray(user)
+      && UUID_PATTERN.test(user.id)
+      && typeof user.email === "string"
+      && user.email.trim().length > 0
+      && user.is_anonymous === false
+      && Array.isArray(user.identities)
+      && user.identities.length === 1,
+    "auth_user_detail_identity_contract_rejected",
+  );
+  const identity = user.identities[0];
+  requireCondition(
+    identity
+      && typeof identity === "object"
+      && !Array.isArray(identity)
+      && identity.user_id === user.id
+      && identity.identity_data
+      && typeof identity.identity_data === "object"
+      && !Array.isArray(identity.identity_data)
+      && identity.identity_data.sub === user.id,
+    "auth_user_detail_identity_contract_rejected",
+  );
+  requireCondition(
+    identity.provider === "email"
+      && typeof identity.identity_data.email === "string"
+      && identity.identity_data.email.toLowerCase() === user.email.toLowerCase(),
+    "auth_user_detail_email_identity_rejected",
+  );
+  return true;
+}
+
+function validateDetailedAuthInventory(listedUserIds, detailedUsers) {
+  requireCondition(
+    Array.isArray(listedUserIds)
+      && listedUserIds.length === 3
+      && new Set(listedUserIds).size === 3
+      && Array.isArray(detailedUsers)
+      && detailedUsers.length === 3,
+    "auth_user_detail_set_rejected",
+  );
+  const detailedIds = detailedUsers.map((user) => {
+    requireCondition(user && typeof user === "object" && !Array.isArray(user) && UUID_PATTERN.test(user.id), "auth_user_detail_response_rejected");
+    return user.id;
+  });
+  requireCondition(
+    new Set(detailedIds).size === 3
+      && [...listedUserIds].sort().join("|") === [...detailedIds].sort().join("|"),
+    "auth_user_detail_set_rejected",
+  );
+  for (const user of detailedUsers) validateDetailedEmailIdentity(user);
+  const counts = Object.freeze({
+    users: detailedUsers.length,
+    identityArrays: detailedUsers.filter((user) => Array.isArray(user.identities)).length,
+    identities: detailedUsers.reduce((total, user) => total + user.identities.length, 0),
+    emailIdentities: detailedUsers.reduce(
+      (total, user) => total + user.identities.filter((identity) => identity.provider === "email").length,
+      0,
+    ),
+  });
+  requireCondition(
+    counts.users === 3
+      && counts.identityArrays === 3
+      && counts.identities === 3
+      && counts.emailIdentities === 3,
+    "auth_user_detail_identity_contract_rejected",
+  );
+  return counts;
+}
+
+function assertSafeAuthDetailDiagnostic(line) {
+  requireCondition(
+    typeof line === "string"
+      && /^AUTH_ADMIN_DETAIL_COUNTS\|users=(0|[1-9][0-9]*)\|identity_arrays=(0|[1-9][0-9]*)\|identities=(0|[1-9][0-9]*)\|email_identities=(0|[1-9][0-9]*)$/.test(line)
+      && !containsForbiddenEvidence(line),
+    "auth_user_detail_diagnostic_rejected",
+  );
+  return line;
+}
+
+function formatAuthDetailDiagnostic(counts) {
+  requireCondition(
+    exactObject(counts, ["users", "identityArrays", "identities", "emailIdentities"])
+      && Object.values(counts).every((value) => Number.isSafeInteger(value) && value >= 0),
+    "auth_user_detail_diagnostic_rejected",
+  );
+  return assertSafeAuthDetailDiagnostic(
+    `AUTH_ADMIN_DETAIL_COUNTS|users=${counts.users}|identity_arrays=${counts.identityArrays}|identities=${counts.identities}|email_identities=${counts.emailIdentities}`,
+  );
+}
+
+function requireDetailedFixtureAdmins(detailedUsers, adminAId, adminBId) {
+  requireCondition(
+    UUID_PATTERN.test(adminAId)
+      && UUID_PATTERN.test(adminBId)
+      && adminAId !== adminBId
+      && detailedUsers.filter((user) => user.id === adminAId).length === 1
+      && detailedUsers.filter((user) => user.id === adminBId).length === 1,
+    "auth_user_detail_set_rejected",
+  );
+  return true;
+}
+
+function selectDetailedTargetC(detailedUsers) {
+  requireCondition(Array.isArray(detailedUsers), "target_inventory_rejected");
+  const targets = detailedUsers.filter(
+    (user) => typeof user.email === "string" && TARGET_EMAIL_PATTERN.test(user.email.toLowerCase()),
+  );
+  requireCondition(targets.length === 1, "target_inventory_rejected");
+  return targets[0];
 }
 
 function stableValue(value) {
@@ -2294,6 +2451,15 @@ function simulatedAuthSynchronizedRecovery({ authCalls, stage, recoveringActorDi
 function assertMainIrreversibleOrder(source) {
   const normalized = normalizeEol(source);
   const positions = Object.freeze({
+    authInventory: normalized.indexOf("await listAllAuthUsers(serviceClient)"),
+    listedInventoryValidation: normalized.indexOf("validateListedAuthUserIds(listedAuthUsers)"),
+    authDetailFetch: normalized.indexOf("await loadDetailedAuthUsers(serviceClient, listedAuthUserIds)"),
+    authDetailValidation: normalized.indexOf("validateDetailedAuthInventory(listedAuthUserIds, detailedAuthUsers)"),
+    fixtureAdminValidation: normalized.indexOf("requireDetailedFixtureAdmins(detailedAuthUsers, adminA.id, adminB.id)"),
+    targetSelection: normalized.indexOf("selectDetailedTargetC(detailedAuthUsers)"),
+    targetLogin: normalized.indexOf("await signInExact(targetClient"),
+    adminARefresh: normalized.indexOf("await refreshExact(adminAClient"),
+    adminBRefresh: normalized.indexOf("await refreshExact(adminBClient"),
     firstConfirmation: normalized.indexOf('"CONTINUE_B3A_CONCURRENCY_BOUNDARIES"'),
     case17Transactional: normalized.indexOf("case17OrdinaryUsersSql()"),
     case18Transactional: normalized.indexOf("case18ServiceRoleSql(adminA.id, targetId)"),
@@ -2308,6 +2474,23 @@ function assertMainIrreversibleOrder(source) {
   requireCondition(
     Object.values(positions).every((position) => Number.isInteger(position) && position >= 0),
     "main_boundary_marker_missing",
+  );
+  const authenticationPreparation = [
+    positions.authInventory,
+    positions.listedInventoryValidation,
+    positions.authDetailFetch,
+    positions.authDetailValidation,
+    positions.fixtureAdminValidation,
+    positions.targetSelection,
+    positions.targetLogin,
+    positions.adminARefresh,
+    positions.adminBRefresh,
+    positions.firstConfirmation,
+  ];
+  requireCondition(
+    authenticationPreparation.every((position, index) => index === 0 || position > authenticationPreparation[index - 1])
+      && !normalized.slice(positions.authInventory, positions.authDetailFetch).includes(".identities"),
+    "main_auth_inventory_order_fixture_rejected",
   );
   const ordered = [
     positions.firstConfirmation,
@@ -2350,7 +2533,7 @@ async function runSelfTests(repoRoot) {
   requireCondition(readSupabaseJsVersion(repoRoot) === EXPECTED_SUPABASE_JS_VERSION, "self_test_dependency_rejected");
   validatePackageHashes(repoRoot);
   requireCondition(
-    HARNESS_VERSION === "2026-08-05-hosted-auth-concurrency-boundaries-v4"
+    HARNESS_VERSION === "2026-08-05-hosted-auth-concurrency-boundaries-v6"
       && TARGET_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v7"
       && REQUIRED_EVIDENCE.length === 6
       && EXPECTED_DELTA.operations === 2
@@ -2452,6 +2635,265 @@ async function runSelfTests(repoRoot) {
         && error.code === "baseline_counts_diagnostic_rejected";
     }
     requireCondition(unsafeDiagnosticRejected, "baseline_diagnostic_sanitization_fixture_rejected");
+  }
+
+  const expectSafeFailure = async (callback, expectedCode) => {
+    try {
+      await callback();
+      return false;
+    } catch (error) {
+      return error instanceof SafeFailure && error.code === expectedCode;
+    }
+  };
+  const detailAdminAId = "11111111-1111-4111-8111-111111111111";
+  const detailAdminBId = "22222222-2222-4222-8222-222222222222";
+  const detailTargetId = "33333333-3333-4333-8333-333333333333";
+  const detailReplacementId = "66666666-6666-4666-8666-666666666666";
+  const detailSecondTargetId = "77777777-7777-4777-8777-777777777777";
+  const targetFixtureEmail = "b3a-failure-target-20260805000000000-abcdef123456@example.invalid";
+  const secondTargetFixtureEmail = "b3a-failure-target-20260805000000001-abcdef123457@example.invalid";
+  const makeDetailedAuthUser = (id, email, overrides = {}) => Object.freeze({
+    id,
+    email,
+    is_anonymous: false,
+    email_confirmed_at: "2026-08-05T00:00:00.000Z",
+    banned_until: null,
+    app_metadata: {},
+    identities: [Object.freeze({
+      provider: "email",
+      user_id: id,
+      identity_data: Object.freeze({ sub: id, email }),
+    })],
+    ...overrides,
+  });
+  const detailAdminA = makeDetailedAuthUser(detailAdminAId, "admin-a@example.invalid");
+  const detailAdminB = makeDetailedAuthUser(detailAdminBId, "admin-b@example.invalid");
+  const detailTarget = makeDetailedAuthUser(detailTargetId, targetFixtureEmail, {
+    app_metadata: Object.freeze({
+      sitaa_account_kind: "technical",
+      sitaa_first_names: TARGET_FIRST_NAMES,
+    }),
+  });
+  const validDetailedUsers = Object.freeze([detailAdminA, detailAdminB, detailTarget]);
+  const validListedIds = Object.freeze([detailAdminAId, detailAdminBId, detailTargetId]);
+  const detailedById = new Map(validDetailedUsers.map((user) => [user.id, user]));
+  const detailCalls = [];
+  let activeDetailCalls = 0;
+  let maximumActiveDetailCalls = 0;
+  const detailFixtureClient = Object.freeze({
+    auth: Object.freeze({
+      admin: Object.freeze({
+        getUserById: async (requestedId) => {
+          detailCalls.push(requestedId);
+          activeDetailCalls += 1;
+          maximumActiveDetailCalls = Math.max(maximumActiveDetailCalls, activeDetailCalls);
+          await Promise.resolve();
+          activeDetailCalls -= 1;
+          return Object.freeze({ data: Object.freeze({ user: detailedById.get(requestedId) ?? null }), error: null });
+        },
+      }),
+    }),
+  });
+  const loadedDetailedUsers = await loadDetailedAuthUsers(detailFixtureClient, validListedIds);
+  const validDetailCounts = validateDetailedAuthInventory(validListedIds, loadedDetailedUsers);
+  const validDetailDiagnostic = formatAuthDetailDiagnostic(validDetailCounts);
+  const caseInsensitiveIdentityUser = makeDetailedAuthUser(detailAdminAId, detailAdminA.email, {
+    identities: [Object.freeze({
+      ...detailAdminA.identities[0],
+      identity_data: Object.freeze({
+        ...detailAdminA.identities[0].identity_data,
+        email: detailAdminA.email.toUpperCase(),
+      }),
+    })],
+  });
+  requireCondition(
+    detailCalls.join("|") === validListedIds.join("|")
+      && maximumActiveDetailCalls === 1
+      && validDetailDiagnostic === "AUTH_ADMIN_DETAIL_COUNTS|users=3|identity_arrays=3|identities=3|email_identities=3"
+      && requireDetailedFixtureAdmins(loadedDetailedUsers, detailAdminAId, detailAdminBId)
+      && selectDetailedTargetC(loadedDetailedUsers).id === detailTargetId
+      && validateDetailedEmailIdentity(detailAdminA)
+      && validateDetailedEmailIdentity(caseInsensitiveIdentityUser)
+      && normalizeEol(getDetailedAuthUser.toString()).includes("serviceClient.auth.admin.getUserById(expectedUserId)")
+      && normalizeEol(getDetailedAuthUser.toString()).includes("await authRequest(")
+      && normalizeEol(loadDetailedAuthUsers.toString()).includes("for (const expectedUserId of expectedUserIds)")
+      && normalizeEol(loadDetailedAuthUsers.toString()).includes("await getDetailedAuthUser(")
+      && !normalizeEol(loadDetailedAuthUsers.toString()).includes("Promise.all"),
+    "auth_user_detail_positive_fixture_rejected",
+  );
+
+  const superficialIdentityVariants = [
+    [undefined, undefined, undefined],
+    [null, null, null],
+    [[], [], []],
+    [undefined, null, []],
+    [[Object.freeze({ provider: "stale" })], [], undefined],
+  ];
+  for (const identityVariant of superficialIdentityVariants) {
+    const superficialUsers = validDetailedUsers.map((user, index) => Object.freeze({
+      id: user.id,
+      identities: identityVariant[index],
+    }));
+    const listedIds = validateListedAuthUserIds(superficialUsers);
+    const counts = validateDetailedAuthInventory(listedIds, validDetailedUsers);
+    requireCondition(
+      listedIds.join("|") === validListedIds.join("|")
+        && counts.identities === 3
+        && counts.emailIdentities === 3,
+      "auth_user_superficial_inventory_fixture_rejected",
+    );
+  }
+
+  requireCondition(
+    await expectSafeFailure(
+      () => validateListedAuthUserIds(validDetailedUsers.slice(0, 2)),
+      "auth_user_inventory_count_rejected",
+    )
+      && await expectSafeFailure(
+        () => validateListedAuthUserIds([...validDetailedUsers, makeDetailedAuthUser(detailReplacementId, "replacement@example.invalid")]),
+        "auth_user_inventory_count_rejected",
+      )
+      && await expectSafeFailure(
+        () => validateListedAuthUserIds([{ id: detailAdminAId }, { id: detailAdminAId }, { id: detailTargetId }]),
+        "auth_user_inventory_duplicate_rejected",
+      ),
+    "auth_user_inventory_negative_fixture_rejected",
+  );
+
+  const detailErrorClient = Object.freeze({
+    auth: Object.freeze({ admin: Object.freeze({
+      getUserById: async () => Object.freeze({ data: Object.freeze({ user: null }), error: Object.freeze({ name: "FixtureAuthError" }) }),
+    }) }),
+  });
+  const detailNullClient = Object.freeze({
+    auth: Object.freeze({ admin: Object.freeze({
+      getUserById: async () => Object.freeze({ data: Object.freeze({ user: null }), error: null }),
+    }) }),
+  });
+  const detailMismatchClient = Object.freeze({
+    auth: Object.freeze({ admin: Object.freeze({
+      getUserById: async () => Object.freeze({ data: Object.freeze({ user: detailAdminB }), error: null }),
+    }) }),
+  });
+  requireCondition(
+    await expectSafeFailure(
+      () => getDetailedAuthUser(detailErrorClient, detailAdminAId, "auth_user_detail_fetch_failed"),
+      "auth_user_detail_fetch_failed",
+    )
+      && await expectSafeFailure(
+        () => getDetailedAuthUser(detailNullClient, detailAdminAId, "auth_user_detail_fetch_failed"),
+        "auth_user_detail_response_rejected",
+      )
+      && await expectSafeFailure(
+        () => getDetailedAuthUser(detailMismatchClient, detailAdminAId, "auth_user_detail_fetch_failed"),
+        "auth_user_detail_response_rejected",
+      )
+      && await expectSafeFailure(
+        () => validateDetailedAuthInventory(validListedIds, [
+          detailAdminA,
+          detailAdminB,
+          makeDetailedAuthUser(detailReplacementId, "replacement@example.invalid"),
+        ]),
+        "auth_user_detail_set_rejected",
+      ),
+    "auth_user_detail_response_negative_fixture_rejected",
+  );
+
+  const canonicalIdentity = detailAdminA.identities[0];
+  const identityContractNegatives = [
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { identities: undefined }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { identities: null }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { identities: [] }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { identities: [canonicalIdentity, canonicalIdentity] }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { identities: [{ ...canonicalIdentity, user_id: detailAdminBId }] }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { identities: [{ ...canonicalIdentity, identity_data: undefined }] }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, {
+      identities: [{ ...canonicalIdentity, identity_data: { ...canonicalIdentity.identity_data, sub: detailAdminBId } }],
+    }),
+  ];
+  for (const invalidUser of identityContractNegatives) {
+    requireCondition(
+      await expectSafeFailure(
+        () => validateDetailedEmailIdentity(invalidUser),
+        "auth_user_detail_identity_contract_rejected",
+      ),
+      "auth_user_detail_identity_negative_fixture_rejected",
+    );
+  }
+  const anonymousPropertyAbsent = Object.freeze(Object.fromEntries(
+    Object.entries(detailAdminA).filter(([key]) => key !== "is_anonymous"),
+  ));
+  const anonymousContractNegatives = [
+    anonymousPropertyAbsent,
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { is_anonymous: undefined }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { is_anonymous: null }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { is_anonymous: true }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { is_anonymous: "false" }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { is_anonymous: 0 }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { is_anonymous: 1 }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { is_anonymous: Object.freeze({}) }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, { is_anonymous: Object.freeze([]) }),
+  ];
+  requireCondition(
+    anonymousContractNegatives.length === 9
+      && !Object.prototype.hasOwnProperty.call(anonymousPropertyAbsent, "is_anonymous"),
+    "auth_user_detail_anonymous_fixture_setup_rejected",
+  );
+  for (const invalidUser of anonymousContractNegatives) {
+    requireCondition(
+      await expectSafeFailure(
+        () => validateDetailedEmailIdentity(invalidUser),
+        "auth_user_detail_identity_contract_rejected",
+      ),
+      "auth_user_detail_anonymous_negative_fixture_rejected",
+    );
+  }
+  const emailIdentityNegatives = [
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, {
+      identities: [{ ...canonicalIdentity, provider: "google" }],
+    }),
+    makeDetailedAuthUser(detailAdminAId, detailAdminA.email, {
+      identities: [{
+        ...canonicalIdentity,
+        identity_data: { ...canonicalIdentity.identity_data, email: "different@example.invalid" },
+      }],
+    }),
+  ];
+  for (const invalidUser of emailIdentityNegatives) {
+    requireCondition(
+      await expectSafeFailure(
+        () => validateDetailedEmailIdentity(invalidUser),
+        "auth_user_detail_email_identity_rejected",
+      ),
+      "auth_user_detail_email_identity_negative_fixture_rejected",
+    );
+  }
+
+  const secondDetailedTarget = makeDetailedAuthUser(detailSecondTargetId, secondTargetFixtureEmail);
+  requireCondition(
+    await expectSafeFailure(
+      () => selectDetailedTargetC([detailAdminA, detailAdminB]),
+      "target_inventory_rejected",
+    )
+      && await expectSafeFailure(
+        () => selectDetailedTargetC([detailTarget, secondDetailedTarget]),
+        "target_inventory_rejected",
+      ),
+    "target_inventory_negative_fixture_rejected",
+  );
+
+  for (const unsafeDiagnostic of [
+    `${validDetailDiagnostic}|user=${detailAdminAId}`,
+    `${validDetailDiagnostic}|email=fixture@example.invalid`,
+    "AUTH_ADMIN_DETAIL_COUNTS|raw={\"identities\":[]}",
+  ]) {
+    requireCondition(
+      await expectSafeFailure(
+        () => assertSafeAuthDetailDiagnostic(unsafeDiagnostic),
+        "auth_user_detail_diagnostic_rejected",
+      ),
+      "auth_user_detail_diagnostic_sanitization_fixture_rejected",
+    );
   }
 
   const opaquePublic = "sb_publishable_fixture_public";
@@ -3020,6 +3462,15 @@ async function runSelfTests(repoRoot) {
     "main_boundary_order_fixture_rejected",
   );
   const v2OrderFixture = `async function main() {
+    const listedAuthUsers = await listAllAuthUsers(serviceClient);
+    const listedAuthUserIds = validateListedAuthUserIds(listedAuthUsers);
+    const detailedAuthUsers = await loadDetailedAuthUsers(serviceClient, listedAuthUserIds);
+    validateDetailedAuthInventory(listedAuthUserIds, detailedAuthUsers);
+    requireDetailedFixtureAdmins(detailedAuthUsers, adminA.id, adminB.id);
+    const target = selectDetailedTargetC(detailedAuthUsers);
+    await signInExact(targetClient, target.email, password, target.id, "target_login_failed");
+    await refreshExact(adminAClient, adminASession, adminA.id, "admin_a_refresh_failed");
+    await refreshExact(adminBClient, adminBSession, adminB.id, "admin_b_refresh_failed");
     if (!await readConfirmation("CONTINUE_B3A_CONCURRENCY_BOUNDARIES")) return;
     executeTransactionalSql(connection, case17OrdinaryUsersSql(), "CASE17_SQL");
     const ordinaryStart = await edgeResponse(targetClient, payload);
@@ -3138,20 +3589,22 @@ async function main({ readOnlyProbeOnly = false } = {}) {
   const serviceClient = createIsolatedClient(credentials.projectUrl, credentials.serviceKey);
   let adminASession = await signInExact(adminAClient, adminA.email, credentials.adminAPassword, adminA.id, "admin_a_login_failed");
   let adminBSession = await signInExact(adminBClient, adminB.email, credentials.adminBPassword, adminB.id, "admin_b_login_failed");
-  const authUsers = await listAllAuthUsers(serviceClient);
-  requireCondition(authUsers.length === 3, "auth_inventory_user_count_rejected");
-  requireCondition(authUsers.reduce((total, user) => total + (Array.isArray(user.identities) ? user.identities.length : 0), 0) === 3, "auth_inventory_identity_count_rejected");
-  const targets = authUsers.filter((user) => typeof user.email === "string" && TARGET_EMAIL_PATTERN.test(user.email.toLowerCase()));
-  requireCondition(targets.length === 1, "target_inventory_rejected");
-  const targetId = targets[0].id;
-  const targetEmail = targets[0].email?.toLowerCase() ?? "";
+  const listedAuthUsers = await listAllAuthUsers(serviceClient);
+  const listedAuthUserIds = validateListedAuthUserIds(listedAuthUsers);
+  const detailedAuthUsers = await loadDetailedAuthUsers(serviceClient, listedAuthUserIds);
+  const authDetailCounts = validateDetailedAuthInventory(listedAuthUserIds, detailedAuthUsers);
+  console.log(formatAuthDetailDiagnostic(authDetailCounts));
+  requireDetailedFixtureAdmins(detailedAuthUsers, adminA.id, adminB.id);
+  const target = selectDetailedTargetC(detailedAuthUsers);
+  const targetId = target.id;
+  const targetEmail = target.email.toLowerCase();
   requireCondition(
     UUID_PATTERN.test(targetId)
       && TARGET_EMAIL_PATTERN.test(targetEmail)
-      && targets[0].email_confirmed_at
-      && !authBanIsActive(targets[0])
-      && targets[0].app_metadata?.sitaa_account_kind === "technical"
-      && targets[0].app_metadata?.sitaa_first_names === TARGET_FIRST_NAMES,
+      && target.email_confirmed_at
+      && !authBanIsActive(target)
+      && target.app_metadata?.sitaa_account_kind === "technical"
+      && target.app_metadata?.sitaa_first_names === TARGET_FIRST_NAMES,
     "target_auth_contract_rejected",
   );
   runtimeState.targetId = targetId;
