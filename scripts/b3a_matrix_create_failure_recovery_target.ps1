@@ -38,7 +38,10 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 
-const VERSION = "2026-08-04-b3a-failure-target-bootstrap-v6";
+const CURRENT_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v7";
+const RECOVERABLE_PREDECESSOR_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v6";
+const VERSION = CURRENT_BOOTSTRAP_VERSION;
+const RECOVERABLE_REPAIR_OPTIONS = Object.freeze({ allowRecoverablePredecessor: true });
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
 const EXPECTED_SUPABASE_JS_VERSION = "2.110.1";
@@ -111,6 +114,14 @@ class SafeFailure extends Error {
   }
 }
 
+class RestoreAttemptFailure extends Error {
+  constructor(category) {
+    super(category);
+    this.name = "RestoreAttemptFailure";
+    this.category = category;
+  }
+}
+
 function fail(code) {
   throw new SafeFailure(code);
 }
@@ -121,6 +132,29 @@ function requireCondition(condition, code) {
 
 function normalizeEol(value) {
   return String(value).replace(/\r\n?/g, "\n");
+}
+
+function ensureSqlStatementTerminated(sqlText) {
+  const normalized = normalizeEol(sqlText).trim();
+  requireCondition(normalized.length > 0, "captured_sql_empty");
+  return normalized.endsWith(";") ? normalized : `${normalized};`;
+}
+
+function assertCapturedFunctionStatementBoundary(sqlText) {
+  const normalized = normalizeEol(sqlText).trim();
+  requireCondition(
+    /\$[A-Za-z_][A-Za-z0-9_]*\$\s*;\s*(?:do|select)\b/i.test(normalized),
+    "captured_function_statement_boundary_rejected",
+  );
+  return normalized;
+}
+
+function assembleCapturedFunctionSql(snapshotDefinition, followingSql) {
+  const following = normalizeEol(followingSql).trim();
+  requireCondition(/^(?:do|select)\b/i.test(following), "captured_following_statement_rejected");
+  return assertCapturedFunctionStatementBoundary(
+    `${ensureSqlStatementTerminated(snapshotDefinition)}\n${following}`,
+  );
 }
 
 function hashBuffer(value) {
@@ -618,10 +652,16 @@ function generateTargetEmail() {
   return `b3a-failure-target-${stamp}-${crypto.randomBytes(6).toString("hex")}@example.invalid`;
 }
 
-function validateRepair(value) {
+function validateRepair(value, { allowRecoverablePredecessor = false } = {}) {
   requireCondition(value && typeof value === "object" && !Array.isArray(value), "repair_shape_rejected");
   requireCondition(Object.keys(value).sort().join("|") === [...REPAIR_KEYS].sort().join("|"), "repair_keys_rejected");
-  requireCondition(value.version === VERSION && TARGET_EMAIL_PATTERN.test(value.target_email), "repair_identity_rejected");
+  requireCondition(
+    (
+      value.version === CURRENT_BOOTSTRAP_VERSION
+        || (allowRecoverablePredecessor && value.version === RECOVERABLE_PREDECESSOR_VERSION)
+    ) && TARGET_EMAIL_PATTERN.test(value.target_email),
+    "repair_identity_rejected",
+  );
   requireCondition(value.target_uuid === null || UUID_PATTERN.test(value.target_uuid), "repair_uuid_rejected");
   requireCondition(/^\d+$/.test(value.original_oid) && MD5_PATTERN.test(value.original_md5), "repair_handler_identity_rejected");
   requireCondition(SHA256_PATTERN.test(value.snapshot_sha256), "repair_snapshot_hash_rejected");
@@ -649,8 +689,8 @@ function validateRepair(value) {
   return value;
 }
 
-function repairAcl(value) {
-  validateRepair(value);
+function repairAcl(value, options = {}) {
+  validateRepair(value, options);
   return Buffer.from(value.original_acl_base64, "base64").toString("utf8");
 }
 
@@ -692,7 +732,7 @@ function assertLocalRepairJsonGitignore(repoRoot) {
   );
 }
 
-function readRepairFile(filePath) {
+function readRepairFile(filePath, options = {}) {
   requireCondition(fs.existsSync(filePath), "handler_repair_file_missing");
   let parsed;
   try {
@@ -700,7 +740,7 @@ function readRepairFile(filePath) {
   } catch {
     fail("handler_repair_file_invalid");
   }
-  return validateRepair(parsed);
+  return validateRepair(parsed, options);
 }
 
 function validateSnapshotText(definition) {
@@ -710,8 +750,8 @@ function validateSnapshotText(definition) {
   return normalized;
 }
 
-function validateBundleFiles(repairFile, snapshotFile) {
-  const repair = readRepairFile(repairFile);
+function validateBundleFiles(repairFile, snapshotFile, options = {}) {
+  const repair = readRepairFile(repairFile, options);
   requireCondition(fs.existsSync(snapshotFile), "handler_snapshot_missing");
   const snapshot = validateSnapshotText(fs.readFileSync(snapshotFile, "utf8"));
   requireCondition(
@@ -723,10 +763,10 @@ function validateBundleFiles(repairFile, snapshotFile) {
   return { repair, snapshot };
 }
 
-function tryValidateBundleFiles(repairFile, snapshotFile) {
+function tryValidateBundleFiles(repairFile, snapshotFile, options = {}) {
   if (!fs.existsSync(repairFile) || !fs.existsSync(snapshotFile)) return null;
   try {
-    return validateBundleFiles(repairFile, snapshotFile);
+    return validateBundleFiles(repairFile, snapshotFile, options);
   } catch {
     return null;
   }
@@ -736,7 +776,7 @@ function removeIfExists(filePath) {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
-function recoverRepairBundle(repairPath, snapshotPath) {
+function recoverRepairBundle(repairPath, snapshotPath, options = {}) {
   const journal = bundleJournalPaths(repairPath, snapshotPath);
   const artifactPaths = Object.values(journal);
   if (artifactPaths.every((filePath) => !fs.existsSync(filePath))) return "absent";
@@ -746,7 +786,7 @@ function recoverRepairBundle(repairPath, snapshotPath) {
     journal.snapshotNext,
     journal.snapshotPrevious,
   ];
-  if (tryValidateBundleFiles(journal.repairPath, journal.snapshotPath)) {
+  if (tryValidateBundleFiles(journal.repairPath, journal.snapshotPath, options)) {
     for (const filePath of journalOnly) removeIfExists(filePath);
     return "current";
   }
@@ -757,7 +797,7 @@ function recoverRepairBundle(repairPath, snapshotPath) {
     { state: "recovered_previous", repair: journal.repairPrevious, snapshot: journal.snapshotPrevious },
     { state: "recovered_previous_with_current_snapshot", repair: journal.repairPrevious, snapshot: journal.snapshotPath },
   ];
-  const candidate = candidates.find(({ repair, snapshot }) => tryValidateBundleFiles(repair, snapshot));
+  const candidate = candidates.find(({ repair, snapshot }) => tryValidateBundleFiles(repair, snapshot, options));
   if (candidate) {
     if (candidate.snapshot !== journal.snapshotPath) {
       removeIfExists(journal.snapshotPath);
@@ -767,7 +807,7 @@ function recoverRepairBundle(repairPath, snapshotPath) {
       removeIfExists(journal.repairPath);
       fs.renameSync(candidate.repair, journal.repairPath);
     }
-    validateBundleFiles(journal.repairPath, journal.snapshotPath);
+    validateBundleFiles(journal.repairPath, journal.snapshotPath, options);
     for (const filePath of journalOnly) removeIfExists(filePath);
     return candidate.state;
   }
@@ -803,11 +843,15 @@ function publishRepairBundle(repairPath, snapshotPath, repairValue, definition, 
   return readRepairFile(journal.repairPath);
 }
 
-function updateRepair(repairPath, snapshotPath, changes, interruptAt = null) {
-  recoverRepairBundle(repairPath, snapshotPath);
+function updateRepair(repairPath, snapshotPath, changes, interruptAt = null, options = {}) {
+  recoverRepairBundle(repairPath, snapshotPath, options);
   const journal = bundleJournalPaths(repairPath, snapshotPath);
-  const current = validateBundleFiles(repairPath, snapshotPath).repair;
-  const updated = validateRepair({ ...current, ...changes });
+  const current = validateBundleFiles(repairPath, snapshotPath, options).repair;
+  const updated = validateRepair({
+    ...current,
+    ...changes,
+    version: CURRENT_BOOTSTRAP_VERSION,
+  });
   try {
     fs.writeFileSync(journal.repairNext, `${JSON.stringify(updated, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
     validateBundleFiles(journal.repairNext, snapshotPath);
@@ -817,7 +861,7 @@ function updateRepair(repairPath, snapshotPath, changes, interruptAt = null) {
     fs.renameSync(journal.repairNext, repairPath);
     if (interruptAt === "after_current") throw new Error("fixture_interrupt_update_after_current");
   } catch (error) {
-    recoverRepairBundle(repairPath, snapshotPath);
+    recoverRepairBundle(repairPath, snapshotPath, options);
     void error;
   }
   validateBundleFiles(repairPath, snapshotPath);
@@ -825,9 +869,9 @@ function updateRepair(repairPath, snapshotPath, changes, interruptAt = null) {
   return readRepairFile(repairPath);
 }
 
-function readRepair(repairPath, snapshotPath) {
-  requireCondition(recoverRepairBundle(repairPath, snapshotPath) !== "absent", "handler_repair_file_missing");
-  return validateBundleFiles(repairPath, snapshotPath).repair;
+function readRepair(repairPath, snapshotPath, options = {}) {
+  requireCondition(recoverRepairBundle(repairPath, snapshotPath, options) !== "absent", "handler_repair_file_missing");
+  return validateBundleFiles(repairPath, snapshotPath, options).repair;
 }
 
 function handlerGateSql(targetEmail, metadata) {
@@ -908,11 +952,7 @@ commit;`;
 
 function handlerRestoreSql(snapshotDefinition, metadata) {
   const acl = sqlText(metadata.acl);
-  return `
-begin;
-set local lock_timeout='5s';
-set local statement_timeout='60s';
-${normalizeEol(snapshotDefinition).trim()}
+  const restoreAndVerify = assembleCapturedFunctionSql(snapshotDefinition, `
 do $verify$
 declare p pg_proc%rowtype;
 begin
@@ -926,33 +966,90 @@ begin
     raise exception 'sitaa_target_bootstrap_restore_rejected' using errcode='55000';
   end if;
 end;
-$verify$;
+$verify$;`);
+  return `
+begin;
+set local lock_timeout='5s';
+set local statement_timeout='60s';
+${restoreAndVerify}
 select 'AUTH_HANDLER_RESTORED|1';
 commit;`;
 }
 
-function restoreHandler(connection, repairPath, snapshotPath) {
-  const repair = readRepair(repairPath, snapshotPath);
-  const snapshot = validateBundleFiles(repairPath, snapshotPath).snapshot;
+function classifyRestoreProcessResult(result) {
+  if (result?.status === 0 && !result?.error) return null;
+  const stderr = String(result?.stderr ?? "").toLowerCase();
+  if (/syntax error|sqlstate\s*42601|\b42601\b/.test(stderr)) return "syntax_error";
+  if (/lock timeout|lock_not_available|sqlstate\s*55p03|\b55p03\b/.test(stderr)) return "lock_timeout";
+  if (/statement timeout|query_canceled|sqlstate\s*57014|\b57014\b/.test(stderr)) return "statement_timeout";
+  if (/permission denied|must be owner|insufficient_privilege|sqlstate\s*42501|\b42501\b/.test(stderr)) {
+    return "permission_rejected";
+  }
+  if (/sitaa_target_bootstrap_restore_rejected|sqlstate\s*55000|\b55000\b/.test(stderr)) {
+    return "restore_contract_rejected";
+  }
+  if (result?.error || result?.status === 2) return "process_unavailable";
+  return "unknown_restore_failure";
+}
+
+function classifyRestoreError(error) {
+  if (error instanceof RestoreAttemptFailure) return error.category;
+  if (error instanceof SafeFailure) {
+    if (/^(?:handler_restore|captured_|mutation_|repair_|handler_repair_|database_result_invalid)/.test(error.code)) {
+      return "restore_contract_rejected";
+    }
+    if (error.code === "database_password_unavailable") return "permission_rejected";
+    if (/^database_(?:process_timeout|connection_failed|check_failed)$/.test(error.code)) {
+      return "process_unavailable";
+    }
+  }
+  return "unknown_restore_failure";
+}
+
+function restoreAttemptRejectionLines(attempt, error) {
+  const category = classifyRestoreError(error);
+  return [
+    `AUTH_HANDLER_RESTORE_ATTEMPT|${attempt}|REJECTED`,
+    `AUTH_HANDLER_RESTORE_DIAGNOSTIC|${attempt}|${category}`,
+  ];
+}
+
+function executeHandlerRestoreMutation(connection, sql) {
+  const normalized = assertControlledMutation(sql, "handler_restore");
+  const result = spawnPsql(connection, normalized);
+  const category = classifyRestoreProcessResult(result);
+  if (category) throw new RestoreAttemptFailure(category);
+  let parts;
+  try {
+    parts = parsePsqlMarker(result, "AUTH_HANDLER_RESTORED");
+  } catch (error) {
+    throw new RestoreAttemptFailure(classifyRestoreError(error));
+  }
+  console.log("POSTGRES_CONTROLLED_MUTATION|AUTH_HANDLER_RESTORED|APPROVED");
+  return parts;
+}
+
+function restoreHandler(connection, repairPath, snapshotPath, options = {}) {
+  const repair = readRepair(repairPath, snapshotPath, options);
+  const snapshot = validateBundleFiles(repairPath, snapshotPath, options).snapshot;
   const metadata = {
     oid: repair.original_oid,
-    acl: repairAcl(repair),
+    acl: repairAcl(repair, options),
     md5: repair.original_md5,
   };
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const parts = executeControlledMutation(
+      const parts = executeHandlerRestoreMutation(
         connection,
         handlerRestoreSql(snapshot, metadata),
-        "AUTH_HANDLER_RESTORED",
-        "handler_restore",
       );
       requireCondition(parts.length === 2 && parts[1] === "1", "handler_restore_result_rejected");
-      updateRepair(repairPath, snapshotPath, { phase: "handler_restored" });
+      updateRepair(repairPath, snapshotPath, { phase: "handler_restored" }, null, options);
       console.log(`AUTH_HANDLER_RESTORE_ATTEMPT|${attempt}|APPROVED`);
+      console.log("AUTH_HANDLER_STATE|CANONICAL");
       return true;
-    } catch {
-      console.log(`AUTH_HANDLER_RESTORE_ATTEMPT|${attempt}|REJECTED`);
+    } catch (error) {
+      for (const line of restoreAttemptRejectionLines(attempt, error)) console.log(line);
     }
   }
   console.error("AUTH_HANDLER_REPAIR_REQUIRED");
@@ -1000,6 +1097,58 @@ function resolveCreateOutcome({ attempt, matches }) {
 function provisioningState({ userCount, profileCount }) {
   requireCondition(userCount === 1 && (profileCount === 0 || profileCount === 1), "resume_inventory_rejected");
   return profileCount === 0 ? "auth_only_profile_missing" : "profile_already_created";
+}
+
+function resumeProvisioningPrecheckSql(targetId, targetEmail, adminAId, adminBId) {
+  const target = sqlUuid(targetId);
+  const email = sqlText(targetEmail);
+  const adminA = sqlUuid(adminAId);
+  const adminB = sqlUuid(adminBId);
+  const names = sqlText(TARGET_FIRST_NAMES);
+  return `
+begin;
+set transaction read only;
+select concat_ws('|','FAILURE_TARGET_RESUME_PRECHECK',
+  (select count(*) from auth.users),(select count(*) from auth.identities),
+  (select count(*) from public.profiles),(select count(*) from public.role_assignments),
+  (select count(*) from public.profiles p where p.id in (${adminA},${adminB}) and p.account_status='active'
+    and p.is_active and public.is_exact_b1_account_admin_profile_b2b(p.id)),
+  (select count(*) from auth.users where id=${target} and lower(email)=${email}
+    and email_confirmed_at is not null and banned_until is null
+    and raw_app_meta_data->>'provider'='email' and raw_app_meta_data->'providers'='["email"]'::jsonb
+    and raw_app_meta_data->>'sitaa_account_kind'='technical' and raw_app_meta_data->>'sitaa_first_names'=${names}),
+  (select count(*) from auth.identities where user_id=${target} and provider='email'
+    and lower(identity_data->>'email')=${email}),
+  (select count(*) from public.profiles where id=${target} and lower(email)=${email}
+    and first_names=${names} and paternal_surname is null and maternal_surname is null and full_name=${names}
+    and person_type is null and primary_program_id is null and institutional_id_type is null
+    and institutional_id_value is null and account_kind='technical' and account_status='active'
+    and is_active and activated_at is not null and deactivated_at is null),
+  (select count(*) from public.role_assignments where user_id=${target}),
+  (select count(*) from public.admin_auth_operations where target_profile_id=${target}),
+  md5(pg_get_functiondef('${HANDLER_SIGNATURE}'::regprocedure)),
+  case when ${exactAuthUsersTriggerContractSql()} then 2 else 0 end);
+rollback;`;
+}
+
+function assertResumeProvisioningPrecheck(parts) {
+  requireCondition(
+    parts.length === 13 && parts[0] === "FAILURE_TARGET_RESUME_PRECHECK",
+    "resume_precheck_shape_rejected",
+  );
+  const profileCount = Number(parts[8]);
+  requireCondition(
+    (profileCount === 0 || profileCount === 1)
+      && parts.slice(1, 3).join("|") === "3|3"
+      && parts[3] === String(2 + profileCount)
+      && parts.slice(4, 8).join("|") === "2|2|1|1"
+      && parts.slice(9, 11).join("|") === "0|0"
+      && parts[11] === EXPECTED_HANDLER_MD5
+      && parts[12] === "2",
+    "resume_precheck_state_rejected",
+  );
+  console.log(`FAILURE_TARGET_RESUME_STATE|${profileCount === 0 ? "1/1/0" : "1/1/1"}|APPROVED`);
+  return provisioningState({ userCount: 1, profileCount });
 }
 
 function profileProvisionSql(targetId, targetEmail) {
@@ -1433,10 +1582,10 @@ function isHandlerCanonical(parts) {
   return parts[1] === EXPECTED_HANDLER_MD5 && parts[2] === "0" && parts[3] === "1";
 }
 
-function assertRepairMatchesCanonicalHandler(repair, canonical) {
+function assertRepairMatchesCanonicalHandler(repair, canonical, options = {}) {
   requireCondition(
     canonical.oid === repair.original_oid
-      && canonical.acl === repairAcl(repair)
+      && canonical.acl === repairAcl(repair, options)
       && canonical.md5 === repair.original_md5,
     "resume_handler_contract_rejected",
   );
@@ -1450,6 +1599,7 @@ async function createWithinTemporaryHandlerGate({
   repair,
   capture,
   targetPassword,
+  repairOptions = {},
 }) {
   let attempt = null;
   let restorationRequired = false;
@@ -1463,12 +1613,12 @@ async function createWithinTemporaryHandlerGate({
       "handler_gate",
     );
     requireCondition(gate.length === 2 && gate[1] === "1", "handler_gate_result_rejected");
-    updateRepair(repairPath, snapshotPath, { phase: "handler_gate_open" });
+    updateRepair(repairPath, snapshotPath, { phase: "handler_gate_open" }, null, repairOptions);
     console.log("AUTH_HANDLER_STATE|TARGET_BOOTSTRAP_GATE");
     attempt = await attemptCreateAuthTarget(serviceClient, repair.target_email, targetPassword);
   } finally {
     if (restorationRequired) {
-      restoreHandler(connection, repairPath, snapshotPath);
+      restoreHandler(connection, repairPath, snapshotPath, repairOptions);
       authHandlerGateActive = false;
       restorationRequired = false;
     }
@@ -1484,11 +1634,22 @@ async function createWithinTemporaryHandlerGate({
     phase: outcome.classification === "response_lost_target_present"
       ? "auth_response_lost_target_present"
       : "auth_user_created",
-  });
+  }, null, repairOptions);
   return outcome.user;
 }
 
-async function completeProvisioning({ repoRoot, connection, repairPath, snapshotPath, repair, secrets, user, adminA, adminB }) {
+async function completeProvisioning({
+  repoRoot,
+  connection,
+  repairPath,
+  snapshotPath,
+  repair,
+  secrets,
+  user,
+  adminA,
+  adminB,
+  repairOptions = {},
+}) {
   const profileParts = executeControlledMutation(
     connection,
     profileProvisionSql(user.id, repair.target_email),
@@ -1499,7 +1660,7 @@ async function completeProvisioning({ repoRoot, connection, repairPath, snapshot
   updateRepair(repairPath, snapshotPath, {
     target_uuid: user.id,
     phase: profileParts[1] === "created" ? "profile_created" : "profile_replayed",
-  });
+  }, null, repairOptions);
   await signInAndVerify(secrets.projectUrl, secrets.publicKey, repair.target_email, secrets.targetPassword, user.id);
   const postcheck = executeReadOnlySql(
     connection,
@@ -1604,17 +1765,20 @@ async function normalMain({ resume = false } = {}) {
       });
       return;
     }
-    let repair = readRepair(repairPath, snapshotPath);
+    let repair = readRepair(repairPath, snapshotPath, RECOVERABLE_REPAIR_OPTIONS);
+    if (repair.version === RECOVERABLE_PREDECESSOR_VERSION) {
+      console.log("RECOVERABLE_PREDECESSOR_BUNDLE|v6|APPROVED");
+    }
     const state = executeReadOnlySql(connection, handlerStateSql(), "AUTH_HANDLER_STATE_CHECK");
     if (!isHandlerCanonical(state)) {
-      restoreHandler(connection, repairPath, snapshotPath);
+      restoreHandler(connection, repairPath, snapshotPath, RECOVERABLE_REPAIR_OPTIONS);
       authHandlerGateActive = false;
-      repair = readRepair(repairPath, snapshotPath);
+      repair = readRepair(repairPath, snapshotPath, RECOVERABLE_REPAIR_OPTIONS);
     }
     const canonical = parseHandlerCapture(
       executeReadOnlySql(connection, handlerCaptureSql(), "AUTH_HANDLER_CAPTURE"),
     );
-    assertRepairMatchesCanonicalHandler(repair, canonical);
+    assertRepairMatchesCanonicalHandler(repair, canonical, RECOVERABLE_REPAIR_OPTIONS);
     const secrets = await collectSecrets(repoRoot);
     const serviceClient = createClient(secrets.projectUrl, secrets.serviceKey);
     const users = await listAllAuthUsers(serviceClient);
@@ -1643,12 +1807,35 @@ async function normalMain({ resume = false } = {}) {
         repair,
         capture: canonical,
         targetPassword: secrets.targetPassword,
+        repairOptions: RECOVERABLE_REPAIR_OPTIONS,
       });
-      repair = readRepair(repairPath, snapshotPath);
+      repair = readRepair(repairPath, snapshotPath, RECOVERABLE_REPAIR_OPTIONS);
+    } else {
+      const resumePrecheck = executeReadOnlySql(
+        connection,
+        resumeProvisioningPrecheckSql(user.id, repair.target_email, adminA.id, adminB.id),
+        "FAILURE_TARGET_RESUME_PRECHECK",
+      );
+      assertResumeProvisioningPrecheck(resumePrecheck);
+      console.log("Escribe RESUME_FAILURE_TARGET_PROVISIONING para completar el perfil existente.");
+      if (!await readConfirmation("RESUME_FAILURE_TARGET_PROVISIONING")) {
+        console.log("FAILURE_TARGET_BOOTSTRAP|ABORTED");
+        process.exitCode = OPERATOR_ABORT_EXIT_CODE;
+        return;
+      }
     }
     requireCondition(user !== null, "resume_target_inventory_rejected");
     await completeProvisioning({
-      repoRoot, connection, repairPath, snapshotPath, repair, secrets, user, adminA, adminB,
+      repoRoot,
+      connection,
+      repairPath,
+      snapshotPath,
+      repair,
+      secrets,
+      user,
+      adminA,
+      adminB,
+      repairOptions: RECOVERABLE_REPAIR_OPTIONS,
     });
     return;
   }
@@ -1728,7 +1915,10 @@ async function restoreOnlyMain() {
   const reconciliationRoot = path.join(repoRoot, "supabase", "reconciliation");
   const repairPath = path.join(reconciliationRoot, "b3a_matrix_failure_recovery_target_handler_repair.local.json");
   const snapshotPath = path.join(reconciliationRoot, "b3a_matrix_failure_recovery_target_handler_snapshot.local.sql");
-  readRepair(repairPath, snapshotPath);
+  const repair = readRepair(repairPath, snapshotPath, RECOVERABLE_REPAIR_OPTIONS);
+  if (repair.version === RECOVERABLE_PREDECESSOR_VERSION) {
+    console.log("RECOVERABLE_PREDECESSOR_BUNDLE|v6|APPROVED");
+  }
   const connection = parsePostgresConnectionUri(process.env.SITAA_B3A_DB_URL ?? "");
   console.log("Escribe OPEN_FAILURE_TARGET_BOOTSTRAP_WINDOW para restaurar el handler.");
   if (!await readConfirmation("OPEN_FAILURE_TARGET_BOOTSTRAP_WINDOW")) {
@@ -1736,9 +1926,8 @@ async function restoreOnlyMain() {
     process.exitCode = OPERATOR_ABORT_EXIT_CODE;
     return;
   }
-  restoreHandler(connection, repairPath, snapshotPath);
+  restoreHandler(connection, repairPath, snapshotPath, RECOVERABLE_REPAIR_OPTIONS);
   authHandlerGateActive = false;
-  console.log("AUTH_HANDLER_STATE|CANONICAL");
 }
 
 async function abandonProvisioningMain() {
@@ -1751,14 +1940,17 @@ async function abandonProvisioningMain() {
   const reconciliationRoot = path.join(repoRoot, "supabase", "reconciliation");
   const repairPath = path.join(reconciliationRoot, "b3a_matrix_failure_recovery_target_handler_repair.local.json");
   const snapshotPath = path.join(reconciliationRoot, "b3a_matrix_failure_recovery_target_handler_snapshot.local.sql");
-  const repair = readRepair(repairPath, snapshotPath);
+  const repair = readRepair(repairPath, snapshotPath, RECOVERABLE_REPAIR_OPTIONS);
+  if (repair.version === RECOVERABLE_PREDECESSOR_VERSION) {
+    console.log("RECOVERABLE_PREDECESSOR_BUNDLE|v6|APPROVED");
+  }
   const connection = parsePostgresConnectionUri(process.env.SITAA_B3A_DB_URL ?? "");
   const state = executeReadOnlySql(connection, handlerStateSql(), "AUTH_HANDLER_STATE_CHECK");
   requireCondition(isHandlerCanonical(state), "abandon_handler_not_canonical");
   const canonical = parseHandlerCapture(
     executeReadOnlySql(connection, handlerCaptureSql(), "AUTH_HANDLER_CAPTURE"),
   );
-  assertRepairMatchesCanonicalHandler(repair, canonical);
+  assertRepairMatchesCanonicalHandler(repair, canonical, RECOVERABLE_REPAIR_OPTIONS);
   assertBaseline(executeReadOnlySql(
     connection,
     baselineSql(adminA.id, adminB.id),
@@ -1825,28 +2017,81 @@ async function runSelfTests(repoRoot) {
   const baseline = normalizeEol(baselineSql(adminA, adminB)).trim();
   requireCondition(baseline.startsWith("begin;\nset transaction read only;") && baseline.endsWith("rollback;"), "baseline_fixture_rejected");
   requireCondition(
-    VERSION === "2026-08-04-b3a-failure-target-bootstrap-v6"
+    CURRENT_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v7"
+      && RECOVERABLE_PREDECESSOR_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v6"
+      && VERSION === CURRENT_BOOTSTRAP_VERSION
       && TARGET_EMAIL_PATTERN.test(email)
       && !TARGET_EMAIL_PATTERN.test("b3a-failure-target-arbitrary-abcdefabcdef@example.invalid")
       && generateTargetEmail().match(TARGET_EMAIL_PATTERN),
     "version_and_target_pattern_fixture_rejected",
   );
   const gate = handlerGateSql(email, metadata);
-  const snapshotDefinition = "CREATE OR REPLACE FUNCTION public.handle_sitaa_auth_user_created() RETURNS trigger LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog,public,auth AS $x$ BEGIN RETURN NEW; END; $x$;";
+  const snapshotDefinition = `CREATE OR REPLACE FUNCTION public.handle_sitaa_auth_user_created()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public', 'auth'
+AS $function$
+begin
+  return new;
+end;
+$function$`;
+  const terminatedSnapshotDefinition = `${snapshotDefinition};`;
   const restore = handlerRestoreSql(
     snapshotDefinition,
     metadata,
   );
+  const restoreFromTerminated = handlerRestoreSql(terminatedSnapshotDefinition, metadata);
+  const restoreFromTrailingWhitespace = handlerRestoreSql(
+    `${snapshotDefinition.replace(/\n/g, "\r\n")}\r\n  `,
+    metadata,
+  );
+  const selectAssembly = assembleCapturedFunctionSql(
+    snapshotDefinition,
+    "select 'RESTORE_FIXTURE|1';",
+  );
   assertControlledMutation(gate, "handler_gate");
   assertControlledMutation(restore, "handler_restore");
+  assertControlledMutation(restoreFromTerminated, "handler_restore");
+  assertControlledMutation(restoreFromTrailingWhitespace, "handler_restore");
+  expectSafeFailure(
+    () => assertCapturedFunctionStatementBoundary(`${snapshotDefinition}\nselect 'RESTORE_FIXTURE|0';`),
+    "captured_function_statement_boundary_rejected",
+  );
   requireCondition(
     gate.includes("sitaa_target_bootstrap_email_not_allowed")
       && gate.includes("if (select count(*) from auth.users where id<>new.id)<>2")
       && !gate.includes("insert into public.profiles")
       && restore.includes(EXPECTED_HANDLER_MD5)
       && restore.includes(sqlText(EXPECTED_HANDLER_ACL))
-      && restore.includes("AUTH_HANDLER_RESTORED|1"),
+      && restore.includes("AUTH_HANDLER_RESTORED|1")
+      && ensureSqlStatementTerminated(snapshotDefinition) === terminatedSnapshotDefinition
+      && ensureSqlStatementTerminated(terminatedSnapshotDefinition) === terminatedSnapshotDefinition
+      && ensureSqlStatementTerminated(`${snapshotDefinition.replace(/\n/g, "\r\n")}\r\n  `) === terminatedSnapshotDefinition
+      && restore.includes("$function$;\ndo $verify$")
+      && restoreFromTerminated.includes("$function$;\ndo $verify$")
+      && restoreFromTrailingWhitespace.includes("$function$;\ndo $verify$")
+      && !restore.includes("$function$;;")
+      && selectAssembly.includes("$function$;\nselect 'RESTORE_FIXTURE|1';"),
     "handler_gate_restore_fixture_rejected",
+  );
+  const rejectedRestoreLines = restoreAttemptRejectionLines(
+    1,
+    new RestoreAttemptFailure("syntax_error"),
+  );
+  requireCondition(
+    classifyRestoreProcessResult({ status: 3, stderr: "ERROR: syntax error at or near SELECT" }) === "syntax_error"
+      && classifyRestoreProcessResult({ status: 3, stderr: "ERROR: canceling statement due to lock timeout" }) === "lock_timeout"
+      && classifyRestoreProcessResult({ status: 3, stderr: "ERROR: canceling statement due to statement timeout" }) === "statement_timeout"
+      && classifyRestoreProcessResult({ status: 3, stderr: "ERROR: permission denied" }) === "permission_rejected"
+      && classifyRestoreProcessResult({ status: 3, stderr: "ERROR: sitaa_target_bootstrap_restore_rejected" }) === "restore_contract_rejected"
+      && classifyRestoreProcessResult({ status: null, error: { code: "ENOENT" }, stderr: "" }) === "process_unavailable"
+      && classifyRestoreProcessResult({ status: 3, stderr: "fixture failure" }) === "unknown_restore_failure"
+      && rejectedRestoreLines.length === 2
+      && rejectedRestoreLines[0] === "AUTH_HANDLER_RESTORE_ATTEMPT|1|REJECTED"
+      && rejectedRestoreLines[1] === "AUTH_HANDLER_RESTORE_DIAGNOSTIC|1|syntax_error"
+      && !executeHandlerRestoreMutation.toString().includes("AUTH_HANDLER_RESTORED|STARTED"),
+    "restore_diagnostic_classification_fixture_rejected",
   );
   const exactTriggerContract = exactAuthUsersTriggerContractSql();
   requireCondition(
@@ -2101,6 +2346,10 @@ async function runSelfTests(repoRoot) {
     snapshot_relative_path: "supabase/reconciliation/b3a_matrix_failure_recovery_target_handler_snapshot.local.sql",
     phase: "handler_captured",
   };
+  const predecessorRepairFixture = {
+    ...repairFixture,
+    version: RECOVERABLE_PREDECESSOR_VERSION,
+  };
   const fixtureRoot = fs.mkdtempSync(path.join(process.env.TEMP ?? repoRoot, "sitaa-b3a-target-bundle-fixture-"));
   try {
     expectSafeFailure(
@@ -2110,11 +2359,116 @@ async function runSelfTests(repoRoot) {
       }),
       "repair_acl_rejected",
     );
-    const writeBundlePair = (repairFile, snapshotFile) => {
-      fs.writeFileSync(repairFile, `${JSON.stringify(repairFixture, null, 2)}\n`, "utf8");
+    const writeBundlePair = (repairFile, snapshotFile, repairValue = repairFixture, options = {}) => {
+      fs.writeFileSync(repairFile, `${JSON.stringify(repairValue, null, 2)}\n`, "utf8");
       fs.writeFileSync(snapshotFile, validateSnapshotText(snapshotDefinition), "utf8");
-      validateBundleFiles(repairFile, snapshotFile);
+      validateBundleFiles(repairFile, snapshotFile, options);
     };
+    const predecessorRoot = path.join(fixtureRoot, "recoverable-predecessor");
+    fs.mkdirSync(predecessorRoot);
+    const predecessorRepairPath = path.join(predecessorRoot, "handler_repair.local.json");
+    const predecessorSnapshotPath = path.join(predecessorRoot, "handler_snapshot.local.sql");
+    writeBundlePair(
+      predecessorRepairPath,
+      predecessorSnapshotPath,
+      predecessorRepairFixture,
+      RECOVERABLE_REPAIR_OPTIONS,
+    );
+    const predecessorRepairBefore = fs.readFileSync(predecessorRepairPath);
+    const predecessorSnapshotBefore = fs.readFileSync(predecessorSnapshotPath);
+    const predecessorRepairHashBefore = hashBuffer(predecessorRepairBefore);
+    const predecessorSnapshotHashBefore = hashBuffer(predecessorSnapshotBefore);
+    expectSafeFailure(
+      () => validateBundleFiles(predecessorRepairPath, predecessorSnapshotPath),
+      "repair_identity_rejected",
+    );
+    const predecessorBundle = validateBundleFiles(
+      predecessorRepairPath,
+      predecessorSnapshotPath,
+      RECOVERABLE_REPAIR_OPTIONS,
+    );
+    const predecessorRestoreSql = handlerRestoreSql(predecessorBundle.snapshot, metadata);
+    requireCondition(
+      predecessorBundle.repair.version === RECOVERABLE_PREDECESSOR_VERSION
+        && predecessorRestoreSql.includes("$function$;\ndo $verify$")
+        && fs.readFileSync(predecessorRepairPath).equals(predecessorRepairBefore)
+        && fs.readFileSync(predecessorSnapshotPath).equals(predecessorSnapshotBefore)
+        && hashBuffer(fs.readFileSync(predecessorRepairPath)) === predecessorRepairHashBefore
+        && hashBuffer(fs.readFileSync(predecessorSnapshotPath)) === predecessorSnapshotHashBefore,
+      "predecessor_bundle_read_only_acceptance_fixture_rejected",
+    );
+    expectSafeFailure(
+      () => validateRepair(
+        { ...predecessorRepairFixture, version: "2026-08-04-b3a-failure-target-bootstrap-v5" },
+        RECOVERABLE_REPAIR_OPTIONS,
+      ),
+      "repair_identity_rejected",
+    );
+
+    const predecessorEvidenceRoot = path.join(fixtureRoot, "predecessor-evidence-rejected");
+    fs.mkdirSync(predecessorEvidenceRoot);
+    const predecessorEvidencePath = path.join(predecessorEvidenceRoot, "bootstrap.local.txt");
+    const predecessorPostcheckPath = path.join(predecessorEvidenceRoot, "postcheck.local.txt");
+    const currentEvidence = approvedEvidencePairContents();
+    fs.writeFileSync(
+      predecessorEvidencePath,
+      currentEvidence.bootstrap.replace(CURRENT_BOOTSTRAP_VERSION, RECOVERABLE_PREDECESSOR_VERSION),
+      "utf8",
+    );
+    fs.writeFileSync(
+      predecessorPostcheckPath,
+      currentEvidence.postcheck.replace(CURRENT_BOOTSTRAP_VERSION, RECOVERABLE_PREDECESSOR_VERSION),
+      "utf8",
+    );
+    expectSafeFailure(
+      () => inspectApprovedEvidencePair(predecessorEvidencePath, predecessorPostcheckPath),
+      "bootstrap_evidence_invalid",
+    );
+
+    expectSafeFailure(
+      () => cleanupApprovedProvisioningArtifacts({
+        repairPath: predecessorRepairPath,
+        snapshotPath: predecessorSnapshotPath,
+        evidencePath: path.join(predecessorRoot, "bootstrap.local.txt"),
+        postcheckPath: path.join(predecessorRoot, "postcheck.local.txt"),
+        evidenceState: "absent",
+        remotePostcheckApproved: false,
+      }),
+      "post_success_cleanup_not_authorized",
+    );
+    requireCondition(
+      fs.readFileSync(predecessorRepairPath).equals(predecessorRepairBefore)
+        && fs.readFileSync(predecessorSnapshotPath).equals(predecessorSnapshotBefore),
+      "failed_predecessor_profile_preservation_fixture_rejected",
+    );
+
+    const predecessorSuccessRoot = path.join(fixtureRoot, "predecessor-success-cleanup");
+    fs.mkdirSync(predecessorSuccessRoot);
+    const predecessorSuccessRepair = path.join(predecessorSuccessRoot, "handler_repair.local.json");
+    const predecessorSuccessSnapshot = path.join(predecessorSuccessRoot, "handler_snapshot.local.sql");
+    const predecessorSuccessEvidence = path.join(predecessorSuccessRoot, "bootstrap.local.txt");
+    const predecessorSuccessPostcheck = path.join(predecessorSuccessRoot, "postcheck.local.txt");
+    writeBundlePair(
+      predecessorSuccessRepair,
+      predecessorSuccessSnapshot,
+      predecessorRepairFixture,
+      RECOVERABLE_REPAIR_OPTIONS,
+    );
+    publishApprovedEvidencePair(predecessorSuccessEvidence, predecessorSuccessPostcheck);
+    cleanupApprovedProvisioningArtifacts({
+      repairPath: predecessorSuccessRepair,
+      snapshotPath: predecessorSuccessSnapshot,
+      evidencePath: predecessorSuccessEvidence,
+      postcheckPath: predecessorSuccessPostcheck,
+      evidenceState: "complete",
+      remotePostcheckApproved: true,
+    });
+    requireCondition(
+      Object.values(bundleJournalPaths(predecessorSuccessRepair, predecessorSuccessSnapshot))
+        .every((filePath) => !fs.existsSync(filePath))
+        && inspectApprovedEvidencePair(predecessorSuccessEvidence, predecessorSuccessPostcheck).state === "complete",
+      "predecessor_success_cleanup_fixture_rejected",
+    );
     const emptyRoot = path.join(fixtureRoot, "bundle-empty");
     fs.mkdirSync(emptyRoot);
     const emptyRepairPath = path.join(emptyRoot, "handler_repair.local.json");
@@ -2240,7 +2594,7 @@ async function runSelfTests(repoRoot) {
 
     for (const [fixtureName, damagedSnapshot] of [
       ["snapshot-truncated", "CREATE OR REPLACE FUNCTION public.handle_sitaa_auth_user_created()"],
-      ["snapshot-modified", snapshotDefinition.replace("RETURN NEW", "RETURN NULL")],
+      ["snapshot-modified", snapshotDefinition.replace("return new", "return null")],
     ]) {
       const stageRoot = path.join(fixtureRoot, fixtureName);
       fs.mkdirSync(stageRoot);
@@ -2488,7 +2842,42 @@ async function runSelfTests(repoRoot) {
   requireCondition(duplicateRejected, "duplicate_target_fixture_rejected");
   const profileSql = profileProvisionSql(target, email);
   assertControlledMutation(profileSql, "profile");
-  requireCondition(profileSql.includes("outcome:='created'") && profileSql.includes("outcome:='replayed'"), "profile_idempotency_fixture_rejected");
+  const resumePrecheckSql = resumeProvisioningPrecheckSql(target, email, adminA, adminB);
+  const missingProfilePrecheck = [
+    "FAILURE_TARGET_RESUME_PRECHECK", "3", "3", "2", "2", "2", "1", "1", "0", "0", "0",
+    EXPECTED_HANDLER_MD5, "2",
+  ];
+  const replayedProfilePrecheck = [
+    "FAILURE_TARGET_RESUME_PRECHECK", "3", "3", "3", "2", "2", "1", "1", "1", "0", "0",
+    EXPECTED_HANDLER_MD5, "2",
+  ];
+  const firstResumeState = assertResumeProvisioningPrecheck(missingProfilePrecheck);
+  const secondResumeState = assertResumeProvisioningPrecheck(replayedProfilePrecheck);
+  let simulatedProfileCount = 0;
+  let simulatedProfileCreates = 0;
+  const simulateIdempotentProfileResume = () => {
+    const state = provisioningState({ userCount: 1, profileCount: simulatedProfileCount });
+    if (state === "auth_only_profile_missing") {
+      simulatedProfileCount += 1;
+      simulatedProfileCreates += 1;
+      return "created";
+    }
+    return "replayed";
+  };
+  requireCondition(
+    profileSql.includes("outcome:='created'")
+      && profileSql.includes("outcome:='replayed'")
+      && (profileSql.match(/insert\s+into\s+public\.profiles/gi) ?? []).length === 1
+      && normalizeEol(resumePrecheckSql).trim().startsWith("begin;\nset transaction read only;")
+      && normalizeEol(resumePrecheckSql).trim().endsWith("rollback;")
+      && firstResumeState === "auth_only_profile_missing"
+      && secondResumeState === "profile_already_created"
+      && simulateIdempotentProfileResume() === "created"
+      && simulateIdempotentProfileResume() === "replayed"
+      && simulatedProfileCreates === 1
+      && simulatedProfileCount === 1,
+    "profile_idempotency_fixture_rejected",
+  );
   const canonicalTarget = {
     id: target,
     email,
@@ -2536,7 +2925,7 @@ async function runSelfTests(repoRoot) {
   }
   requireCondition(guardedInventoryRejected && guardedInventoryCalls === 0, "handler_inventory_fence_fixture_rejected");
 
-  const normalSource = normalMain.toString();
+  const normalSource = normalizeEol(normalMain.toString());
   const baselinePosition = normalSource.lastIndexOf("assertBaseline");
   const secretPosition = normalSource.lastIndexOf("collectSecrets");
   const preflightPosition = normalSource.lastIndexOf("authAdminBootstrapPreflight");
@@ -2572,12 +2961,60 @@ async function runSelfTests(repoRoot) {
       && resumeHandlerGate > resumeConfirmation,
     "resume_zero_target_preflight_order_fixture_rejected",
   );
+  const resumeExistingStart = resumeBranch.indexOf("} else {", resumeHandlerGate);
+  const resumeExistingEnd = resumeBranch.indexOf(
+    'requireCondition(user !== null, "resume_target_inventory_rejected")',
+    resumeExistingStart,
+  );
+  requireCondition(
+    resumeExistingStart >= 0 && resumeExistingEnd > resumeExistingStart,
+    "resume_existing_target_branch_fixture_rejected",
+  );
+  const resumeExistingBranch = resumeBranch.slice(resumeExistingStart, resumeExistingEnd);
+  requireCondition(
+    resumeExistingBranch.includes("resumeProvisioningPrecheckSql")
+      && resumeExistingBranch.includes("assertResumeProvisioningPrecheck")
+      && resumeExistingBranch.includes("RESUME_FAILURE_TARGET_PROVISIONING")
+      && !resumeExistingBranch.includes("attemptCreateAuthTarget")
+      && !resumeExistingBranch.includes("createWithinTemporaryHandlerGate")
+      && !resumeExistingBranch.includes("handlerGateSql")
+      && !resumeExistingBranch.includes("createUser"),
+    "resume_existing_target_no_auth_creation_fixture_rejected",
+  );
   const createWindowSource = createWithinTemporaryHandlerGate.toString();
   requireCondition(
     createWindowSource.indexOf("attemptCreateAuthTarget") >= 0
       && createWindowSource.indexOf("restoreHandler") > createWindowSource.indexOf("attemptCreateAuthTarget")
       && createWindowSource.indexOf("resolveCreatedTargetAfterRestore") > createWindowSource.indexOf("restoreHandler"),
     "handler_restore_before_inventory_fixture_rejected",
+  );
+  const restoreSource = [
+    handlerRestoreSql,
+    restoreAttemptRejectionLines,
+    restoreHandler,
+  ].map((value) => value.toString()).join("\n");
+  requireCondition(
+    restoreSource.includes("assembleCapturedFunctionSql")
+      && restoreSource.includes("AUTH_HANDLER_RESTORE_DIAGNOSTIC")
+      && restoreSource.includes("classifyRestoreError")
+      && !restoreHandler.toString().includes("stderr")
+      && !restoreHandler.toString().includes("console.log(error")
+      && !restoreHandler.toString().includes("console.error(error"),
+    "restore_terminator_and_diagnostic_source_fixture_rejected",
+  );
+  const completionSource = normalizeEol(completeProvisioning.toString());
+  const completionProfilePosition = completionSource.indexOf("profileProvisionSql");
+  const completionLoginPosition = completionSource.indexOf("signInAndVerify");
+  const completionPostcheckPosition = completionSource.indexOf("postcheckSql");
+  const completionEvidencePosition = completionSource.indexOf("publishApprovedEvidencePair");
+  const completionCleanupPosition = completionSource.indexOf("cleanupApprovedProvisioningArtifacts");
+  requireCondition(
+    completionProfilePosition >= 0
+      && completionLoginPosition > completionProfilePosition
+      && completionPostcheckPosition > completionLoginPosition
+      && completionEvidencePosition > completionPostcheckPosition
+      && completionCleanupPosition > completionEvidencePosition,
+    "resume_failure_preserves_bundle_until_evidence_fixture_rejected",
   );
   const abandonSource = abandonProvisioningMain.toString();
   requireCondition(

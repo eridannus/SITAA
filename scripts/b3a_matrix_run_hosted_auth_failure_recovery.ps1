@@ -41,8 +41,8 @@ import { spawnSync } from "node:child_process";
 
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
-const HARNESS_VERSION = "2026-08-04-hosted-auth-failure-recovery-v10";
-const TARGET_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v6";
+const HARNESS_VERSION = "2026-08-04-hosted-auth-failure-recovery-v11";
+const TARGET_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v7";
 const EXPECTED_SUPABASE_JS_VERSION = "2.110.1";
 const OPERATOR_ABORT_EXIT_CODE = 2;
 const AUTH_REQUEST_TIMEOUT_MS = 20_000;
@@ -2046,8 +2046,8 @@ async function runSelfTests(repoRoot) {
   );
   requireCondition(HASH_PATTERN.test(CORE_EVIDENCE.sha256) && HASH_PATTERN.test(CORE_POSTCHECK_EVIDENCE.sha256), "central_hash_fixture_failed");
   requireCondition(
-    HARNESS_VERSION === "2026-08-04-hosted-auth-failure-recovery-v10"
-      && TARGET_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v6"
+    HARNESS_VERSION === "2026-08-04-hosted-auth-failure-recovery-v11"
+      && TARGET_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v7"
       && TARGET_BOOTSTRAP_EVIDENCE.markers.includes(`HARNESS_VERSION|${TARGET_BOOTSTRAP_VERSION}`)
       && TARGET_BOOTSTRAP_POSTCHECK_EVIDENCE.markers.includes(`HARNESS_VERSION|${TARGET_BOOTSTRAP_VERSION}`)
       && TARGET_BOOTSTRAP_REPAIR_ARTIFACTS.length === 6
