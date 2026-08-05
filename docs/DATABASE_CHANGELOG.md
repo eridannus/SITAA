@@ -58,7 +58,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0010` están aplicadas e inmutables. `0001`–`0009` están verificadas y reconciliadas; `0010` tiene el verificador PostgreSQL y la matriz Hosted Auth central aprobados, pero su reconciliación post‑0010 permanece pendiente. No se debe crear `0011` mientras B.3a siga abierta. Todo cambio futuro debe:
+`0001`–`0010` están aplicadas e inmutables. `0001`–`0009` están verificadas y reconciliadas; `0010` tiene el verificador PostgreSQL, la matriz Hosted Auth central 1–12 y la matriz failure/recovery 13–15 aprobados, pero su reconciliación post‑0010 permanece pendiente. No se debe crear `0011` mientras B.3a siga abierta. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0010`;
@@ -262,3 +262,16 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - La evidencia, la salida del arnés y la auditoría fueron revisadas sin correos, UUID, tokens, claves, contraseñas, URI, cookies, cabeceras `Authorization`, metadata sensible ni errores crudos. El resumen versionado está en `supabase/reconciliation/0010_hosted_auth_core_evidence.md`; los dos `*.local.txt` continúan ignorados por Git.
 - La primera operación real revocó definitivamente la elegibilidad del rollback 0010.
 - B.3a sigue abierta: faltan fallos inyectados, fallo de finalización, recuperación por otro administrador, usuarios ordinarios y `service_role` en el límite hospedado, cierre de ausencia de secretos, timeout, concurrencia, conflictos/replays de `request_id`, pérdida de autoridad tras locks, smoke tests y reconciliación post‑0010.
+
+## Matriz Hosted Auth failure/recovery de 0010 — 2026-08-05 UTC
+
+- Se ejecutó una sola vez en un proyecto Supabase desechable, nunca en producción, con el arnés `2026-08-04-hosted-auth-failure-recovery-v11`, bootstrap Target C v7, Node.js `v24.18.0` y Supabase JS `2.110.1`.
+- La evidencia principal local tiene 2167 bytes y SHA-256 `cf5653456e1ce1fca8b106bb4fb492f276f1f758eff10a3a643f88b13c743c8c`; el postcheck local tiene 542 bytes y SHA-256 `3404ddcd6f9c028a28f9db21a38d2dfb70c60f0c94fb9f38277ff55ca6e0e1c7`.
+- Caso 13 aprobado: el fallo Auth controlado `auth_temporarily_unavailable` dejó la operación en `retryable_failure/profile_suspended`; el reintento completó la misma operación con un solo evento de perfil, cero eventos Auth de fallo, un nuevo evento Auth de éxito y replays idempotentes sin repetir Auth.
+- Caso 14 aprobado: una reactivación sincronizó Auth una sola vez; la fixture temporal de confirmación provocó `auth_unconfirmed` en el segundo intento de finalización y conservó `processing/auth_synchronized`; la recuperación posterior no repitió Auth.
+- Caso 15 aprobado: Admin B recuperó la operación iniciada por Admin A; solicitante y finalizador permanecieron diferenciados, `AUTH_CALLS_FOR_REACTIVATION=1`, no se repitió Auth, y se preservaron `activated_at` e identidad Auth.
+- Aprobaron los contratos de replay con el mismo payload, conflicto con payload distinto, objetivo con operación no final, idempotencia de retry y replays `start`/`retry` de una operación completada.
+- Postcheck exacto: 3 usuarios Auth, 3 identidades, 3 perfiles, 2 asignaciones, autoridad B.1 `2/2`, Target C activo/sin ban/sin asignaciones, 4 operaciones B.3a completadas, 0 no finales, 0 no exitosas, 8 eventos administrativos esperados, 0 eventos Auth de fallo y 2 nuevos eventos Auth de éxito; correo confirmado, handler canónico, `READ ONLY`, `ROLLBACK` y matriz aprobados.
+- El archivo de reparación de confirmación quedó ausente. Las dos evidencias `*.local.txt` permanecen ignoradas por Git; el resumen versionado y sanitizado está en `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`.
+- Los códigos observados pertenecen a inyecciones controladas y no generalizan errores reales o futuros de Supabase. `terminal_failure` continúa limitado al modelo SQL sintético/transaccional.
+- B.3a permanece abierta: 17–18 pendientes; 19–20 parciales; concurrencia multisesión, espera real por locks, leases, límites hospedados, smoke tests y reconciliación post‑0010 pendientes. El caso 16 conserva su atribución al verificador PostgreSQL y todavía no debe crearse 0011.

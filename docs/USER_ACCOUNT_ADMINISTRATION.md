@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3a está implementada y aplicada mediante 0010, con verificador PostgreSQL y matriz Hosted Auth central aprobados; permanece abierta hasta completar fallos, concurrencia, límites hospedados, smoke tests y reconciliación. B.3b y Fase C siguen pendientes.
+**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3a está implementada y aplicada mediante 0010: el verificador PostgreSQL, la matriz Hosted Auth central 1–12 y la matriz failure/recovery 13–15 están aprobados. Permanece abierta por 17–20, concurrencia, límites hospedados, smoke tests y reconciliación post‑0010. B.3b y Fase C siguen pendientes.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -46,7 +46,9 @@ Implementada mediante 0009: desactivación y reactivación del estado operativo 
 
 Una cuenta reactivada debe iniciar una sesión nueva. La interfaz y la comunicación operativa no deben prometer que una pestaña o refresh token anterior recuperará acceso automáticamente.
 
-La matriz central creó dos operaciones completadas y cuatro eventos esperados, preservó identidad, `activated_at`, asignaciones e historia, y dejó cero operaciones no exitosas y cero eventos Auth de fallo. La primera operación real revocó definitivamente el rollback 0010. B.3a continúa abierta por las matrices de fallos, concurrencia y límites hospedados, los smoke tests y la reconciliación post‑0010.
+La matriz central creó dos operaciones completadas y cuatro eventos esperados, preservó identidad, `activated_at`, asignaciones e historia, y dejó cero operaciones no exitosas y cero eventos Auth de fallo. La matriz failure/recovery v11 aprobó después los casos 13–15: un fallo Auth controlado se reintentó sobre la misma operación sin duplicar el evento de ciclo; un fallo de finalización posterior a `auth_synchronized` se recuperó sin repetir Auth; y Admin B completó una operación solicitada por Admin A, conservando solicitante y finalizador distintos. Su postcheck terminó con cuatro operaciones completadas, ocho eventos esperados, cero operaciones no exitosas y cero eventos Auth de fallo.
+
+La primera operación real revocó definitivamente el rollback 0010. B.3a continúa abierta: los casos 17 y 18 están pendientes; 19 y 20 son parciales; faltan concurrencia multisesión, espera real por locks y leases, límites hospedados, smoke tests y reconciliación post‑0010. Estos resultados provienen de ejecuciones desechables concretas y no generalizan la semántica futura de Supabase.
 
 ### B.3b — Otras operaciones Auth pendientes
 

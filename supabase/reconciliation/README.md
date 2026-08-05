@@ -107,6 +107,14 @@ El handler corregido usa `insufficient_privilege` y exige el SQLSTATE y mensaje 
 
 `0010_hosted_auth_core_evidence.md` conserva el resumen sanitizado de la matriz central ejecutada el 3 de agosto de 2026 en un proyecto desechable. Los archivos `b3a_matrix_hosted_auth_core.local.txt` y `b3a_matrix_hosted_auth_core_postcheck.local.txt` son evidencia local no versionada e ignorada por Git; el resumen conserva sus tamaños y SHA-256 sin copiar datos identificables ni secretos.
 
-La matriz aprobó la suspensión/restauración central y produjo las primeras operaciones y eventos B.3a reales, por lo que el rollback 0010 quedó definitivamente revocado. Sus resultados sobre `user_banned`, refresh tokens y login posterior son evidencia empírica de esa ejecución, no una garantía universal del proveedor. Los casos de fallos, concurrencia, límites hospedados, smoke tests y reconciliación continúan pendientes; B.3a sigue abierta.
+La matriz aprobó la suspensión/restauración central y produjo las primeras operaciones y eventos B.3a reales, por lo que el rollback 0010 quedó definitivamente revocado. Sus resultados sobre `user_banned`, refresh tokens y login posterior son evidencia empírica de esa ejecución, no una garantía universal del proveedor. En ese checkpoint los casos de fallos todavía estaban pendientes; el checkpoint failure/recovery posterior se documenta por separado. B.3a sigue abierta.
 
 El snapshot vivo canónico bajo `live/` continúa siendo post‑0009. El snapshot post‑0010 no debe inferirse a partir del checkpoint ni editarse manualmente: debe generarse mediante el flujo canónico de snapshot y reconciliarse antes de actualizar el inventario. No se debe crear 0011 mientras permanezcan abiertos esos gates.
+
+## Checkpoint Hosted Auth failure/recovery 0010
+
+`0010_hosted_auth_failure_recovery_evidence.md` conserva el resumen sanitizado de la ejecución failure/recovery v11 que aprobó los casos 13–15 en un proyecto desechable. Los archivos `b3a_matrix_hosted_auth_failure_recovery.local.txt` y `b3a_matrix_hosted_auth_failure_recovery_postcheck.local.txt` son fuentes locales no versionadas e ignoradas por Git; el checkpoint conserva sus tamaños, SHA-256, versiones, timestamps y resultados agregados sin copiar datos crudos.
+
+La matriz comprobó un fallo Auth controlado y su reintento idempotente, un fallo de finalización posterior a `auth_synchronized` sin repetir Auth y la recuperación por una segunda autoridad B.1 exacta. Solicitante y finalizador permanecieron diferenciados. Sus códigos estables y el comportamiento observado describen sólo esa ejecución; no son una garantía universal de Supabase.
+
+Los dos `*.local.txt` no deben añadirse a Git. El markdown es un resumen documental, no sustituye las fuentes locales ni el snapshot vivo. `live/` continúa siendo el snapshot canónico post‑0009; la reconciliación post‑0010, 17–18, el cierre de 19–20, concurrencia, límites hospedados y smoke tests siguen pendientes. B.3a permanece abierta y no debe crearse 0011.
