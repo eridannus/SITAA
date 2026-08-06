@@ -1,9 +1,9 @@
 # Estado reconciliado de la base de datos
 
-**Actualización documental:** 2026-08-04.
+**Actualización documental:** 2026-08-06.
 **Snapshot vivo canónico:** `2026-07-22T23:32:46Z`, estado `SUCCESS`.
 
-La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Esas migraciones son inmutables. `0010` está aplicada, su verificador PostgreSQL corregido está aprobado, la matriz Hosted Auth central aprobó los casos 1–12 y la matriz failure/recovery v11 aprobó los casos 13–15 en un proyecto desechable; la reconciliación post‑0010 permanece pendiente. El snapshot canónico bajo `supabase/reconciliation/live/` continúa representando post‑0009; estos checkpoints documentales no permiten inferir el inventario post‑0010 y no regeneraron el snapshot.
+La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Esas migraciones son inmutables. `0010` está aplicada, su verificador PostgreSQL corregido está aprobado, la matriz Hosted Auth central aprobó los casos 1–12, la matriz failure/recovery v11 aprobó 13–15 y la matriz de concurrencia y límites v8 aprobó 17–18 y la concurrencia multisesión en un proyecto desechable. Los casos 19–20 continúan parciales y la reconciliación post‑0010 permanece pendiente. El snapshot canónico bajo `supabase/reconciliation/live/` continúa representando post‑0009; estos checkpoints documentales no permiten inferir el inventario post‑0010 y no regeneraron el snapshot.
 
 ## Cadena aplicada
 
@@ -16,7 +16,7 @@ La fuente histórica aplicada, verificada y reconciliada es `0001`–`0009`. Esa
 7. `0007_admin_account_directory_audit.sql`: directorio B.1 de sólo lectura y auditoría append-only.
 8. `0008_operational_account_barrier_identity_correction.sql`: barrera de cuenta activa y corrección de identidad B.2a.
 9. `0009_admin_account_lifecycle_transitions.sql`: desactivación/reactivación auditada B.2b.
-10. `0010_coordinated_auth_session_suspension.sql`: coordinación B.3a entre ciclo de vida SITAA y Auth; aplicada, con verificador PostgreSQL aprobado, matriz central 1–12 aprobada y matriz failure/recovery 13–15 aprobada.
+10. `0010_coordinated_auth_session_suspension.sql`: coordinación B.3a entre ciclo de vida SITAA y Auth; aplicada, con verificador PostgreSQL aprobado y matrices desechables 1–15 y 17–18 aprobadas.
 
 ## Inventario vivo posterior a 0009
 
@@ -52,7 +52,7 @@ El delta frente a post‑0008 es exactamente el esperado por 0009: tres firmas, 
 
 Las matrices manuales de concurrencia B.2a/B.2b siguen sin ejecutarse y no constituyen evidencia de producción.
 
-## 0010 aplicada / verificador PostgreSQL y matrices hospedadas parciales aprobadas
+## 0010 aplicada / verificador PostgreSQL y casos 1–18 aprobados
 
 `0010_coordinated_auth_session_suspension.sql` fue aplicada y el registro local termina en `COMMIT`. Añade:
 
@@ -104,12 +104,48 @@ La matriz failure/recovery se ejecutó una sola vez en el mismo tipo de entorno 
 
 El postcheck aprobó 3 usuarios Auth, 3 identidades, 3 perfiles, 2 asignaciones, autoridad B.1 `2/2`, Target C activo y sin ban ni asignaciones, 4 operaciones B.3a completadas, 8 eventos administrativos esperados, 0 operaciones no finales o no exitosas, 0 eventos Auth de fallo y 2 nuevos eventos Auth de éxito. Terminó en `READ ONLY` con `ROLLBACK`. Estos conteos describen la ejecución desechable; no sustituyen ni permiten inferir un snapshot vivo post‑0010.
 
-La ejecución no convierte `auth_temporarily_unavailable`, `auth_unconfirmed` ni el comportamiento observado del proveedor en garantías universales. El caso 16 sigue atribuido al verificador PostgreSQL; 17 y 18 permanecen pendientes; 19 y 20 son parciales. También faltan concurrencia multisesión, límites hospedados, smoke tests y snapshot/reconciliación post‑0010.
+La ejecución no convierte `auth_temporarily_unavailable`, `auth_unconfirmed` ni el comportamiento observado del proveedor en garantías universales. El caso 16 sigue atribuido al verificador PostgreSQL. Los casos 17–18 y la concurrencia multisesión se aprobaron después mediante la matriz v8; 19–20 permanecen parciales y todavía faltan smoke tests y snapshot/reconciliación post‑0010.
+
+## Matriz Hosted Auth de concurrencia y límites v8 aprobada
+
+El checkpoint sanitizado `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md` documenta una ejecución aprobada en el proyecto desechable. La evidencia v7 rechazada permanece como predecesora inmutable después de detenerse con `advisory_observer_timeout`. Antes de reanudar, una transacción estrecha normalizó cuatro campos de texto administrados por el proveedor únicamente en la Authority D sintética; el primer transporte había sido rechazado por `psql` sin aceptar escritura. Esta limpieza de fixture no fue migración, reparación de producción ni cambio de aplicación o Edge. Un probe Auth Admin posterior de sólo lectura aprobó el inventario sintético requerido.
+
+La matriz v8 aprobó:
+
+- caso 17: en PostgreSQL transaccional, las fixtures ordinarias de profesor y alumno quedaron denegadas en las superficies B.3a sin mutar ledger ni auditoría; de forma separada, Target C autenticado sin autoridad B.1 fue rechazado en `start` y `retry` por la ruta Hosted, se conservaron los hashes de perfil, ledger y auditoría, y el postcheck confirmó la identidad Auth del objetivo;
+- caso 18: `service_role` no leyó ni mutó directamente `admin_auth_operations`; dentro de B.3a conservó únicamente las RPC aprobadas de claim/result, sin cambiar su ACL histórico `SELECT`/`INSERT` sobre `admin_audit_events` ni concederle `UPDATE`, `DELETE` o `TRUNCATE`;
+- idempotencia del mismo `request_id` y payload normalizado, rechazo del payload conflictivo y serialización de solicitudes distintas contra el mismo objetivo;
+- espera real por advisory lock, tiempos posteriores al lock, monotonicidad, orden de operación, lease fresco y recuperación después de cinco minutos;
+- rechazo del intento obsoleto, aceptación del vigente y pérdida de autoridad fail-closed en claim, record y replay final;
+- recuperación por otra autoridad B.1 exacta con una sola llamada Auth y sin repetición durante la recuperación.
+
+El postcheck agregado final fue:
+
+| Categoría | Resultado |
+| --- | ---: |
+| Usuarios Auth | 4 |
+| Identidades Auth | 3 |
+| Perfiles | 4 |
+| Asignaciones de rol | 3 |
+| Autoridad B.1 exacta activa | 2/2 |
+| Target C activo / con ban / asignaciones | Sí / No / 0 |
+| Operaciones B.3a | 6 |
+| Operaciones `succeeded/completed` | 6 |
+| Operaciones no finales / no exitosas | 0 / 0 |
+| Eventos administrativos B.3a | 12 |
+| Eventos Auth de fallo / éxito | 0 / 6 |
+| Asignaciones administrativas baseline preservadas | Sí |
+| Authority D sintética activa | No |
+| Leases activos / workers vivos | 0 / 0 |
+| Handler Auth | `CANONICAL` |
+| Transacción de sólo lectura / `ROLLBACK` / postcheck | Sí / Sí / Aprobado |
+
+Estos agregados pertenecen a la ejecución desechable y no sustituyen el snapshot vivo post‑0010 todavía pendiente.
 
 ## Pendientes
 
 - **A-02:** `technical_admin` mantiene acceso académico amplio a contenido publicado. **Deferred intentionally until user, role and permission administration is designed.**
-- B.3a permanece abierta: las matrices central 1–12 y failure/recovery 13–15 están aprobadas, pero faltan 17–18, cierre de 19–20, concurrencia, límites hospedados, smoke tests y reconciliación post‑0010.
+- B.3a permanece abierta: las matrices central 1–12, failure/recovery 13–15 y concurrencia/límites 17–18 están aprobadas; 19–20 son parciales y faltan smoke tests y reconciliación post‑0010.
 - El paquete 0010 exige casts `::text` al serializar campos internos `char` de catálogo y revalida B.1 después de los locks en todas sus RPC mutables. Su verificador PostgreSQL está aprobado, pero no demuestra por sí solo la semántica hospedada de Auth.
 - B.3b, administración de roles/Fase C, retiro de A-02, paneles especializados, formularios dinámicos, reportes y exportaciones continúan pendientes.
 - No se debe crear 0011 mientras permanezcan abiertos los gates hospedados y la reconciliación post‑0010.
@@ -118,4 +154,4 @@ La ejecución no convierte `auth_temporarily_unavailable`, `auth_unconfirmed` ni
 
 Los resultados de aplicación y verificación de 0009 están en `supabase/reconciliation/0009_post_apply_reconciliation.md` y archivos asociados. Los snapshots vivos no se editan manualmente.
 
-La matriz central produjo las primeras operaciones y eventos Auth B.3a reales. La historia coordinada no puede eliminarse: el rollback 0010 quedó revocado y está prohibido por diseño. No se ejecutó durante este checkpoint documental.
+La matriz central produjo las primeras operaciones y eventos Auth B.3a reales. Las matrices failure/recovery v11 y concurrencia/límites v8 ampliaron la evidencia sin alterar esa decisión. La historia coordinada no puede eliminarse: el rollback 0010 quedó revocado y está prohibido por diseño. No se ejecutó durante este checkpoint documental.

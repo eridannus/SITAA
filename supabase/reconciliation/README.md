@@ -117,4 +117,14 @@ El snapshot vivo canónico bajo `live/` continúa siendo post‑0009. El snapsho
 
 La matriz comprobó un fallo Auth controlado y su reintento idempotente, un fallo de finalización posterior a `auth_synchronized` sin repetir Auth y la recuperación por una segunda autoridad B.1 exacta. Solicitante y finalizador permanecieron diferenciados. Sus códigos estables y el comportamiento observado describen sólo esa ejecución; no son una garantía universal de Supabase.
 
-Los dos `*.local.txt` no deben añadirse a Git. El markdown es un resumen documental, no sustituye las fuentes locales ni el snapshot vivo. `live/` continúa siendo el snapshot canónico post‑0009; la reconciliación post‑0010, 17–18, el cierre de 19–20, concurrencia, límites hospedados y smoke tests siguen pendientes. B.3a permanece abierta y no debe crearse 0011.
+Los dos `*.local.txt` no deben añadirse a Git. El markdown es un resumen documental, no sustituye las fuentes locales ni el snapshot vivo. Los casos 17–18 y la concurrencia se aprobaron después mediante el checkpoint separado de límites y concurrencia v8. `live/` continúa siendo el snapshot canónico post‑0009; la reconciliación post‑0010, el cierre de 19–20 y los smoke tests siguen pendientes. B.3a permanece abierta y no debe crearse 0011.
+
+## Checkpoint Hosted Auth de concurrencia y límites 0010
+
+`0010_hosted_auth_concurrency_boundaries_evidence.md` conserva el resumen sanitizado de la ejecución v8 que aprobó los casos 17–18 y la matriz multisesión de concurrencia, advisory locks, leases, pérdida de autoridad y recuperación sincronizada en un proyecto desechable. La ejecución observó serialización real, idempotencia del mismo `request_id`, rechazo de payload conflictivo, espera por lock, cercado de intentos y recuperación por otra autoridad B.1 exacta sin repetir Auth.
+
+La fuente v7 `b3a_matrix_hosted_auth_concurrency_boundaries.local.txt` permanece como evidencia predecesora rechazada y preservada. La pareja final aprobada corresponde a `b3a_matrix_hosted_auth_concurrency_boundaries_v8.local.txt` y `b3a_matrix_hosted_auth_concurrency_boundaries_v8_postcheck.local.txt`; el artefacto v8 de fallo está ausente. Todas esas fuentes locales siguen ignoradas por Git y no deben versionarse. El markdown nuevo es el único resumen versionado y sanitizado.
+
+La normalización de cuatro campos de texto administrados por el proveedor se limitó a una Authority D sintética y desechable; no fue migración, cambio de esquema, reparación de producción ni recomendación general sobre `auth.users`. El probe Auth Admin posterior fue de sólo lectura y aprobó el inventario fixture requerido.
+
+Estos archivos locales no son un snapshot ni permiten inferir el estado vivo post‑0010. `live/` conserva el snapshot canónico post‑0009 hasta ejecutar el flujo normal de captura y reconciliación. Los casos 19–20, smoke tests y reconciliación post‑0010 siguen pendientes; B.3a permanece abierta y no debe crearse 0011.

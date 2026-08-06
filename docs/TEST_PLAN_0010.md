@@ -11,8 +11,9 @@ Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción
 - el verificador PostgreSQL corregido fue aprobado;
 - la matriz Hosted Auth central fue aprobada una sola vez en un proyecto desechable y dejó el checkpoint sanitizado `supabase/reconciliation/0010_hosted_auth_core_evidence.md`;
 - la matriz Hosted Auth failure/recovery v11 fue aprobada una sola vez en el proyecto desechable para los casos 13–15 y dejó el checkpoint sanitizado `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`;
+- la matriz Hosted Auth de concurrencia y límites v8 fue aprobada en el proyecto desechable para los casos 17–18 y la concurrencia multisesión; dejó el checkpoint sanitizado `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md`;
 - la primera operación real revocó definitivamente la elegibilidad del rollback 0010;
-- los casos 17–18, el cierre de 19–20, la concurrencia multisesión, los límites hospedados, los smoke tests y la reconciliación post‑0010 permanecen pendientes, por lo que B.3a sigue abierta.
+- los casos 19–20 permanecen parciales; los smoke tests y la reconciliación post‑0010 siguen pendientes, por lo que B.3a continúa abierta.
 
 La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador usaba un nombre obsoleto para el rechazo de objetivo pendiente, mientras la implementación emitía el contrato canónico `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
 
@@ -34,7 +35,7 @@ El diagnóstico de sólo lectura posterior al aborto confirmó `ledger_exists = 
 
 La reejecución corregida completó todos los escenarios con el handler exacto `insufficient_privilege/42501`, imprimió exactamente un `ROLLBACK` final, terminó con código de salida 0 y no produjo ninguna línea `ERROR`. El verificador PostgreSQL quedó aprobado y no persistió fixtures, privilegios temporales, operaciones o eventos de auditoría.
 
-El verificador SQL demuestra contratos de base y simula resultados controlados. La matriz central posterior aportó evidencia hospedada concreta para suspensión y restauración; la matriz failure/recovery v11 aportó evidencia concreta para los casos 13–15. Ningún resultado empírico se convierte en garantía universal del proveedor.
+El verificador SQL demuestra contratos de base y simula resultados controlados. La matriz central posterior aportó evidencia hospedada concreta para suspensión y restauración; la matriz failure/recovery v11 aportó evidencia concreta para los casos 13–15; y la matriz de concurrencia y límites v8 aprobó los casos 17–18, la espera real por locks, leases y pérdida de autoridad. Ningún resultado empírico se convierte en garantía universal del proveedor.
 
 ## 1. Validación estática y local
 
@@ -85,7 +86,7 @@ La ejecución aprobada validó el inventario post‑0009 18/165/80/43/11/54/25/1
 
 La aplicación compatible, la Edge Function y 0010 fueron desplegadas/aplicadas en ese orden; el registro local de la migración confirma el `COMMIT`. El verificador corregido también está aprobado con su `ROLLBACK` final explícito. El orden operativo restante es:
 
-1. completar las matrices hospedadas pendientes de fallos, concurrencia y límites;
+1. cerrar la revisión parcial de los casos 19–20;
 2. completar los smoke tests de producción aprobados;
 3. generar y reconciliar el snapshot post‑0010.
 
@@ -155,17 +156,19 @@ Usar un proyecto desechable, un objetivo sintético sin datos reales y dos sesio
 
 ### Estado de la matriz Auth hospedada
 
-El checkpoint central del 3 de agosto de 2026 está en `supabase/reconciliation/0010_hosted_auth_core_evidence.md`. La ejecución aprobó la suspensión/restauración central, pero no toda la matriz de veinte casos.
+El checkpoint central del 3 de agosto de 2026 está en `supabase/reconciliation/0010_hosted_auth_core_evidence.md`. La ejecución aprobó la suspensión/restauración central, pero no toda la matriz de veinte casos. Los checkpoints failure/recovery v11 y concurrencia/límites v8 completaron después los casos 13–15 y 17–18, respectivamente.
 
 | Clasificación | Pruebas |
 | --- | --- |
 | Aprobadas por la matriz central | 1 Login base; 2 Refresh base; 3 JWT existente; 4 Refresh suspendido; 5 Login nuevo suspendido; 6 Segunda sesión; 7 Barrera SITAA; 8 Restauración; 9 Refresh anterior restaurado; 10 Login nuevo restaurado; 11 `activated_at`; 12 Historia. |
 | Aprobadas por la matriz failure/recovery v11 | 13 Fallo Auth inyectado; 14 Fallo de finalización; 15 Recuperación por segundo administrador. |
 | Cubierta previamente por el verificador PostgreSQL | 16 ACL 0009. |
+| Aprobadas por la matriz de concurrencia y límites v8 | 17 Fixtures ordinarias denegadas en PostgreSQL y Target C sin autoridad B.1 rechazado por la ruta Hosted; 18 límite B.3a de `service_role`. |
 | Parcial | 19 Ausencia de secretos: evidencia, salida del arnés y auditoría sanitizadas; faltan bundles, variables y logs productivos. 20 Sanitización: auditoría, evidencia y salida del arnés sanitizadas; falta observar la interfaz desplegada mediante smoke test hospedado. |
-| Pendientes | 17 Usuarios ordinarios en el límite hospedado; 18 Límite `service_role` hospedado; cierre de 19 y 20. |
 
-El checkpoint failure/recovery v11 está en `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`. Permanecen pendientes, bajo ejecución multisesión real: dos sesiones con el mismo `request_id` y payload; el mismo `request_id` con payload distinto; una operación concurrente contra el mismo objetivo; espera real por advisory lock; tiempo de pared capturado después del lock; lease fresco no recuperable prematuramente; recuperación posterior a cinco minutos; recuperación inmediata de `processing/auth_synchronized`; pérdida de autoridad después de esperar locks; límites Hosted Auth; smoke tests y reconciliación post-0010.
+El checkpoint failure/recovery v11 está en `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`. El checkpoint `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md` conserva la ejecución v8 que aprobó el mismo `request_id` con payload igual y distinto, solicitudes concurrentes contra un objetivo, espera real por advisory lock, tiempo posterior al lock, lease fresco, recuperación después de cinco minutos, recuperación de `processing/auth_synchronized`, pérdida de autoridad durante la espera y límites Hosted Auth. Permanecen pendientes los smoke tests y la reconciliación post‑0010; 19–20 siguen parciales.
+
+La evidencia v8 aprobada tiene 1797 bytes y SHA-256 `c150a18ac429f206735f38569ae43c69f62cba35ceeb02f6e683e440b065f829`; su postcheck tiene 595 bytes y SHA-256 `567e9d9c1f23a18780dbb281ec00ba77f7f69f9bc97f9edc0aad9260a7acd507`. El artefacto v8 de fallo está ausente. La predecesora v7 rechazada permanece preservada con 601 bytes y SHA-256 `b022d7c1dcb1eb7278d0c7b6d87e8917d2a409d74405d5a5400906441f899755`.
 
 Durante la suspensión, las dos sesiones, sus refresh tokens y dos logins nuevos fueron rechazados con `user_banned`, mientras las operaciones protegidas de SITAA intentadas con los dos tokens quedaron denegadas (`2/2`). La evidencia persistida no distingue si cada denegación ocurrió en el gateway Auth o en la base; el verificador PostgreSQL demuestra por separado la barrera de perfil inactivo y la ejecución hospedada demuestra que ninguno de los dos tokens obtuvo acceso. Después de restaurar, un login fresco funcionó, pero los refresh tokens anteriores no recuperaron acceso: una cuenta reactivada debe iniciar sesión nuevamente. `user_banned` y la no recuperación de refresh tokens son observaciones de esta ejecución hospedada concreta, no garantías permanentes para versiones futuras de Supabase.
 
@@ -187,8 +190,8 @@ Durante la suspensión, las dos sesiones, sus refresh tokens y dos logins nuevos
 | 14 | Fallo de finalización | Aprobada por matriz failure/recovery v11 | Tras el único éxito Auth, el fallo `auth_unconfirmed` conservó `processing/auth_synchronized` y la recuperación no repitió Auth. |
 | 15 | Recuperación por segundo admin | Aprobada por matriz failure/recovery v11 | Admin B completó la operación solicitada por Admin A con una sola llamada Auth de reactivación. |
 | 16 | ACL 0009 | Cubierta previamente por verificador PostgreSQL | `authenticated` recibe `42501` al invocar la mutación 0009; no se atribuye a v11. |
-| 17 | Usuarios ordinarios | Pendiente | Profesor/alumno no preparan, reclaman, registran, finalizan ni reintentan. |
-| 18 | Límite `service_role` | Pendiente | No accede al ledger; sólo ejecuta claim/result aprobados. |
+| 17 | Usuarios ordinarios | Aprobada por matriz de concurrencia y límites v8 | En PostgreSQL transaccional, las fixtures de profesor/alumno quedaron denegadas en las superficies B.3a sin mutar ledger ni auditoría. De forma separada, Target C autenticado sin autoridad B.1 fue rechazado en `start` y `retry` por la ruta Hosted; perfil, ledger y auditoría conservaron sus hashes, y el postcheck confirmó la identidad Auth del objetivo. |
+| 18 | Límite `service_role` | Aprobada por matriz de concurrencia y límites v8 | No leyó ni mutó directamente `admin_auth_operations`; dentro de B.3a conservó únicamente las RPC de claim/result. Su ACL histórico `SELECT`/`INSERT` sobre `admin_audit_events`, sin `UPDATE`, `DELETE` ni `TRUNCATE`, permaneció sin cambios. |
 | 19 | Ausencia de secretos | Parcial | Evidencia local, salida y auditoría sanitizadas; faltan bundles de producción, variables visibles de Vercel y logs productivos. |
 | 20 | Sanitización | Parcial | Evidencia, auditoría y salida sanitizadas; faltan verificación completa de interfaz y smoke tests hospedados. |
 
@@ -196,24 +199,24 @@ El fallo `terminal_failure` se prueba sólo como estado sintético y transaccion
 
 El replay de aplicación debe repetir exactamente el mismo `start` tras perder la respuesta en tres puntos: operación ya completada, perfil suspendido antes de que el formulario reciba `operation_id` y operación reintentable. En los tres casos la solicitud debe llegar a Edge y a `prepare`, recuperar la misma operación y no producir `state_conflict` local. El mismo `request_id` con motivo distinto debe fallar como conflicto y otro `request_id` contra una operación no final debe informar operación en curso. En `retry`, una operación que pasó a éxito o fallo terminal entre render y acción debe alcanzar el claim y devolver el replay final; un lease fresco debe permanecer pendiente, mientras ID o transición discrepantes se rechazan localmente.
 
-### Pruebas multisesión reservadas y no ejecutadas
+### Pruebas multisesión aprobadas por la matriz v8
 
-En una base desechable, dos sesiones deben usar simultáneamente el mismo `request_id` y payload normalizado. La primera adquiere el advisory lock; la segunda espera y, al continuar, devuelve exactamente el mismo `operation_id` en vez de una violación UNIQUE. Repetir con payload distinto y exigir `sitaa_auth_operation_request_id_conflict`.
+En la base desechable, dos sesiones usaron simultáneamente el mismo `request_id` y payload normalizado. La primera adquirió el advisory lock; la segunda esperó y, al continuar, devolvió la misma operación en vez de una violación UNIQUE. Con payload distinto, la solicitud fue rechazada por conflicto estable.
 
-Otra pareja de sesiones debe iniciar la transacción de la sesión que espera antes de que el holder libere el lock. Al continuar, el waiter debe capturar tiempo de pared posterior al lock: `processing_started_at` no puede quedar retrodatado, la operación más reciente debe conservar el orden correcto y un lease recién adquirido no puede parecer vencido ni reclamarse prematuramente. Repetir la recuperación después de cinco minutos y la recuperación inmediata de `processing/auth_synchronized`. El verificador de una sola transacción cubre reutilización, conflicto, cercado de intentos y monotonicidad local, pero no demuestra espera real ni orden intersesión. Ninguna de estas pruebas se ejecutó durante este hardening.
+Otra pareja inició la transacción del waiter antes de que el holder liberara el lock. La observación por PID aprobó la espera real; `processing_started_at` quedó después del lock, `updated_at` fue monotónico, el orden de la operación más reciente permaneció correcto y el lease fresco no se recuperó prematuramente. La recuperación después de cinco minutos y la recuperación inmediata de `processing/auth_synchronized` también aprobaron. Son resultados empíricos de esa ejecución desechable, no evidencia de producción ni garantía universal.
 
-### Matriz de pérdida de autoridad tras espera — reservada y no ejecutada
+### Matriz de pérdida de autoridad tras espera — aprobada por v8
 
 Estas pruebas requieren dos sesiones en una base PostgreSQL/Supabase desechable:
 
-| Escenario | Sesión A | Sesión B | Resultado exigido |
+| Escenario | Sesión A | Sesión B | Resultado observado |
 | --- | --- | --- | --- |
-| Claim | Inicia `claim` con autoridad B.1 y espera el advisory lock. | Retiene el lock, desactiva A y confirma. | A recibe `42501/sitaa_admin_access_denied`; `attempt_count`, estado y timestamps quedan intactos. |
-| Persistencia de resultado | Con intento reclamado, inicia `record` y espera. | Adquiere primero el lock, desactiva A y confirma. | A recibe `42501`; no se inserta evento Auth ni cambia el ledger. |
-| Replay final | Solicita replay de una operación ya `succeeded` y espera. | Retiene el lock, desactiva A y confirma. | A recibe `42501`, nunca la fila final. |
-| Recuperación | Ya perdió autoridad y deja una operación varada. | Otra autoridad B.1 exacta reclama/finaliza. | Se recupera sin repetir trabajo Auth después de `auth_synchronized`. |
+| Claim | Inició `claim` con autoridad B.1 y esperó el advisory lock. | Retuvo el lock, desactivó A y confirmó. | A recibió `42501/sitaa_admin_access_denied`; `attempt_count`, estado y timestamps quedaron intactos. |
+| Persistencia de resultado | Con intento reclamado, inició `record` y esperó. | Adquirió primero el lock, desactivó A y confirmó. | A recibió `42501`; no se insertó evento Auth ni cambió el ledger. |
+| Replay final | Solicitó replay de una operación ya `succeeded` y esperó. | Retuvo el lock, desactivó A y confirmó. | A recibió `42501`, nunca la fila final. |
+| Recuperación | Perdió autoridad y dejó una operación varada. | Otra autoridad B.1 exacta reclamó/finalizó. | Se recuperó sin repetir trabajo Auth después de `auth_synchronized`. |
 
-El verificador transaccional sólo demuestra denegación determinista cuando el actor ya está inactivo/no es B.1 exacto al invocar, ausencia de mutación y recuperación por otro administrador. No prueba la espera intersesión.
+La matriz v8 observó la espera intersesión y aprobó los cuatro escenarios: claim, record y replay final fallaron cerrados después de perder autoridad; otra autoridad B.1 exacta recuperó la operación sincronizada sin repetir Auth. El verificador PostgreSQL conserva por separado la denegación determinista y la ausencia de mutación bajo su modelo transaccional.
 
 ### Contrato exacto de respuestas Edge
 
@@ -230,7 +233,7 @@ Debe rechazar llaves adicionales, códigos/estados desconocidos, UUID ausente do
 
 ## 6. Smoke tests de producción
 
-Después de los checkpoints central y failure/recovery aprobados, y de completar los casos hospedados restantes que correspondan al riesgo del despliegue:
+Después de los checkpoints central, failure/recovery y concurrencia/límites aprobados, quedan estos smoke tests de producción:
 
 - autoridad B.1 ve contexto y operación sanitizada;
 - desactivar bloquea SITAA de inmediato, conserva datos y muestra sincronización pendiente/completa con precisión;
@@ -246,7 +249,7 @@ B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT
 
 - describir el rechazo de JWT, refresh y login, y la restauración observada, sólo como evidencia empírica de la ejecución hospedada documentada;
 - no usar la función en producción;
-- describir el verificador PostgreSQL, la matriz central 1–12 y la matriz failure/recovery 13–15 como aprobados, pero no B.3a como cerrada;
+- describir el verificador PostgreSQL, la matriz central 1–12, la matriz failure/recovery 13–15 y la matriz de concurrencia/límites 17–18 como aprobados, pero no B.3a como cerrada;
 - no crear 0011;
 - B.3b y Fase C permanecen fuera de alcance.
 
