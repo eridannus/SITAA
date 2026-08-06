@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3a está implementada y aplicada mediante 0010: el verificador PostgreSQL, la matriz Hosted Auth central 1–12, failure/recovery 13–15, concurrencia/límites 17–18 y la auditoría productiva de ausencia de secretos del caso 19 están aprobados. Permanece abierta porque el caso 20 es parcial y faltan smoke tests y reconciliación post‑0010. B.3b y Fase C siguen pendientes.
+**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3a está implementada y aplicada mediante 0010: el verificador PostgreSQL y los casos 1–20 están aprobados con su atribución correspondiente, incluido el recorrido productivo del caso 20. Permanece abierta únicamente por la captura y reconciliación post‑0010. B.3b y Fase C siguen pendientes.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -56,7 +56,9 @@ En la fase PostgreSQL transaccional, las fixtures ordinarias de profesor y alumn
 
 La auditoría productiva del caso 19 comprobó las superficies de navegador y Vercel mediante nombres y alcances públicos, agregados de logs y artefactos locales/remotos sanitizados. No encontró un cliente privilegiado de primera parte, JWT privilegiado ni secreto prohibido; los literales de dependencias observados no tenían valores asociados y no constituyeron filtraciones.
 
-La primera operación real revocó definitivamente el rollback 0010. B.3a continúa abierta: el caso 19 está aprobado, el caso 20 es parcial y faltan smoke tests y reconciliación post‑0010.
+El smoke test productivo del caso 20 aprobó un recorrido completo de desactivación y reactivación sobre una cuenta institucional estudiantil ficticia. Las dos operaciones terminaron `succeeded/completed`, con un intento cada una y cuatro eventos append-only. Durante la suspensión se negaron la sesión existente y un login nuevo; después de restaurar Auth, una sesión nueva accedió correctamente. La asignación, las actividades, la asistencia, la identidad y la historia permanecieron conservadas.
+
+La primera operación real revocó definitivamente el rollback 0010. Los casos 1–20 y los smoke tests productivos están aprobados; B.3a continúa abierta únicamente por la captura y reconciliación post‑0010.
 
 ### B.3b — Otras operaciones Auth pendientes
 

@@ -13,8 +13,9 @@ Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción
 - la matriz Hosted Auth failure/recovery v11 fue aprobada una sola vez en el proyecto desechable para los casos 13–15 y dejó el checkpoint sanitizado `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`;
 - la matriz Hosted Auth de concurrencia y límites v8 fue aprobada en el proyecto desechable para los casos 17–18 y la concurrencia multisesión; dejó el checkpoint sanitizado `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md`;
 - la auditoría productiva de ausencia de secretos aprobó el caso 19 y dejó el checkpoint sanitizado `supabase/reconciliation/0010_production_secret_audit_evidence.md`;
+- el smoke test productivo controlado aprobó el caso 20 y dejó el checkpoint sanitizado `supabase/reconciliation/0010_production_smoke_test_evidence.md`;
 - la primera operación real revocó definitivamente la elegibilidad del rollback 0010;
-- el caso 20 permanece parcial; los smoke tests y la reconciliación post‑0010 siguen pendientes, por lo que B.3a continúa abierta.
+- los casos 1–20 y los smoke tests productivos están aprobados; sólo la captura y reconciliación post‑0010 permanecen pendientes, por lo que B.3a continúa abierta.
 
 La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador usaba un nombre obsoleto para el rechazo de objetivo pendiente, mientras la implementación emitía el contrato canónico `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
 
@@ -87,9 +88,9 @@ La ejecución aprobada validó el inventario post‑0009 18/165/80/43/11/54/25/1
 
 La aplicación compatible, la Edge Function y 0010 fueron desplegadas/aplicadas en ese orden; el registro local de la migración confirma el `COMMIT`. El verificador corregido también está aprobado con su `ROLLBACK` final explícito. El orden operativo restante es:
 
-1. completar el caso 20 mediante los smoke tests de producción de la interfaz desplegada;
-2. generar y reconciliar el snapshot canónico post‑0010;
-3. cerrar B.3a sólo cuando ambos gates estén aprobados.
+1. generar el snapshot canónico post‑0010;
+2. reconciliarlo contra la cadena aplicada;
+3. cerrar B.3a sólo cuando ese gate sea aprobado.
 
 El verificador debe cubrir forma exacta de tabla, restricciones, índices, RLS sin políticas, triggers, firmas/argumentos/columnas de retorno, propiedades de función, ACL sin grant option y regresiones 0001–0009. Los cinco índices deben ser exactamente `admin_auth_operations_actor_requested_idx`, `admin_auth_operations_one_nonfinal_target_uidx`, `admin_auth_operations_pkey`, `admin_auth_operations_request_id_key` y `admin_auth_operations_target_status_idx`. La restricción única de `request_id` debe apuntar mediante `conindid` al índice `_key`, que debe ser único, válido, listo, no primario, no parcial, sin expresión y contener únicamente `request_id`; no puede existir otro índice de esa columna.
 
@@ -166,9 +167,9 @@ El checkpoint central del 3 de agosto de 2026 está en `supabase/reconciliation/
 | Cubierta previamente por el verificador PostgreSQL | 16 ACL 0009. |
 | Aprobadas por la matriz de concurrencia y límites v8 | 17 Fixtures ordinarias denegadas en PostgreSQL y Target C sin autoridad B.1 rechazado por la ruta Hosted; 18 límite B.3a de `service_role`. |
 | Aprobada por la auditoría productiva de ausencia de secretos | 19 Variables visibles de Vercel, logs Production y artefactos locales/remotos revisados sin secreto ni cliente privilegiado. |
-| Parcial | 20 Sanitización: auditoría, evidencia y salida del arnés sanitizadas; falta observar la interfaz desplegada mediante smoke test hospedado. |
+| Aprobada por el smoke test productivo | 20 Interfaz, denegación durante suspensión, restauración, sanitización y preservación de datos observadas en un recorrido controlado. |
 
-El checkpoint failure/recovery v11 está en `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`. El checkpoint `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md` conserva la ejecución v8 que aprobó el mismo `request_id` con payload igual y distinto, solicitudes concurrentes contra un objetivo, espera real por advisory lock, tiempo posterior al lock, lease fresco, recuperación después de cinco minutos, recuperación de `processing/auth_synchronized`, pérdida de autoridad durante la espera y límites Hosted Auth. El checkpoint `supabase/reconciliation/0010_production_secret_audit_evidence.md` aprueba el caso 19. Permanecen pendientes el caso 20, los smoke tests y la reconciliación post‑0010.
+El checkpoint failure/recovery v11 está en `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`. El checkpoint `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md` conserva la ejecución v8 que aprobó el mismo `request_id` con payload igual y distinto, solicitudes concurrentes contra un objetivo, espera real por advisory lock, tiempo posterior al lock, lease fresco, recuperación después de cinco minutos, recuperación de `processing/auth_synchronized`, pérdida de autoridad durante la espera y límites Hosted Auth. `0010_production_secret_audit_evidence.md` aprueba el caso 19 y `0010_production_smoke_test_evidence.md` aprueba el caso 20. Sólo la captura y reconciliación post‑0010 permanecen pendientes.
 
 La evidencia v8 aprobada tiene 1797 bytes y SHA-256 `c150a18ac429f206735f38569ae43c69f62cba35ceeb02f6e683e440b065f829`; su postcheck tiene 595 bytes y SHA-256 `567e9d9c1f23a18780dbb281ec00ba77f7f69f9bc97f9edc0aad9260a7acd507`. El artefacto v8 de fallo está ausente. La predecesora v7 rechazada permanece preservada con 601 bytes y SHA-256 `b022d7c1dcb1eb7278d0c7b6d87e8917d2a409d74405d5a5400906441f899755`.
 
@@ -195,7 +196,7 @@ Durante la suspensión, las dos sesiones, sus refresh tokens y dos logins nuevos
 | 17 | Usuarios ordinarios | Aprobada por matriz de concurrencia y límites v8 | En PostgreSQL transaccional, las fixtures de profesor/alumno quedaron denegadas en las superficies B.3a sin mutar ledger ni auditoría. De forma separada, Target C autenticado sin autoridad B.1 fue rechazado en `start` y `retry` por la ruta Hosted; perfil, ledger y auditoría conservaron sus hashes, y el postcheck confirmó la identidad Auth del objetivo. |
 | 18 | Límite `service_role` | Aprobada por matriz de concurrencia y límites v8 | No leyó ni mutó directamente `admin_auth_operations`; dentro de B.3a conservó únicamente las RPC de claim/result. Su ACL histórico `SELECT`/`INSERT` sobre `admin_audit_events`, sin `UPDATE`, `DELETE` ni `TRUNCATE`, permaneció sin cambios. |
 | 19 | Ausencia de secretos | Aprobada por auditoría productiva | La revisión de variables y logs Vercel, los artefactos locales y los recursos productivos servidos anónimamente no encontró JWT privilegiado, secreto prohibido ni cliente privilegiado de primera parte. |
-| 20 | Sanitización | Parcial | Evidencia, auditoría y salida sanitizadas; faltan verificación completa de interfaz y smoke tests hospedados. |
+| 20 | Sanitización | Aprobada por smoke test productivo | La interfaz no expuso respuestas crudas ni controles indebidos; la suspensión, denegación, restauración, sesión nueva y preservación de datos se observaron en el recorrido controlado. |
 
 El fallo `terminal_failure` se prueba sólo como estado sintético y transaccional del modelo SQL; no se reclasifica como resultado Hosted Auth empírico. El adaptador hospedado provisional debe producir únicamente `retryable_failure`. Una categoría terminal hospedada sólo podrá introducirse después de contar con evidencia empírica en un proyecto desechable, una clasificación estable del proveedor y un camino de recuperación del operador aprobado. Registrar versiones SDK/runtime, tiempos UTC, respuestas sanitizadas y resultado observado; nunca tokens o credenciales.
 
@@ -233,27 +234,40 @@ Debe rechazar llaves adicionales, códigos/estados desconocidos, UUID ausente do
 
 `canRetryOrFinalize` guía el botón del formulario, pero no autoriza ni bloquea la Server Action. Del mismo modo, `canDeactivate` y `canReactivate` sólo cercan la compatibilidad 0009 cuando la RPC B.3a está explícitamente ausente.
 
-## 6. Smoke tests de producción
+## 6. Smoke test de producción aprobado
 
-Después de los checkpoints central, failure/recovery, concurrencia/límites y la auditoría productiva de ausencia de secretos aprobados, quedan estos smoke tests de producción para completar el caso 20:
+El smoke test productivo controlado se ejecutó sobre el commit desplegado `18e40db3254d6c3b73b24dcd4d29ee229498b0e5`, con una autoridad B.1 exacta y una cuenta institucional estudiantil ficticia. Fue la única ejecución controlada autorizada antes del cierre, preservó la auditoría append-only y no equivale a habilitar la función para uso operativo general.
 
-Estos smoke tests constituyen la única ejecución controlada autorizada antes del cierre de B.3a. Deben usar un objetivo de prueba previamente aprobado, preservar la auditoría append-only y no equivalen a habilitar la función para uso operativo general.
+El recorrido aprobó:
 
-- autoridad B.1 ve contexto y operación sanitizada;
-- desactivar bloquea SITAA de inmediato, conserva datos y muestra sincronización pendiente/completa con precisión;
-- reactivar no habilita SITAA antes de finalizar;
-- reintentos conservan request/operation ID y no duplican auditoría;
-- un usuario ordinario no ve ni ejecuta controles;
-- incompatibilidad pre‑0010 usa sólo el fallback explícito; post‑0010 nunca cae a 0009 ante error Edge;
-- la interfaz desplegada no muestra datos sensibles, errores crudos ni controles indebidos.
+- contexto y presentación de ciclo de vida sanitizados;
+- suspensión coordinada del perfil y Auth;
+- denegación de la sesión ya emitida y de un login fresco durante la suspensión;
+- restauración Auth antes de la activación final del perfil;
+- nuevo login exitoso y retorno a `/activities` después de restaurar;
+- ausencia de controles administrativos para el usuario ordinario;
+- preservación de asignación, actividades, asistencia, identidad e historia;
+- cero respuestas crudas, errores técnicos, UUID u operation ID visibles.
+
+| Agregado final | Resultado |
+| --- | ---: |
+| Operaciones B.3a | 2 |
+| Desactivaciones / reactivaciones | 1 / 1 |
+| Operaciones `succeeded/completed` | 2 |
+| Operaciones no finales / no exitosas | 0 / 0 |
+| Intentos totales / códigos de error estables | 2 / 0 |
+| Referencias de auditoría de perfil / Auth | 2 / 2 |
+| Eventos administrativos añadidos al objetivo | 4 |
+
+La consulta del dashboard Edge se realizó después de completar la desactivación y antes de iniciar la reactivación. En ese momento la telemetría seguía diferida y sin filas; no se realizó una segunda consulta al finalizar el round trip y no se observa ni se atribuye un conteo de invocaciones. La ejecución está corroborada por las dos operaciones finales con `attempt_count = 1`, referencias Auth no nulas, ban y retiro de ban observados, eventos de suspensión/restauración y denegación/restauración de acceso. Esta evidencia concreta no generaliza la semántica futura del proveedor.
 
 ## 7. Criterio de cierre
 
-B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT`, verificador con `ROLLBACK`, despliegue Edge, matriz Auth desechable completa, smoke tests y snapshot post‑0010 reconciliado. Hasta entonces:
+B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT`, verificador con `ROLLBACK`, despliegue Edge, matriz Auth desechable completa, smoke tests y snapshot post‑0010 reconciliado. Todos esos gates salvo la captura y reconciliación del snapshot están aprobados. Hasta entonces:
 
 - describir el rechazo de JWT, refresh y login, y la restauración observada, sólo como evidencia empírica de la ejecución hospedada documentada;
-- no habilitar la función para uso operativo general antes del cierre; sólo se permiten los smoke tests controlados descritos en la sección 6;
-- describir el verificador PostgreSQL, la matriz central 1–12, la matriz failure/recovery 13–15, la matriz de concurrencia/límites 17–18 y la auditoría productiva del caso 19 como aprobados, pero no B.3a como cerrada;
+- no habilitar la función para uso operativo general antes del cierre; el único smoke test previo quedó documentado en la sección 6;
+- describir el verificador PostgreSQL y los casos 1–20 como aprobados con sus atribuciones respectivas, pero no B.3a como cerrada;
 - no crear 0011;
 - B.3b y Fase C permanecen fuera de alcance.
 

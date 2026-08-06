@@ -58,7 +58,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0010` están aplicadas e inmutables. `0001`–`0009` están verificadas y reconciliadas. Para `0010`, el verificador PostgreSQL está aprobado e incluye el caso 16; la matriz Hosted Auth central aprobó 1–12, failure/recovery v11 aprobó 13–15, concurrencia/límites v8 aprobó 17–18 y la auditoría productiva de ausencia de secretos aprobó el caso 19. El caso 20 continúa parcial; faltan smoke tests y reconciliación post‑0010. B.3a permanece abierta y no se debe crear `0011`. Todo cambio futuro debe:
+`0001`–`0010` están aplicadas e inmutables. `0001`–`0009` están verificadas y reconciliadas. Para `0010`, el verificador PostgreSQL y los casos 1–20 están aprobados con su atribución correspondiente; el smoke test productivo aprobó el caso 20. Sólo faltan la captura y reconciliación post‑0010. B.3a permanece abierta y no se debe crear `0011`. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0010`;
@@ -301,3 +301,15 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - `npm run check:auth-lifecycle` devolvió `Límite confiable Auth B.3a: OK`, `npm run check:text` devolvió `Integridad de texto: OK` y `git diff --check` terminó con salida vacía. El runtime temporal y los recursos descargados quedaron ausentes; no hubo mutación remota, autenticación, operación Supabase, commit ni push.
 - El resumen sanitizado versionado está en `supabase/reconciliation/0010_production_secret_audit_evidence.md`. Las capturas, valores de variables, recursos descargados y salidas temporales no se versionan.
 - El caso 19 quedó aprobado. El caso 20, los smoke tests de la interfaz desplegada y el snapshot/reconciliación post‑0010 siguen pendientes. B.3a permanece abierta, el proyecto desechable de la matriz debe conservarse hasta su cierre y no debe crearse 0011.
+
+## Smoke test productivo de coordinación Auth 0010 — 2026-08-06 UTC
+
+- El recorrido controlado se ejecutó sobre el commit desplegado `18e40db3254d6c3b73b24dcd4d29ee229498b0e5`, con una autoridad B.1 exacta y una cuenta institucional estudiantil ficticia. La baseline tenía perfil activo, Auth confirmado, una asignación vigente, cero responsabilidades o participaciones abiertas y cero eventos administrativos previos para el objetivo.
+- La desactivación cambió el perfil a inactivo, pobló `deactivated_at`, preservó `activated_at` y la asignación, y mostró esa asignación suspendida por estado de cuenta. Produjo los eventos append-only exitosos de ciclo de vida y suspensión Auth.
+- La sesión ya emitida fue denegada al refrescar `/activities`; un login fresco durante la suspensión no creó sesión y mostró un mensaje genérico. La observación directa de Auth confirmó el ban sin usar una acción manual de Unban.
+- La reactivación retiró el ban antes de activar finalmente el perfil, restauró la presentación vigente de la asignación y permitió un login nuevo que regresó a `/activities`. Se conservaron actividades, asistencia, identidad e historia; no se afirmó recuperación automática de sesiones o refresh tokens anteriores.
+- El ledger final contiene dos filas, una `deactivate` y una `reactivate`, ambas `succeeded/completed`, con un intento cada una, cero operaciones no finales o no exitosas y cero códigos de error estables. Las dos referencias de auditoría de perfil, dos referencias Auth y cuatro eventos del objetivo quedaron presentes.
+- La interfaz no expuso respuesta cruda del proveedor, UUID, operation ID, detalle técnico ni controles administrativos al usuario ordinario.
+- La consulta del dashboard Edge se realizó después de la desactivación y antes de la reactivación. En ese momento todavía no mostraba agregados o filas y advertía una posible demora de hasta 24 horas; no se realizó una segunda consulta al finalizar el round trip. Se registra como telemetría diferida, no como fallo ni como conteo de invocaciones observado. La ejecución queda corroborada por ledger, referencias Auth, ban/restauración y resultados de acceso.
+- El caso 20 y los smoke tests productivos quedaron aprobados. Sólo el snapshot y la reconciliación post‑0010 permanecen pendientes; B.3a continúa abierta, el proyecto desechable debe conservarse y no debe crearse 0011.
+- El resumen sanitizado versionado está en `supabase/reconciliation/0010_production_smoke_test_evidence.md`; no se versionan capturas, identidades, razones completas ni respuestas crudas.

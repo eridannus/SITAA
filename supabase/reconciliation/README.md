@@ -127,7 +127,7 @@ La fuente v7 `b3a_matrix_hosted_auth_concurrency_boundaries.local.txt` permanece
 
 La normalización de cuatro campos de texto administrados por el proveedor se limitó a una Authority D sintética y desechable; no fue migración, cambio de esquema, reparación de producción ni recomendación general sobre `auth.users`. El probe Auth Admin posterior fue de sólo lectura y aprobó el inventario fixture requerido.
 
-Estos archivos locales no son un snapshot ni permiten inferir el estado vivo post‑0010. `live/` conserva el snapshot canónico post‑0009 hasta ejecutar el flujo normal de captura y reconciliación. El caso 19 fue aprobado posteriormente mediante la auditoría productiva de ausencia de secretos; el caso 20, los smoke tests y la reconciliación post‑0010 siguen pendientes. B.3a permanece abierta y no debe crearse 0011.
+Estos archivos locales no son un snapshot ni permiten inferir el estado vivo post‑0010. `live/` conserva el snapshot canónico post‑0009 hasta ejecutar el flujo normal de captura y reconciliación. El caso 19 fue aprobado posteriormente mediante la auditoría productiva de ausencia de secretos y el caso 20 mediante el smoke test productivo. La reconciliación post‑0010 sigue pendiente; B.3a permanece abierta y no debe crearse 0011.
 
 ## Auditoría productiva de ausencia de secretos 0010
 
@@ -135,4 +135,12 @@ Estos archivos locales no son un snapshot ni permiten inferir el estado vivo pos
 
 Las capturas de pantalla, los valores de variables, los recursos descargados y las salidas temporales de auditoría no se versionan. El checkpoint sólo conserva nombres públicos, alcances, conteos y resultados sanitizados; no contiene credenciales, datos personales ni extractos de bundles o source maps.
 
-Este resumen no reemplaza el snapshot vivo canónico ni permite inferir el inventario post‑0010. El caso 19 está aprobado; el caso 20, los smoke tests de la interfaz desplegada y la captura/reconciliación post‑0010 continúan pendientes. B.3a permanece abierta y no debe crearse 0011.
+Este resumen no reemplaza el snapshot vivo canónico ni permite inferir el inventario post‑0010. Al cerrar la auditoría del caso 19, el caso 20, los smoke tests de la interfaz desplegada y la captura/reconciliación post‑0010 continuaban pendientes. El checkpoint productivo posterior actualiza ese estado sin reescribir la evidencia histórica.
+
+## Smoke test productivo de coordinación Auth 0010
+
+`0010_production_smoke_test_evidence.md` conserva el resumen versionado y sanitizado del recorrido productivo controlado que aprobó el caso 20 sobre el commit desplegado `18e40db3254d6c3b73b24dcd4d29ee229498b0e5`. Una autoridad B.1 exacta desactivó y reactivó una cuenta institucional estudiantil ficticia; el checkpoint documenta únicamente estados, conteos y tiempos UTC sanitizados.
+
+Las capturas de pantalla, nombres, correos, identificadores, UUID, razones completas y respuestas crudas no se versionan. El resultado aprobó los smoke tests productivos, la coordinación de perfil y Auth, la denegación durante la suspensión, la restauración mediante una sesión nueva y la preservación de asignación, actividades, asistencia e historia.
+
+Este checkpoint no sustituye el snapshot vivo canónico ni permite inferir el inventario estructural post‑0010. Los casos 1–20 y los smoke tests están aprobados; la captura y reconciliación post‑0010 permanecen pendientes. B.3a continúa abierta, el proyecto desechable debe conservarse hasta su cierre y no debe crearse 0011.
