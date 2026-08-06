@@ -58,7 +58,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0010` están aplicadas e inmutables. `0001`–`0009` están verificadas y reconciliadas. Para `0010`, el verificador PostgreSQL está aprobado e incluye el caso 16; la matriz Hosted Auth central aprobó 1–12, failure/recovery v11 aprobó 13–15 y concurrencia/límites v8 aprobó 17–18. Los casos 19–20 continúan parciales; faltan smoke tests y reconciliación post‑0010. B.3a permanece abierta y no se debe crear `0011`. Todo cambio futuro debe:
+`0001`–`0010` están aplicadas e inmutables. `0001`–`0009` están verificadas y reconciliadas. Para `0010`, el verificador PostgreSQL está aprobado e incluye el caso 16; la matriz Hosted Auth central aprobó 1–12, failure/recovery v11 aprobó 13–15, concurrencia/límites v8 aprobó 17–18 y la auditoría productiva de ausencia de secretos aprobó el caso 19. El caso 20 continúa parcial; faltan smoke tests y reconciliación post‑0010. B.3a permanece abierta y no se debe crear `0011`. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0010`;
@@ -289,3 +289,15 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Postcheck agregado: 4 usuarios Auth, 3 identidades, 4 perfiles, 3 asignaciones, autoridad B.1 `2/2`, Target C activo/sin ban/sin asignaciones, 6 operaciones completadas, 0 no finales o no exitosas, 12 eventos administrativos, 0 eventos Auth de fallo, 6 eventos Auth de éxito, Authority D inactiva, 0 leases y 0 workers; handler canónico, transacción de sólo lectura, `ROLLBACK` y postcheck aprobados.
 - El resumen sanitizado versionado está en `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md`. Las fuentes locales v7/v8 continúan ignoradas por Git y no sustituyen el snapshot vivo.
 - Estado posterior: casos 1–12 aprobados por la matriz central, 13–15 por failure/recovery v11, 16 por el verificador PostgreSQL y 17–18 por concurrencia/límites v8; 19–20 parciales; smoke tests y snapshot/reconciliación post‑0010 pendientes. B.3a permanece abierta, el rollback 0010 continúa revocado y todavía no debe crearse 0011.
+
+## Auditoría productiva de ausencia de secretos de 0010 — 2026-08-06 UTC
+
+- Se auditó exactamente el commit `5df156ec0616da8823f6f13be41c2df11ea85537` mediante la versión `2026-08-06-case19-v1`.
+- La revisión del operador en Vercel confirmó `NEXT_PUBLIC_SITE_URL` en Production, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `NEXT_PUBLIC_SUPABASE_URL` en Production y Preview, cero variables compartidas y cero nombres visibles de credenciales privilegiadas o de base de datos. Los valores no se revelaron ni copiaron.
+- En Production, con Preview excluido y ventana de última hora, se observaron 7 solicitudes HTTP 200: 3 `GET /` y 4 `GET /register`. Hubo cero warnings, errores y fatales; Messages estaba vacío y no se observó información sensible.
+- La auditoría automatizada aprobó 22 recursos de navegador locales (958637 bytes), 532 artefactos de servidor (31959047 bytes), 14 respuestas de rutas remotas (199327 bytes), 12 recursos estáticos remotos (702568 bytes) y 11 recursos JavaScript remotos.
+- Los clasificadores devolvieron cero JWT privilegiados, cero secretos prohibidos y cero clientes privilegiados de primera parte. Las 280 apariciones de `service_role` y 8 de `SUPABASE_SECRET_KEY` en source maps de servidor pertenecían a dependencias, no tenían valores asociados y no aparecieron en código de primera parte, JavaScript de navegador ni recursos remotos; no constituyeron filtraciones.
+- El primer `npm run build` fue bloqueado por el sandbox de Codex al escribir `.next/trace-build`; fue una restricción del entorno, no un fallo del proyecto. La repetición autorizada terminó con código 0, aprobó Next.js, TypeScript y los checkers integrados, preservó `.next/static` y dejó cero cambios tracked o staged, con `package.json` y `package-lock.json` intactos.
+- `npm run check:auth-lifecycle` devolvió `Límite confiable Auth B.3a: OK`, `npm run check:text` devolvió `Integridad de texto: OK` y `git diff --check` terminó con salida vacía. El runtime temporal y los recursos descargados quedaron ausentes; no hubo mutación remota, autenticación, operación Supabase, commit ni push.
+- El resumen sanitizado versionado está en `supabase/reconciliation/0010_production_secret_audit_evidence.md`. Las capturas, valores de variables, recursos descargados y salidas temporales no se versionan.
+- El caso 19 quedó aprobado. El caso 20, los smoke tests de la interfaz desplegada y el snapshot/reconciliación post‑0010 siguen pendientes. B.3a permanece abierta, el proyecto desechable de la matriz debe conservarse hasta su cierre y no debe crearse 0011.

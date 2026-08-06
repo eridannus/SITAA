@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3a está implementada y aplicada mediante 0010: el verificador PostgreSQL, la matriz Hosted Auth central 1–12, failure/recovery 13–15 y concurrencia/límites 17–18 están aprobados. Permanece abierta porque 19–20 son parciales y faltan smoke tests y reconciliación post‑0010. B.3b y Fase C siguen pendientes.
+**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3a está implementada y aplicada mediante 0010: el verificador PostgreSQL, la matriz Hosted Auth central 1–12, failure/recovery 13–15, concurrencia/límites 17–18 y la auditoría productiva de ausencia de secretos del caso 19 están aprobados. Permanece abierta porque el caso 20 es parcial y faltan smoke tests y reconciliación post‑0010. B.3b y Fase C siguen pendientes.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -54,7 +54,9 @@ Un lease fresco no fue reclamado prematuramente y pudo recuperarse después de c
 
 En la fase PostgreSQL transaccional, las fixtures ordinarias de profesor y alumno quedaron denegadas en las superficies B.3a y no modificaron ledger ni auditoría. De forma separada, Target C autenticado sin autoridad B.1 fue rechazado en `start` y `retry` por la ruta Hosted; el perfil, el ledger y la auditoría conservaron sus hashes, y el postcheck confirmó la identidad Auth del objetivo. `service_role` no leyó ni mutó directamente `admin_auth_operations`; dentro de B.3a conservó únicamente las RPC aprobadas de claim/result. Su ACL histórico `SELECT`/`INSERT` sobre `admin_audit_events`, sin `UPDATE`, `DELETE` ni `TRUNCATE`, permaneció sin cambios. Estos resultados provienen de una ejecución desechable concreta, no de producción, y no generalizan la semántica futura del proveedor.
 
-La primera operación real revocó definitivamente el rollback 0010. B.3a continúa abierta: 19 y 20 son parciales y faltan smoke tests y reconciliación post‑0010.
+La auditoría productiva del caso 19 comprobó las superficies de navegador y Vercel mediante nombres y alcances públicos, agregados de logs y artefactos locales/remotos sanitizados. No encontró un cliente privilegiado de primera parte, JWT privilegiado ni secreto prohibido; los literales de dependencias observados no tenían valores asociados y no constituyeron filtraciones.
+
+La primera operación real revocó definitivamente el rollback 0010. B.3a continúa abierta: el caso 19 está aprobado, el caso 20 es parcial y faltan smoke tests y reconciliación post‑0010.
 
 ### B.3b — Otras operaciones Auth pendientes
 
