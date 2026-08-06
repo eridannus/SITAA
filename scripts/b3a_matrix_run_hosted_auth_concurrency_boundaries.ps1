@@ -1,6 +1,7 @@
 ﻿param(
   [switch]$ValidateOnly,
-  [switch]$ReadOnlyProbeOnly
+  [switch]$ReadOnlyProbeOnly,
+  [switch]$ResumeAfterV7ObserverFailure
 )
 
 Set-StrictMode -Version Latest
@@ -23,6 +24,9 @@ $protectedLocalArtifactNames = @(
   "b3a_matrix_hosted_auth_users.local.txt",
   "b3a_matrix_hosted_auth_concurrency_boundaries.local.txt",
   "b3a_matrix_hosted_auth_concurrency_boundaries_postcheck.local.txt",
+  "b3a_matrix_hosted_auth_concurrency_boundaries_v8.local.txt",
+  "b3a_matrix_hosted_auth_concurrency_boundaries_v8_postcheck.local.txt",
+  "b3a_matrix_hosted_auth_concurrency_boundaries_v8_failure.local.txt",
   "b3a_matrix_hosted_auth_failure_recovery_confirmation_repair.local.txt",
   "b3a_matrix_failure_recovery_target_handler_repair.local.json",
   "b3a_matrix_failure_recovery_target_handler_repair.next.local.json",
@@ -42,7 +46,34 @@ import { spawn, spawnSync } from "node:child_process";
 
 const EXPECTED_PROJECT_REF = "upttfqjogltvymnaubkg";
 const EXPECTED_PROJECT_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
-const HARNESS_VERSION = "2026-08-05-hosted-auth-concurrency-boundaries-v7";
+const HARNESS_VERSION = "2026-08-05-hosted-auth-concurrency-boundaries-v8";
+const PREDECESSOR_HARNESS_VERSION = "2026-08-05-hosted-auth-concurrency-boundaries-v7";
+const PREDECESSOR_EVIDENCE_NAME = "b3a_matrix_hosted_auth_concurrency_boundaries.local.txt";
+const PREDECESSOR_POSTCHECK_NAME = "b3a_matrix_hosted_auth_concurrency_boundaries_postcheck.local.txt";
+const V8_EVIDENCE_NAME = "b3a_matrix_hosted_auth_concurrency_boundaries_v8.local.txt";
+const V8_POSTCHECK_NAME = "b3a_matrix_hosted_auth_concurrency_boundaries_v8_postcheck.local.txt";
+const V8_FAILURE_EVIDENCE_NAME = "b3a_matrix_hosted_auth_concurrency_boundaries_v8_failure.local.txt";
+const PREDECESSOR_EVIDENCE_BYTES = 601;
+const PREDECESSOR_EVIDENCE_SHA256 = "b022d7c1dcb1eb7278d0c7b6d87e8917d2a409d74405d5a5400906441f899755";
+const PREDECESSOR_EVIDENCE_LINES = Object.freeze([
+  "HARNESS_VERSION|2026-08-05-hosted-auth-concurrency-boundaries-v7",
+  "FAILURE_PHASE|same_request_same_payload",
+  "FAILURE_CODE|advisory_observer_timeout",
+  "AUTH_HANDLER_BASELINE|APPROVED",
+  "CASE_17_ORDINARY_USERS|APPROVED",
+  "CASE_18_SERVICE_ROLE_BOUNDARY|APPROVED",
+  "FAILURE_DIAGNOSTIC|RECORDED",
+  "DIAGNOSTIC_OPERATIONS|4",
+  "DIAGNOSTIC_NONFINAL|0",
+  "DIAGNOSTIC_NONSUCCEEDED|0",
+  "DIAGNOSTIC_ADMIN_EVENTS|8",
+  "DIAGNOSTIC_TARGET_ACTIVE|1",
+  "DIAGNOSTIC_TARGET_UNBANNED|1",
+  "DIAGNOSTIC_SYNTHETIC_AUTHORITY_ACTIVE|0",
+  "DIAGNOSTIC_READ_ONLY_TRANSACTION|true",
+  "DIAGNOSTIC_ROLLBACK|true",
+  "HOSTED_AUTH_CONCURRENCY_BOUNDARIES|REJECTED|advisory_observer_timeout",
+]);
 const TARGET_BOOTSTRAP_VERSION = "2026-08-04-b3a-failure-target-bootstrap-v7";
 const EXPECTED_AUTH_HANDLER_MD5 = "156398fbb0da020e2b8b57db92b87fcd";
 const EXPECTED_AUTH_HANDLER_ACL = "{postgres=X/postgres,service_role=X/postgres}";
@@ -54,7 +85,7 @@ const AUTH_REQUEST_TIMEOUT_MS = 20_000;
 const POSTGRES_PROCESS_TIMEOUT_MS = 45_000;
 const LEASE_WAIT_PROCESS_TIMEOUT_MS = 390_000;
 const WORKER_MARKER_TIMEOUT_MS = 20_000;
-const ADVISORY_OBSERVER_TIMEOUT_MS = 15_000;
+const ADVISORY_OBSERVER_TIMEOUT_MS = 30_000;
 const ADVISORY_OBSERVER_POLL_MS = 150;
 const REQUIRED_ADVISORY_OBSERVATIONS = 7;
 const POSTGRES_MAX_BUFFER_BYTES = 1024 * 1024;
@@ -65,6 +96,16 @@ const EXPECTED_DELTA = Object.freeze({
   authIdentities: 0,
   profiles: 1,
   roleAssignments: 1,
+  operations: 2,
+  administrativeEvents: 4,
+  authSuccessEvents: 2,
+  authFailureEvents: 0,
+});
+const EXPECTED_RESUME_DELTA = Object.freeze({
+  authUsers: 0,
+  authIdentities: 0,
+  profiles: 0,
+  roleAssignments: 0,
   operations: 2,
   administrativeEvents: 4,
   authSuccessEvents: 2,
@@ -103,6 +144,13 @@ const EXPECTED_BASELINE_AGGREGATES = Object.freeze({
   ledgerPolicies: 0,
   adminAActive: 1,
   adminBActive: 1,
+});
+const EXPECTED_RESUME_BASELINE_AGGREGATES = Object.freeze({
+  ...EXPECTED_BASELINE_AGGREGATES,
+  authUsers: 4,
+  authIdentities: 3,
+  profiles: 4,
+  roleAssignments: 3,
 });
 const FINAL_POSTCHECK_AGGREGATE_FIELDS = Object.freeze([
   "authUsers", "authIdentities", "profiles", "roleAssignments", "exactB1Authorities",
@@ -260,6 +308,8 @@ const runtimeState = {
   databaseConnection: null,
   evidencePath: null,
   postcheckPath: null,
+  failureEvidencePath: null,
+  resumeAfterV7ObserverFailure: false,
   runDirectory: null,
   syntheticAuthorityId: null,
   syntheticAuthorityAssignmentId: null,
@@ -321,6 +371,55 @@ function readRequiredText(filePath, failureCode) {
   return readRequiredBuffer(filePath, failureCode).toString("utf8");
 }
 
+function expectedPredecessorEvidenceBuffer() {
+  return Buffer.from(`${PREDECESSOR_EVIDENCE_LINES.join("\n")}\n`, "utf8");
+}
+
+function validateV7PredecessorEvidence(reconciliationRoot) {
+  const predecessorPath = path.join(reconciliationRoot, PREDECESSOR_EVIDENCE_NAME);
+  const predecessorPostcheckPath = path.join(reconciliationRoot, PREDECESSOR_POSTCHECK_NAME);
+  const v8EvidencePath = path.join(reconciliationRoot, V8_EVIDENCE_NAME);
+  const v8PostcheckPath = path.join(reconciliationRoot, V8_POSTCHECK_NAME);
+  const v8FailurePath = path.join(reconciliationRoot, V8_FAILURE_EVIDENCE_NAME);
+  requireCondition(
+    path.resolve(predecessorPath) === path.resolve(reconciliationRoot, PREDECESSOR_EVIDENCE_NAME),
+    "resume_predecessor_path_rejected",
+  );
+  let stat;
+  try {
+    stat = fs.lstatSync(predecessorPath);
+  } catch {
+    fail("resume_predecessor_missing");
+  }
+  requireCondition(stat.isFile() && !stat.isSymbolicLink(), "resume_predecessor_path_rejected");
+  const actual = readRequiredBuffer(predecessorPath, "resume_predecessor_missing");
+  const expected = expectedPredecessorEvidenceBuffer();
+  requireCondition(
+    actual.length === PREDECESSOR_EVIDENCE_BYTES
+      && expected.length === PREDECESSOR_EVIDENCE_BYTES
+      && sha256Buffer(actual) === PREDECESSOR_EVIDENCE_SHA256
+      && actual.equals(expected),
+    "resume_predecessor_integrity_rejected",
+  );
+  requireCondition(!fs.existsSync(predecessorPostcheckPath), "resume_predecessor_postcheck_rejected");
+  requireCondition(
+    !fs.existsSync(v8EvidencePath)
+      && !fs.existsSync(v8PostcheckPath)
+      && !fs.existsSync(v8FailurePath),
+    "resume_v8_evidence_already_exists",
+  );
+  const publicationTemporaryExists = fs.readdirSync(reconciliationRoot).some(
+    (name) => name.startsWith("b3a_matrix_hosted_auth_concurrency_boundaries") && name.includes(".next"),
+  );
+  requireCondition(!publicationTemporaryExists, "resume_publication_temporary_present");
+  return Object.freeze({
+    predecessorPath,
+    v8EvidencePath,
+    v8PostcheckPath,
+    v8FailurePath,
+  });
+}
+
 function containsForbiddenEvidence(value) {
   let candidate = String(value ?? "");
   for (const term of SAFE_EVIDENCE_TERMS) candidate = candidate.replaceAll(term, "SAFE_TERM");
@@ -357,15 +456,15 @@ function formatBaselineCountsDiagnostic(actual, expected = EXPECTED_BASELINE_AGG
   return diagnostic;
 }
 
-function requireBaselineAggregates(actual) {
+function requireBaselineAggregates(actual, expected = EXPECTED_BASELINE_AGGREGATES) {
   const actualChain = numericAggregateChain(actual, BASELINE_AGGREGATE_FIELDS, "baseline_counts_rejected");
   const expectedChain = numericAggregateChain(
-    EXPECTED_BASELINE_AGGREGATES,
+    expected,
     BASELINE_AGGREGATE_FIELDS,
     "baseline_counts_rejected",
   );
   if (actualChain !== expectedChain) {
-    console.error(formatBaselineCountsDiagnostic(actual));
+    console.error(formatBaselineCountsDiagnostic(actual, expected));
     fail("baseline_counts_rejected");
   }
   return true;
@@ -853,6 +952,19 @@ function validateListedAuthUserIds(users) {
   return Object.freeze(ids);
 }
 
+function validateResumeListedAuthUserIds(users, authorityId) {
+  requireCondition(UUID_PATTERN.test(authorityId), "resume_auth_user_inventory_rejected");
+  requireCondition(Array.isArray(users) && users.length === 4, "resume_auth_user_inventory_count_rejected");
+  const ids = users.map((user) => {
+    requireCondition(user && typeof user === "object" && !Array.isArray(user) && UUID_PATTERN.test(user.id), "resume_auth_user_inventory_rejected");
+    return user.id;
+  });
+  requireCondition(new Set(ids).size === 4 && ids.filter((id) => id === authorityId).length === 1, "resume_auth_user_inventory_rejected");
+  const fixtureIds = ids.filter((id) => id !== authorityId);
+  requireCondition(fixtureIds.length === 3, "resume_auth_user_inventory_rejected");
+  return Object.freeze(fixtureIds);
+}
+
 async function getDetailedAuthUser(serviceClient, expectedUserId, failureCode = "auth_user_detail_fetch_failed") {
   requireCondition(UUID_PATTERN.test(expectedUserId), "auth_user_detail_response_rejected");
   const result = await authRequest(
@@ -884,6 +996,26 @@ async function loadDetailedAuthUsers(serviceClient, expectedUserIds) {
     users.push(await getDetailedAuthUser(serviceClient, expectedUserId, "auth_user_detail_fetch_failed"));
   }
   return Object.freeze(users);
+}
+
+function validateSyntheticAuthorityAuthDetail(user, authorityId) {
+  requireCondition(
+    user
+      && typeof user === "object"
+      && !Array.isArray(user)
+      && user.id === authorityId
+      && typeof user.email === "string"
+      && new RegExp(SYNTHETIC_AUTHORITY_EMAIL_SQL_PATTERN).test(user.email.toLowerCase())
+      && user.email_confirmed_at
+      && !authBanIsActive(user)
+      && user.is_anonymous === false
+      && Array.isArray(user.identities)
+      && user.identities.length === 0
+      && user.app_metadata?.sitaa_account_kind === "technical"
+      && user.app_metadata?.sitaa_first_names === "Autoridad Sintética D",
+    "synthetic_authority_auth_detail_rejected",
+  );
+  return true;
 }
 
 function validateDetailedEmailIdentity(user) {
@@ -1176,16 +1308,39 @@ function barrierTimestamp(line, prefix) {
   return timestamp;
 }
 
-function advisoryWaitObservationSql(holderApplicationName, waiterApplicationName) {
-  const holder = sqlLiteralText(holderApplicationName);
-  const waiter = sqlLiteralText(waiterApplicationName);
+function parseWorkerPidMarker(line, prefix) {
+  const parts = String(line ?? "").split("|");
+  requireCondition(prefix === "HOLDER_READY" || prefix === "WAITER_STARTED", "worker_pid_marker_prefix_rejected");
+  requireCondition(parts[0] === prefix, "worker_pid_marker_shape_rejected");
+  const expectedLength = prefix === "HOLDER_READY" ? 4 : 3;
+  requireCondition(parts.length === expectedLength, "worker_pid_marker_shape_rejected");
+  const semanticValue = prefix === "HOLDER_READY" ? parts[1] : null;
+  if (prefix === "HOLDER_READY") {
+    requireCondition(
+      semanticValue === "LOCK" || UUID_PATTERN.test(semanticValue ?? ""),
+      "worker_pid_marker_semantic_rejected",
+    );
+  }
+  const pidText = prefix === "HOLDER_READY" ? parts[2] : parts[1];
+  const timestamp = prefix === "HOLDER_READY" ? parts[3] : parts[2];
+  requireCondition(/^[1-9][0-9]*$/.test(pidText ?? ""), "worker_pid_rejected");
+  const pid = Number(pidText);
+  requireCondition(Number.isSafeInteger(pid) && pid > 0, "worker_pid_rejected");
+  requireCondition(typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp)), "worker_timestamp_rejected");
+  return Object.freeze({ semanticValue, pid, timestamp });
+}
+
+function advisoryWaitObservationSql(holderPid, waiterPid) {
+  requireCondition(Number.isSafeInteger(holderPid) && holderPid > 0, "observer_holder_pid_rejected");
+  requireCondition(Number.isSafeInteger(waiterPid) && waiterPid > 0, "observer_waiter_pid_rejected");
+  requireCondition(holderPid !== waiterPid, "observer_pid_duplicated");
   return `
 begin;
 set transaction read only;
 with holder_sessions as (
-  select pid,datid from pg_stat_activity where application_name=${holder}
+  select pid,datid from pg_stat_activity where pid=${holderPid}
 ), waiter_sessions as (
-  select pid,datid,wait_event_type from pg_stat_activity where application_name=${waiter}
+  select pid,datid,wait_event_type from pg_stat_activity where pid=${waiterPid}
 ), matching_locks as (
   select 1
   from holder_sessions hs
@@ -1200,29 +1355,56 @@ with holder_sessions as (
 select concat_ws('|','ADVISORY_WAIT_OBSERVATION',
   (select count(*) from holder_sessions),
   (select count(*) from waiter_sessions),
+  (select count(*) from holder_sessions hs join waiter_sessions ws on ws.datid=hs.datid),
   (select count(*) from pg_locks l join holder_sessions h on h.pid=l.pid where l.locktype='advisory' and l.granted),
   (select count(*) from pg_locks l join waiter_sessions w on w.pid=l.pid where l.locktype='advisory' and not l.granted),
   (select count(*) from matching_locks),
-  (select count(*) from waiter_sessions where wait_event_type='Lock'));
+  (select count(*) from waiter_sessions where wait_event_type='Lock'),
+  (select case when ${holderPid}=any(pg_blocking_pids(${waiterPid})) then 1 else 0 end));
 rollback;`;
 }
 
 function advisoryObservationApproved(parts) {
+  const positiveCount = (value) => /^[1-9][0-9]*$/.test(String(value ?? ""));
   return Array.isArray(parts)
-    && parts.length === 7
+    && parts.length === 9
     && parts[0] === "ADVISORY_WAIT_OBSERVATION"
     && parts[1] === "1"
     && parts[2] === "1"
-    && Number(parts[3]) >= 1
-    && Number(parts[4]) >= 1
-    && Number(parts[5]) >= 1
-    && parts[6] === "1";
+    && parts[3] === "1"
+    && positiveCount(parts[4])
+    && positiveCount(parts[5])
+    && positiveCount(parts[6])
+    && parts[7] === "1"
+    && parts[8] === "1";
+}
+
+function boundedObserverValue(parts, index, booleanOnly = false) {
+  const value = Array.isArray(parts) && /^(0|[1-9][0-9]*)$/.test(String(parts[index] ?? ""))
+    ? Number(parts[index])
+    : 0;
+  if (booleanOnly) return value === 1 ? 1 : 0;
+  return Number.isSafeInteger(value) ? Math.min(value, 999) : 0;
+}
+
+function advisoryObserverTimeoutDiagnostic(parts) {
+  return [
+    "ADVISORY_OBSERVER_TIMEOUT",
+    `holder_sessions=${boundedObserverValue(parts, 1)}`,
+    `waiter_sessions=${boundedObserverValue(parts, 2)}`,
+    `same_database=${boundedObserverValue(parts, 3, true)}`,
+    `holder_granted=${boundedObserverValue(parts, 4)}`,
+    `waiter_ungranted=${boundedObserverValue(parts, 5)}`,
+    `matching_locks=${boundedObserverValue(parts, 6)}`,
+    `waiter_lock_wait=${boundedObserverValue(parts, 7, true)}`,
+    `holder_blocks_waiter=${boundedObserverValue(parts, 8, true)}`,
+  ].join("|");
 }
 
 async function observeAdvisoryLockWait(
   connection,
-  holderApplicationName,
-  waiterApplicationName,
+  holderPid,
+  waiterPid,
   {
     timeoutMs = ADVISORY_OBSERVER_TIMEOUT_MS,
     pollMs = ADVISORY_OBSERVER_POLL_MS,
@@ -1231,18 +1413,24 @@ async function observeAdvisoryLockWait(
     pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   } = {},
 ) {
-  requireCondition(holderApplicationName !== waiterApplicationName, "observer_application_name_duplicated");
+  requireCondition(Number.isSafeInteger(holderPid) && holderPid > 0, "observer_holder_pid_rejected");
+  requireCondition(Number.isSafeInteger(waiterPid) && waiterPid > 0, "observer_waiter_pid_rejected");
+  requireCondition(holderPid !== waiterPid, "observer_pid_duplicated");
   const deadline = now() + timeoutMs;
   const executeProbe = probe ?? (() => executeReadOnlySql(
     connection,
-    advisoryWaitObservationSql(holderApplicationName, waiterApplicationName),
+    advisoryWaitObservationSql(holderPid, waiterPid),
     "ADVISORY_WAIT_OBSERVATION",
   ));
+  let finalParts = null;
   while (now() < deadline) {
-    const parts = await executeProbe();
-    if (advisoryObservationApproved(parts)) return true;
+    finalParts = await executeProbe();
+    if (advisoryObservationApproved(finalParts)) return true;
     await pause(pollMs);
   }
+  finalParts = await executeProbe();
+  if (advisoryObservationApproved(finalParts)) return true;
+  console.error(advisoryObserverTimeoutDiagnostic(finalParts));
   fail("advisory_observer_timeout");
 }
 
@@ -1253,15 +1441,18 @@ async function coordinateWorkerPair(connection, { holderSql, waiterSql, holderNa
   try {
     holder.write(holderSql);
     const holderReady = await holder.waitFor("HOLDER_READY|");
-    writeBarrier(runDirectory, `${holderName}-ready`, holderReady.split("|").at(-1));
+    const holderMarker = parseWorkerPidMarker(holderReady, "HOLDER_READY");
+    writeBarrier(runDirectory, `${holderName}-ready`, holderMarker.timestamp);
     waiter = startPsqlWorker(connection, { name: waiterName, runDirectory });
     waiter.end(waiterSql);
     const waiterStarted = await waiter.waitFor("WAITER_STARTED|");
-    writeBarrier(runDirectory, `${waiterName}-started`, waiterStarted.split("|").at(-1));
+    const waiterMarker = parseWorkerPidMarker(waiterStarted, "WAITER_STARTED");
+    requireCondition(holderMarker.pid !== waiterMarker.pid, "worker_pid_duplicated");
+    writeBarrier(runDirectory, `${waiterName}-started`, waiterMarker.timestamp);
     observationApproved = await observeAdvisoryLockWait(
       connection,
-      holder.applicationName,
-      waiter.applicationName,
+      holderMarker.pid,
+      waiterMarker.pid,
     );
     requireCondition(observationApproved, "advisory_wait_not_observed");
     runtimeState.advisoryObservations += 1;
@@ -1360,6 +1551,93 @@ function publishPartialEvidence(evidencePath, lines) {
   }
 }
 
+function canonicalV8PostcheckLines() {
+  return [
+    `HARNESS_VERSION|${HARNESS_VERSION}`,
+    "AUTH_USERS|4",
+    "AUTH_IDENTITIES|3",
+    "PROFILES|4",
+    "ROLE_ASSIGNMENTS|3",
+    "B1_ACTIVE_AUTHORITY|2/2",
+    "TARGET_C_ACTIVE|true",
+    "TARGET_C_BANNED|false",
+    "TARGET_C_ASSIGNMENTS|0",
+    "B3A_OPERATIONS|6",
+    "B3A_SUCCEEDED_COMPLETED|6",
+    "B3A_NONFINAL|0",
+    "B3A_NONSUCCEEDED|0",
+    "B3A_ADMIN_EVENTS|12",
+    "B3A_AUTH_FAILURE_EVENTS|0",
+    "B3A_AUTH_SUCCESS_EVENTS|6",
+    "BASELINE_ADMIN_ASSIGNMENTS_PRESERVED|true",
+    "SYNTHETIC_AUTHORITY_ACTIVE|false",
+    "ACTIVE_LEASES|0",
+    "LIVE_WORKERS|0",
+    "AUTH_HANDLER_STATE|CANONICAL",
+    "READ_ONLY_TRANSACTION|true",
+    "ROLLBACK|true",
+    "HOSTED_AUTH_CONCURRENCY_BOUNDARIES_POSTCHECK|APPROVED",
+  ];
+}
+
+function isCanonicalV8Postcheck(filePath) {
+  try {
+    const stat = fs.lstatSync(filePath);
+    if (!stat.isFile() || stat.isSymbolicLink()) return false;
+    const actual = fs.readFileSync(filePath);
+    const expected = Buffer.from(`${canonicalV8PostcheckLines().join("\n")}\n`, "utf8");
+    return actual.equals(expected);
+  } catch {
+    return false;
+  }
+}
+
+function classifyV8PublicationState({
+  evidenceExists,
+  postcheckExists,
+  failureEvidenceExists,
+  canonicalPostcheck,
+}) {
+  requireCondition(
+    [evidenceExists, postcheckExists, failureEvidenceExists, canonicalPostcheck]
+      .every((value) => typeof value === "boolean"),
+    "v8_publication_state_input_rejected",
+  );
+  if (!evidenceExists && !postcheckExists && !failureEvidenceExists) return "none";
+  if (evidenceExists && postcheckExists && !failureEvidenceExists && canonicalPostcheck) return "complete_pair";
+  if (!evidenceExists && postcheckExists && !failureEvidenceExists && canonicalPostcheck) {
+    return "canonical_orphan_postcheck";
+  }
+  if (!evidenceExists && failureEvidenceExists && (!postcheckExists || canonicalPostcheck)) {
+    return "existing_failure_evidence";
+  }
+  return "unknown";
+}
+
+function v8FailurePublicationPlan(publicationState) {
+  requireCondition(
+    ["none", "complete_pair", "canonical_orphan_postcheck", "unknown", "existing_failure_evidence"]
+      .includes(publicationState),
+    "v8_publication_state_rejected",
+  );
+  return Object.freeze({
+    mayPublish: publicationState === "none" || publicationState === "canonical_orphan_postcheck",
+    orphanPostcheckPresent: publicationState === "canonical_orphan_postcheck",
+  });
+}
+
+function inspectV8PublicationState(evidencePath, postcheckPath, failureEvidencePath) {
+  const evidenceExists = fs.existsSync(evidencePath);
+  const postcheckExists = fs.existsSync(postcheckPath);
+  const failureEvidenceExists = fs.existsSync(failureEvidencePath);
+  return classifyV8PublicationState({
+    evidenceExists,
+    postcheckExists,
+    failureEvidenceExists,
+    canonicalPostcheck: postcheckExists && isCanonicalV8Postcheck(postcheckPath),
+  });
+}
+
 function recordApprovedPhase(marker) {
   requireCondition(
     /^[A-Z][A-Z0-9_]{0,79}\|APPROVED$/.test(marker)
@@ -1367,23 +1645,6 @@ function recordApprovedPhase(marker) {
     "approved_phase_marker_rejected",
   );
   if (!runtimeState.approvedPhases.includes(marker)) runtimeState.approvedPhases.push(marker);
-}
-
-function isRecoverableV3Postcheck(filePath) {
-  const lines = normalizeEol(readRequiredText(filePath, "orphan_postcheck_read_failed"))
-    .split("\n").map((line) => line.trim()).filter(Boolean);
-  try {
-    for (const line of lines) assertSafeEvidenceLine(line);
-  } catch {
-    return false;
-  }
-  return lines.filter((line) => line === `HARNESS_VERSION|${HARNESS_VERSION}`).length === 1
-    && lines.filter((line) => line === "HOSTED_AUTH_CONCURRENCY_BOUNDARIES_POSTCHECK|APPROVED").length === 1
-    && lines.includes("AUTH_HANDLER_STATE|CANONICAL")
-    && lines.includes("READ_ONLY_TRANSACTION|true")
-    && lines.includes("ROLLBACK|true")
-    && !lines.includes("HOSTED_AUTH_CONCURRENCY_BOUNDARIES|APPROVED")
-    && !lines.some((line) => line.startsWith("HOSTED_AUTH_CONCURRENCY_BOUNDARIES|REJECTED|"));
 }
 
 function reconcileEvidencePublication(
@@ -1397,7 +1658,7 @@ function reconcileEvidencePublication(
   if (hasEvidence && !hasPostcheck) fail("committed_evidence_without_postcheck");
   if (hasEvidence && hasPostcheck) fail("concurrency_evidence_already_exists");
   if (!hasEvidence && hasPostcheck) {
-    requireCondition(isRecoverableV3Postcheck(postcheckPath), "unrecognized_orphan_postcheck");
+    requireCondition(isCanonicalV8Postcheck(postcheckPath), "unrecognized_orphan_postcheck");
     requireCondition(recoverOrphanPostcheck, "orphan_postcheck_recovery_not_allowed");
     unlinkFile(postcheckPath);
   }
@@ -1599,10 +1860,10 @@ select concat_ws('|','CONCURRENCY_BOUNDARIES_BASELINE',
 rollback;`;
 }
 
-function parseBaseline(parts) {
+function parseBaseline(parts, expected = EXPECTED_BASELINE_AGGREGATES) {
   requireCondition(Array.isArray(parts) && parts.length === 29 && parts[0] === "CONCURRENCY_BOUNDARIES_BASELINE", "baseline_shape_rejected");
   const aggregates = parseNumericAggregate(parts.slice(1, 26), BASELINE_AGGREGATE_FIELDS, "baseline_counts_rejected");
-  requireBaselineAggregates(aggregates);
+  requireBaselineAggregates(aggregates, expected);
   requireCondition(/^[0-9a-f]{32}$/.test(parts[26]), "baseline_assignment_hash_rejected");
   requireCondition(Number.isFinite(Date.parse(parts[27])), "baseline_activation_timestamp_rejected");
   requireCondition(/^[0-9a-f]{32}$/.test(parts[28]), "baseline_identity_hash_rejected");
@@ -1871,6 +2132,65 @@ rollback;`;
   return assertCase18AclContract(sql);
 }
 
+function resolveSyntheticAuthorityForResumeSql() {
+  return `
+begin;
+set transaction read only;
+with candidates as (
+  select u.id,lower(u.email) as email
+  from auth.users u
+  where lower(u.email) ~ '${SYNTHETIC_AUTHORITY_EMAIL_SQL_PATTERN}'
+), authority as (
+  select c.id,c.email from candidates c order by c.id limit 1
+), assignments as (
+  select r.* from public.role_assignments r join authority a on a.id=r.user_id
+)
+select concat_ws('|','SYNTHETIC_AUTHORITY_REUSE',
+  coalesce((select id::text from authority),''),
+  coalesce((select id::text from assignments order by id limit 1),''),
+  (select count(*) from candidates),
+  (select count(*) from auth.users u join authority a on a.id=u.id
+    where u.email_confirmed_at is not null
+      and (u.banned_until is null or u.banned_until<=clock_timestamp())
+      and coalesce(u.raw_app_meta_data->>'sitaa_account_kind','')='technical'
+      and coalesce(u.raw_app_meta_data->>'sitaa_first_names','')='Autoridad Sintética D'),
+  (select count(*) from auth.identities i join authority a on a.id=i.user_id),
+  (select count(*) from public.profiles p join authority a on a.id=p.id),
+  (select count(*) from public.profiles p join authority a on a.id=p.id
+    where lower(p.email)=a.email and p.account_kind='technical' and p.account_status='active' and p.is_active
+      and p.first_names='Autoridad Sintética D' and p.paternal_surname is null and p.maternal_surname is null
+      and p.full_name='Autoridad Sintética D' and p.person_type is null
+      and p.institutional_id_type is null and p.institutional_id_value is null
+      and p.primary_program_id is null and p.activated_at is not null and p.deactivated_at is null),
+  (select count(*) from assignments),
+  (select count(*) from assignments r where r.role_code='technical_admin' and r.scope_type='system'
+    and r.service_area='technical' and r.program_id is null and r.division_id is null and not r.is_active),
+  (select count(*) from assignments r where r.is_active),
+  (select count(*) from authority a where public.is_exact_b1_account_admin_profile_b2b(a.id)),
+  (select count(*) from public.admin_auth_operations o join authority a
+    on a.id in (o.requested_by_profile_id,o.completed_by_profile_id,o.target_profile_id)),
+  (select count(*) from public.admin_auth_operations o where o.status in ('open','processing','retryable_failure'))
+);
+rollback;`;
+}
+
+function parseSyntheticAuthorityReuse(parts) {
+  requireCondition(
+    Array.isArray(parts)
+      && parts.length === 14
+      && parts[0] === "SYNTHETIC_AUTHORITY_REUSE"
+      && UUID_PATTERN.test(parts[1])
+      && UUID_PATTERN.test(parts[2]),
+    "synthetic_authority_reuse_shape_rejected",
+  );
+  const counts = parts.slice(3);
+  requireCondition(
+    counts.join("|") === "1|1|0|1|1|1|1|0|0|0|0",
+    "synthetic_authority_reuse_contract_rejected",
+  );
+  return Object.freeze({ authorityId: parts[1], assignmentId: parts[2] });
+}
+
 function createSyntheticAuthoritySql(authorityId, authorityEmail, adminAId) {
   const authority = sqlLiteralUuid(authorityId);
   const email = sqlLiteralText(authorityEmail);
@@ -2027,7 +2347,7 @@ with prepared as (
     ${sqlLiteralUuid(targetId)},${sqlLiteralText(transition)},${sqlLiteralText(reason)},${sqlLiteralUuid(requestId)}
   )
 )
-select 'HOLDER_READY|'||operation_id::text||'|'||clock_timestamp()::text from prepared;`;
+select 'HOLDER_READY|'||operation_id::text||'|'||pg_backend_pid()::text||'|'||clock_timestamp()::text from prepared;`;
 }
 
 function waiterPrepareSameSql(adminId, targetId, requestId, transition, reason) {
@@ -2036,7 +2356,7 @@ begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub',${sqlLiteralText(adminId)},true);
 select set_config('request.jwt.claims',jsonb_build_object('sub',${sqlLiteralText(adminId)},'role','authenticated')::text,true);
-select 'WAITER_STARTED|'||clock_timestamp()::text;
+select 'WAITER_STARTED|'||pg_backend_pid()::text||'|'||clock_timestamp()::text;
 with prepared as (
   select * from public.prepare_admin_account_auth_lifecycle_b3a(
     ${sqlLiteralUuid(targetId)},${sqlLiteralText(transition)},${sqlLiteralText(reason)},${sqlLiteralUuid(requestId)}
@@ -2050,7 +2370,7 @@ function advisoryHolderSql() {
   return `
 begin;
 select pg_advisory_xact_lock(1397310529,9002);
-select 'HOLDER_READY|LOCK|'||clock_timestamp()::text;`;
+select 'HOLDER_READY|LOCK|'||pg_backend_pid()::text||'|'||clock_timestamp()::text;`;
 }
 
 function waiterPrepareErrorSql(adminId, targetId, requestId, transition, reason, expectedSqlState, expectedMessage, resultMarker) {
@@ -2061,7 +2381,7 @@ grant insert,select on pg_temp.outcome to authenticated;
 set local role authenticated;
 select set_config('request.jwt.claim.sub',${sqlLiteralText(adminId)},true);
 select set_config('request.jwt.claims',jsonb_build_object('sub',${sqlLiteralText(adminId)},'role','authenticated')::text,true);
-select 'WAITER_STARTED|'||clock_timestamp()::text;
+select 'WAITER_STARTED|'||pg_backend_pid()::text||'|'||clock_timestamp()::text;
 do $waiter_error$
 begin
   begin
@@ -2085,7 +2405,7 @@ function claimWaiterSql(actorId, operationId) {
 begin;
 set local role service_role;
 select set_config('request.jwt.claims',jsonb_build_object('role','service_role')::text,true);
-select 'WAITER_STARTED|'||clock_timestamp()::text;
+select 'WAITER_STARTED|'||pg_backend_pid()::text||'|'||clock_timestamp()::text;
 create temporary table claim_result on commit drop as
 select * from public.claim_admin_auth_operation_b3a(${sqlLiteralUuid(operationId)},${sqlLiteralUuid(actorId)});
 reset role;
@@ -2102,7 +2422,7 @@ create temporary table outcome(value text not null) on commit drop;
 grant insert,select on pg_temp.outcome to service_role;
 set local role service_role;
 select set_config('request.jwt.claims',jsonb_build_object('role','service_role')::text,true);
-select 'WAITER_STARTED|'||clock_timestamp()::text;
+select 'WAITER_STARTED|'||pg_backend_pid()::text||'|'||clock_timestamp()::text;
 do $authority_loss$
 begin
   begin
@@ -2126,7 +2446,7 @@ create temporary table outcome(value text not null) on commit drop;
 grant insert,select on pg_temp.outcome to service_role;
 set local role service_role;
 select set_config('request.jwt.claims',jsonb_build_object('role','service_role')::text,true);
-select 'WAITER_STARTED|'||clock_timestamp()::text;
+select 'WAITER_STARTED|'||pg_backend_pid()::text||'|'||clock_timestamp()::text;
 do $authority_loss$
 begin
   begin
@@ -2320,15 +2640,18 @@ async function coordinateAuthorityLoss(connection, options) {
   try {
     holder.write(advisoryHolderSql());
     const holderReady = await holder.waitFor("HOLDER_READY|");
-    writeBarrier(options.runDirectory, `${options.holderName}-ready`, holderReady.split("|").at(-1));
+    const holderMarker = parseWorkerPidMarker(holderReady, "HOLDER_READY");
+    writeBarrier(options.runDirectory, `${options.holderName}-ready`, holderMarker.timestamp);
     waiter = startPsqlWorker(connection, { name: options.waiterName, runDirectory: options.runDirectory });
     waiter.end(options.waiterSql);
     const waiterStarted = await waiter.waitFor("WAITER_STARTED|");
-    writeBarrier(options.runDirectory, `${options.waiterName}-started`, waiterStarted.split("|").at(-1));
+    const waiterMarker = parseWorkerPidMarker(waiterStarted, "WAITER_STARTED");
+    requireCondition(holderMarker.pid !== waiterMarker.pid, "worker_pid_duplicated");
+    writeBarrier(options.runDirectory, `${options.waiterName}-started`, waiterMarker.timestamp);
     observationApproved = await observeAdvisoryLockWait(
       connection,
-      holder.applicationName,
-      waiter.applicationName,
+      holderMarker.pid,
+      waiterMarker.pid,
     );
     requireCondition(observationApproved, "authority_advisory_wait_not_observed");
     runtimeState.advisoryObservations += 1;
@@ -2533,10 +2856,50 @@ function assertMainIrreversibleOrder(source) {
   return positions;
 }
 
+function assertResumeMainOrder(source) {
+  const normalized = normalizeEol(source);
+  const positions = Object.freeze({
+    predecessor: normalized.indexOf("validateV7PredecessorEvidence(reconciliationRoot)"),
+    baseline: normalized.indexOf("const baseline = parseBaseline("),
+    authHandler: normalized.indexOf('authHandlerContractSql("AUTH_HANDLER_BASELINE_SQL")'),
+    authorityResolution: normalized.indexOf("resolveSyntheticAuthorityForResumeSql()"),
+    authInventory: normalized.indexOf("await listAllAuthUsers(serviceClient)"),
+    login: normalized.indexOf("await signInExact(targetClient"),
+    firstConfirmation: normalized.indexOf('"CONTINUE_B3A_CONCURRENCY_BOUNDARIES_RESUME_V8"'),
+    case17: normalized.indexOf("case17OrdinaryUsersSql()"),
+    case18: normalized.indexOf("case18ServiceRoleSql(adminA.id, targetId)"),
+    secondConfirmation: normalized.indexOf('"CONTINUE_B3A_CONCURRENCY_BOUNDARIES_RESUME_V8_IRREVERSIBLE"'),
+    irreversible: normalized.indexOf("runtimeState.irreversible = true"),
+    authorityReuse: normalized.indexOf('runtimeState.phase = "synthetic_authority_reuse"'),
+    matrix: normalized.indexOf('runtimeState.phase = "same_request_same_payload"'),
+    finalPostcheck: normalized.indexOf('runtimeState.phase = "final_postcheck"'),
+    publication: normalized.indexOf("publishEvidencePair(evidencePath, postcheckPath"),
+  });
+  requireCondition(
+    Object.values(positions).every((position) => Number.isInteger(position) && position >= 0)
+      && Object.values(positions).every((position, index, values) => index === 0 || position > values[index - 1]),
+    "resume_main_order_fixture_rejected",
+  );
+  const reuseBranchEnd = normalized.indexOf("} else {", positions.authorityReuse);
+  const creationStart = normalized.indexOf('runtimeState.phase = "synthetic_authority_creation"', reuseBranchEnd);
+  const creationEnd = normalized.indexOf("runtimeState.syntheticAuthorityId = authorityId", creationStart);
+  requireCondition(
+    reuseBranchEnd > positions.authorityReuse
+      && creationStart > reuseBranchEnd
+      && creationEnd > creationStart
+      && !normalized.slice(positions.authorityReuse, reuseBranchEnd).includes("createSyntheticAuthoritySql(")
+      && (normalized.match(/createSyntheticAuthoritySql\(/g) ?? []).length === 1
+      && (normalized.slice(creationStart, creationEnd).match(/createSyntheticAuthoritySql\(/g) ?? []).length === 1,
+    "resume_authority_reuse_fixture_rejected",
+  );
+  return positions;
+}
+
 async function runSelfTests(repoRoot) {
   const fixtureRoot = path.join(path.dirname(process.argv[1]), "self-test-fixtures");
   const fixtureEvidence = path.join(fixtureRoot, "evidence.local.txt");
   const fixturePostcheck = path.join(fixtureRoot, "postcheck.local.txt");
+  const fixtureFailureEvidence = path.join(fixtureRoot, "failure.local.txt");
   const operation = "44444444-4444-4444-8444-444444444444";
   const otherOperation = "55555555-5555-4555-8555-555555555555";
   const holderReadyAt = "2026-08-04T12:00:00.000Z";
@@ -2546,14 +2909,17 @@ async function runSelfTests(repoRoot) {
   requireCondition(readSupabaseJsVersion(repoRoot) === EXPECTED_SUPABASE_JS_VERSION, "self_test_dependency_rejected");
   validatePackageHashes(repoRoot);
   requireCondition(
-    HARNESS_VERSION === "2026-08-05-hosted-auth-concurrency-boundaries-v7"
+    HARNESS_VERSION === "2026-08-05-hosted-auth-concurrency-boundaries-v8"
+      && PREDECESSOR_HARNESS_VERSION === "2026-08-05-hosted-auth-concurrency-boundaries-v7"
       && TARGET_BOOTSTRAP_VERSION === "2026-08-04-b3a-failure-target-bootstrap-v7"
       && REQUIRED_EVIDENCE.length === 6
       && EXPECTED_DELTA.operations === 2
       && EXPECTED_DELTA.administrativeEvents === 4
       && EXPECTED_DELTA.authSuccessEvents === 2
       && EXPECTED_DELTA.profiles === 1
-      && EXPECTED_DELTA.roleAssignments === 1,
+      && EXPECTED_DELTA.roleAssignments === 1
+      && EXPECTED_RESUME_DELTA.authUsers === 0
+      && EXPECTED_RESUME_DELTA.operations === 2,
     "version_or_delta_fixture_rejected",
   );
 
@@ -2596,6 +2962,69 @@ async function runSelfTests(repoRoot) {
       && correctedBaseline.aggregates.operations === "4"
       && correctedBaseline.aggregates.administrativeEvents === "8",
     "baseline_aggregate_fixture_rejected",
+  );
+  const resumeBaselineValues = BASELINE_AGGREGATE_FIELDS.map(
+    (field) => String(EXPECTED_RESUME_BASELINE_AGGREGATES[field]),
+  );
+  const resumeBaseline = parseBaseline(
+    ["CONCURRENCY_BOUNDARIES_BASELINE", ...resumeBaselineValues, ...aggregateTail],
+    EXPECTED_RESUME_BASELINE_AGGREGATES,
+  );
+  const rejectResumeBaseline = (changes) => {
+    const candidate = { ...EXPECTED_RESUME_BASELINE_AGGREGATES, ...changes };
+    const values = BASELINE_AGGREGATE_FIELDS.map((field) => String(candidate[field]));
+    const captured = [];
+    const savedConsoleError = console.error;
+    try {
+      console.error = (value) => { captured.push(String(value)); };
+      parseBaseline(
+        ["CONCURRENCY_BOUNDARIES_BASELINE", ...values, ...aggregateTail],
+        EXPECTED_RESUME_BASELINE_AGGREGATES,
+      );
+    } catch (error) {
+      return error instanceof SafeFailure
+        && error.code === "baseline_counts_rejected"
+        && captured.length === 1;
+    } finally {
+      console.error = savedConsoleError;
+    }
+    return false;
+  };
+  requireCondition(
+    resumeBaseline.aggregates.authUsers === "4"
+      && rejectResumeBaseline(EXPECTED_BASELINE_AGGREGATES)
+      && rejectResumeBaseline({ operations: 5 })
+      && rejectResumeBaseline({ nonfinalOperations: 1 })
+      && rejectResumeBaseline({ targetProfiles: 0 })
+      && rejectResumeBaseline({ targetAuthUsable: 0 }),
+    "resume_baseline_fixture_rejected",
+  );
+  const reuseAuthorityId = "66666666-6666-4666-8666-666666666666";
+  const reuseAssignmentId = "77777777-7777-4777-8777-777777777777";
+  const validReuseParts = [
+    "SYNTHETIC_AUTHORITY_REUSE", reuseAuthorityId, reuseAssignmentId,
+    "1", "1", "0", "1", "1", "1", "1", "0", "0", "0", "0",
+  ];
+  const parsedReuse = parseSyntheticAuthorityReuse(validReuseParts);
+  const rejectReuseAt = (index, value) => {
+    const candidate = [...validReuseParts];
+    candidate[index] = value;
+    try { parseSyntheticAuthorityReuse(candidate); } catch (error) { return error instanceof SafeFailure; }
+    return false;
+  };
+  requireCondition(
+    parsedReuse.authorityId === reuseAuthorityId
+      && parsedReuse.assignmentId === reuseAssignmentId
+      && rejectReuseAt(3, "2")
+      && rejectReuseAt(3, "0")
+      && rejectReuseAt(1, "")
+      && rejectReuseAt(5, "1")
+      && rejectReuseAt(10, "1")
+      && rejectReuseAt(8, "2")
+      && rejectReuseAt(9, "0")
+      && rejectReuseAt(12, "1")
+      && rejectReuseAt(13, "1"),
+    "synthetic_authority_reuse_fixture_rejected",
   );
 
   const failureRecoveryTargetScopedAuthSuccessEvents = 2;
@@ -2733,6 +3162,39 @@ async function runSelfTests(repoRoot) {
       && normalizeEol(loadDetailedAuthUsers.toString()).includes("await getDetailedAuthUser(")
       && !normalizeEol(loadDetailedAuthUsers.toString()).includes("Promise.all"),
     "auth_user_detail_positive_fixture_rejected",
+  );
+  const detailedReuseAuthority = makeDetailedAuthUser(
+    detailReplacementId,
+    "b3a-authority-d-aaaaaaaaaaaaaaaaaaaa@example.invalid",
+    {
+      identities: [],
+      app_metadata: Object.freeze({
+        sitaa_account_kind: "technical",
+        sitaa_first_names: "Autoridad Sintética D",
+      }),
+    },
+  );
+  const resumeFixtureIds = validateResumeListedAuthUserIds(
+    [...validDetailedUsers, detailedReuseAuthority],
+    detailReplacementId,
+  );
+  requireCondition(
+    resumeFixtureIds.join("|") === validListedIds.join("|")
+      && validateSyntheticAuthorityAuthDetail(detailedReuseAuthority, detailReplacementId)
+      && await expectSafeFailure(
+        () => validateResumeListedAuthUserIds(validDetailedUsers, detailReplacementId),
+        "resume_auth_user_inventory_count_rejected",
+      )
+      && await expectSafeFailure(
+        () => validateSyntheticAuthorityAuthDetail(
+          makeDetailedAuthUser(detailReplacementId, detailedReuseAuthority.email, {
+            app_metadata: detailedReuseAuthority.app_metadata,
+          }),
+          detailReplacementId,
+        ),
+        "synthetic_authority_auth_detail_rejected",
+      ),
+    "resume_auth_inventory_fixture_rejected",
   );
 
   const superficialIdentityVariants = [
@@ -2987,41 +3449,102 @@ async function runSelfTests(repoRoot) {
       && negativeOrderRejected,
     "concurrency_worker_fixture_rejected",
   );
-  const approvedObservation = ["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "1", "1", "1"];
+  const approvedObservation = ["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "1", "1", "1", "1", "1"];
   requireCondition(
     advisoryObservationApproved(approvedObservation)
-      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "0", "1", "0", "0", "0"])
-      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "0", "0", "1"])
-      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "1", "1", "0"])
-      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "2", "1", "2", "1", "1", "1"]),
+      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "0", "1", "0", "0", "0", "0", "0", "0"])
+      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "0", "0", "1", "0", "0", "0", "0"])
+      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "1", "0", "1", "1", "1", "1", "1"])
+      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "0", "1", "1", "1", "1"])
+      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "1", "0", "1", "1", "1"])
+      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "1", "1", "0", "1", "1"])
+      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "1", "1", "1", "0", "1"])
+      && !advisoryObservationApproved(["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "1", "1", "1", "1", "0"]),
     "advisory_observation_shape_fixture_rejected",
   );
-  let duplicateApplicationRejected = false;
+  const canonicalHolderMarker = `HOLDER_READY|${operation}|4101|${holderReadyAt}`;
+  const holderPidMarker = parseWorkerPidMarker(canonicalHolderMarker, "HOLDER_READY");
+  const lockHolderPidMarker = parseWorkerPidMarker(`HOLDER_READY|LOCK|4103|${holderReadyAt}`, "HOLDER_READY");
+  const waiterPidMarker = parseWorkerPidMarker(`WAITER_STARTED|4102|${waiterStartedAt}`, "WAITER_STARTED");
+  const integratedHolderParts = parseMarkerLine([canonicalHolderMarker], "HOLDER_READY", 4);
+  const integratedHolderPid = parseWorkerPidMarker(integratedHolderParts.join("|"), "HOLDER_READY");
+  const rejectedPidMarkers = [
+    [`HOLDER_READY||4101|${holderReadyAt}`, "HOLDER_READY"],
+    [`HOLDER_READY|${operation}||${holderReadyAt}`, "HOLDER_READY"],
+    [`HOLDER_READY|${operation}|4101`, "HOLDER_READY"],
+    [`HOLDER_READY|${operation}|4101|${holderReadyAt}|EXTRA`, "HOLDER_READY"],
+    [`UNSUPPORTED|${operation}|4101|${holderReadyAt}`, "UNSUPPORTED"],
+    [`HOLDER_READY|44444444-4444-4444-4444-444444444444|4101|${holderReadyAt}`, "HOLDER_READY"],
+    [`HOLDER_READY|OTHER|4101|${holderReadyAt}`, "HOLDER_READY"],
+    [`HOLDER_READY|${operation}|0|${holderReadyAt}`, "HOLDER_READY"],
+    [`HOLDER_READY|${operation}|-1|${holderReadyAt}`, "HOLDER_READY"],
+    [`HOLDER_READY|${operation}|pid|${holderReadyAt}`, "HOLDER_READY"],
+    [`HOLDER_READY|${operation}|9007199254740992|${holderReadyAt}`, "HOLDER_READY"],
+    [`HOLDER_READY|${operation}|4101|not-a-timestamp`, "HOLDER_READY"],
+    [`WAITER_STARTED|4102|${waiterStartedAt}|EXTRA`, "WAITER_STARTED"],
+  ];
+  requireCondition(
+    Object.isFrozen(holderPidMarker)
+      && Object.isFrozen(lockHolderPidMarker)
+      && Object.isFrozen(waiterPidMarker)
+      && holderPidMarker.semanticValue === operation
+      && holderPidMarker.pid === 4101
+      && holderPidMarker.timestamp === holderReadyAt
+      && lockHolderPidMarker.semanticValue === "LOCK"
+      && lockHolderPidMarker.pid === 4103
+      && waiterPidMarker.semanticValue === null
+      && waiterPidMarker.pid === 4102
+      && integratedHolderParts.length === 4
+      && integratedHolderParts[1] === operation
+      && integratedHolderPid.pid === 4101
+      && rejectedPidMarkers.every(([marker, prefix]) => {
+        try { parseWorkerPidMarker(marker, prefix); } catch (error) { return error instanceof SafeFailure; }
+        return false;
+      }),
+    "worker_pid_marker_fixture_rejected",
+  );
+  let duplicatePidRejected = false;
   try {
-    await observeAdvisoryLockWait(null, "sitaa_b3a_duplicate", "sitaa_b3a_duplicate", {
-      probe: async () => approvedObservation,
-    });
+    await observeAdvisoryLockWait(null, 4101, 4101, { probe: async () => approvedObservation });
   } catch (error) {
-    duplicateApplicationRejected = error instanceof SafeFailure && error.code === "observer_application_name_duplicated";
+    duplicatePidRejected = error instanceof SafeFailure && error.code === "observer_pid_duplicated";
   }
   let observerTimedOut = false;
   let simulatedNow = 0;
+  const observerDiagnostics = [];
+  const observerConsoleError = console.error;
   try {
-    await observeAdvisoryLockWait(null, "sitaa_b3a_holder", "sitaa_b3a_waiter", {
+    console.error = (value) => { observerDiagnostics.push(String(value)); };
+    await observeAdvisoryLockWait(null, 4101, 4102, {
       timeoutMs: 3,
       pollMs: 1,
       now: () => simulatedNow++,
       pause: async () => {},
-      probe: async () => ["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "0", "0", "0"],
+      probe: async () => ["ADVISORY_WAIT_OBSERVATION", "1", "1", "1", "1", "1", "0", "1", "0"],
     });
   } catch (error) {
     observerTimedOut = error instanceof SafeFailure && error.code === "advisory_observer_timeout";
+  } finally {
+    console.error = observerConsoleError;
   }
+  const pidObserverSql = advisoryWaitObservationSql(4101, 4102);
+  const applicationLabelVariantsAreIrrelevant = ["", "duplicated", "altered"].every(
+    () => advisoryObservationApproved([...approvedObservation]),
+  );
   const workerPairSource = normalizeEol(coordinateWorkerPair.toString());
   const authorityPairSource = normalizeEol(coordinateAuthorityLoss.toString());
   requireCondition(
-    duplicateApplicationRejected
+    duplicatePidRejected
       && observerTimedOut
+      && observerDiagnostics.length === 1
+      && observerDiagnostics[0] === "ADVISORY_OBSERVER_TIMEOUT|holder_sessions=1|waiter_sessions=1|same_database=1|holder_granted=1|waiter_ungranted=1|matching_locks=0|waiter_lock_wait=1|holder_blocks_waiter=0"
+      && !containsForbiddenEvidence(observerDiagnostics[0])
+      && pidObserverSql.includes("where pid=4101")
+      && pidObserverSql.includes("where pid=4102")
+      && pidObserverSql.includes("4101=any(pg_blocking_pids(4102))")
+      && !pidObserverSql.includes("application_name")
+      && !normalizeEol(observeAdvisoryLockWait.toString()).includes("applicationName")
+      && applicationLabelVariantsAreIrrelevant
       && workerPairSource.indexOf("observeAdvisoryLockWait") < workerPairSource.indexOf("holder.end")
       && authorityPairSource.indexOf("observeAdvisoryLockWait") < authorityPairSource.indexOf("setSyntheticAuthority")
       && authorityPairSource.indexOf("observeAdvisoryLockWait") < authorityPairSource.indexOf("holder.end"),
@@ -3244,18 +3767,78 @@ async function runSelfTests(repoRoot) {
   );
   fs.mkdirSync(fixtureRoot, { recursive: true });
   try {
+    const predecessorFixtureRoot = path.join(fixtureRoot, "predecessor");
+    fs.mkdirSync(predecessorFixtureRoot);
+    const predecessorFixturePath = path.join(predecessorFixtureRoot, PREDECESSOR_EVIDENCE_NAME);
+    fs.writeFileSync(predecessorFixturePath, expectedPredecessorEvidenceBuffer(), { flag: "wx" });
+    const acceptedPredecessor = validateV7PredecessorEvidence(predecessorFixtureRoot);
+    const predecessorHashBefore = sha256Buffer(fs.readFileSync(predecessorFixturePath));
+    requireCondition(
+      acceptedPredecessor.predecessorPath === predecessorFixturePath
+        && acceptedPredecessor.v8EvidencePath !== predecessorFixturePath
+        && predecessorHashBefore === PREDECESSOR_EVIDENCE_SHA256,
+      "resume_predecessor_fixture_rejected",
+    );
+    const mutatedPredecessor = fs.readFileSync(predecessorFixturePath);
+    mutatedPredecessor[10] ^= 1;
+    fs.writeFileSync(predecessorFixturePath, mutatedPredecessor);
+    let mutatedPredecessorRejected = false;
+    try { validateV7PredecessorEvidence(predecessorFixtureRoot); } catch (error) {
+      mutatedPredecessorRejected = error instanceof SafeFailure && error.code === "resume_predecessor_integrity_rejected";
+    }
+    fs.writeFileSync(predecessorFixturePath, expectedPredecessorEvidenceBuffer());
+    const predecessorTemporaryPath = path.join(
+      predecessorFixtureRoot,
+      `${V8_EVIDENCE_NAME}.fixture.next`,
+    );
+    fs.writeFileSync(predecessorTemporaryPath, "fixture\n", { flag: "wx" });
+    let predecessorTemporaryRejected = false;
+    try { validateV7PredecessorEvidence(predecessorFixtureRoot); } catch (error) {
+      predecessorTemporaryRejected = error instanceof SafeFailure && error.code === "resume_publication_temporary_present";
+    }
+    fs.unlinkSync(predecessorTemporaryPath);
+    const existingV8ArtifactsRejected = [];
+    for (const artifactName of [V8_EVIDENCE_NAME, V8_POSTCHECK_NAME, V8_FAILURE_EVIDENCE_NAME]) {
+      const artifactPath = path.join(predecessorFixtureRoot, artifactName);
+      fs.writeFileSync(artifactPath, "fixture\n", { encoding: "utf8", flag: "wx" });
+      try {
+        validateV7PredecessorEvidence(predecessorFixtureRoot);
+        existingV8ArtifactsRejected.push(false);
+      } catch (error) {
+        existingV8ArtifactsRejected.push(
+          error instanceof SafeFailure && error.code === "resume_v8_evidence_already_exists",
+        );
+      }
+      fs.unlinkSync(artifactPath);
+    }
+    fs.writeFileSync(path.join(predecessorFixtureRoot, PREDECESSOR_POSTCHECK_NAME), "fixture\n", { flag: "wx" });
+    let predecessorPostcheckRejected = false;
+    try { validateV7PredecessorEvidence(predecessorFixtureRoot); } catch (error) {
+      predecessorPostcheckRejected = error instanceof SafeFailure && error.code === "resume_predecessor_postcheck_rejected";
+    }
+    fs.unlinkSync(path.join(predecessorFixtureRoot, PREDECESSOR_POSTCHECK_NAME));
+    fs.unlinkSync(predecessorFixturePath);
+    let missingPredecessorRejected = false;
+    try { validateV7PredecessorEvidence(predecessorFixtureRoot); } catch (error) {
+      missingPredecessorRejected = error instanceof SafeFailure && error.code === "resume_predecessor_missing";
+    }
+    requireCondition(
+      mutatedPredecessorRejected
+        && predecessorTemporaryRejected
+        && existingV8ArtifactsRejected.length === 3
+        && existingV8ArtifactsRejected.every(Boolean)
+        && predecessorPostcheckRejected
+        && missingPredecessorRejected,
+      "resume_predecessor_negative_fixture_rejected",
+    );
+    fs.rmSync(predecessorFixtureRoot, { recursive: true, force: true });
+
     const approvedEvidence = [
       `HARNESS_VERSION|${HARNESS_VERSION}`,
       "BASELINE|APPROVED",
       "HOSTED_AUTH_CONCURRENCY_BOUNDARIES|APPROVED",
     ];
-    const approvedPostcheck = [
-      `HARNESS_VERSION|${HARNESS_VERSION}`,
-      "AUTH_HANDLER_STATE|CANONICAL",
-      "READ_ONLY_TRANSACTION|true",
-      "ROLLBACK|true",
-      "HOSTED_AUTH_CONCURRENCY_BOUNDARIES_POSTCHECK|APPROVED",
-    ];
+    const approvedPostcheck = canonicalV8PostcheckLines();
     publishEvidencePair(fixtureEvidence, fixturePostcheck, approvedEvidence, approvedPostcheck);
     requireCondition(fs.existsSync(fixtureEvidence) && fs.existsSync(fixturePostcheck), "atomic_evidence_success_fixture_rejected");
     const completedEvidenceHash = sha256Buffer(fs.readFileSync(fixtureEvidence));
@@ -3274,7 +3857,8 @@ async function runSelfTests(repoRoot) {
       completedPairRejected
         && completedPairUnlinks === 0
         && sha256Buffer(fs.readFileSync(fixtureEvidence)) === completedEvidenceHash
-        && sha256Buffer(fs.readFileSync(fixturePostcheck)) === completedPostcheckHash,
+        && sha256Buffer(fs.readFileSync(fixturePostcheck)) === completedPostcheckHash
+        && inspectV8PublicationState(fixtureEvidence, fixturePostcheck, fixtureFailureEvidence) === "complete_pair",
       "completed_evidence_pair_fixture_rejected",
     );
     fs.unlinkSync(fixtureEvidence);
@@ -3294,7 +3878,10 @@ async function runSelfTests(repoRoot) {
         && error.code === "evidence_pair_interrupted_before_postcheck";
     }
     requireCondition(
-      interruptedBeforePostcheck && !fs.existsSync(fixtureEvidence) && !fs.existsSync(fixturePostcheck),
+      interruptedBeforePostcheck
+        && !fs.existsSync(fixtureEvidence)
+        && !fs.existsSync(fixturePostcheck)
+        && inspectV8PublicationState(fixtureEvidence, fixturePostcheck, fixtureFailureEvidence) === "none",
       "evidence_interruption_before_postcheck_fixture_rejected",
     );
 
@@ -3314,10 +3901,48 @@ async function runSelfTests(repoRoot) {
     requireCondition(
       interruptedAfterPostcheck
         && !fs.existsSync(fixtureEvidence)
-        && fs.existsSync(fixturePostcheck),
+        && fs.existsSync(fixturePostcheck)
+        && isCanonicalV8Postcheck(fixturePostcheck)
+        && inspectV8PublicationState(fixtureEvidence, fixturePostcheck, fixtureFailureEvidence)
+          === "canonical_orphan_postcheck",
       "evidence_interruption_after_postcheck_fixture_rejected",
     );
     const orphanPostcheckHash = sha256Buffer(fs.readFileSync(fixturePostcheck));
+    const publicationPredecessorPath = path.join(fixtureRoot, "preserved-predecessor-v7.local.txt");
+    fs.writeFileSync(publicationPredecessorPath, expectedPredecessorEvidenceBuffer(), { flag: "wx" });
+    const publicationPredecessorHash = sha256Buffer(fs.readFileSync(publicationPredecessorPath));
+    const orphanPublicationPlan = v8FailurePublicationPlan(
+      inspectV8PublicationState(fixtureEvidence, fixturePostcheck, fixtureFailureEvidence),
+    );
+    requireCondition(
+      orphanPublicationPlan.mayPublish && orphanPublicationPlan.orphanPostcheckPresent,
+      "orphan_failure_publication_plan_fixture_rejected",
+    );
+    publishPartialEvidence(fixtureFailureEvidence, [
+      `HARNESS_VERSION|${HARNESS_VERSION}`,
+      "FAILURE_PHASE|fixture_after_postcheck",
+      "FAILURE_CODE|evidence_pair_interrupted_after_postcheck",
+      "V8_ORPHAN_POSTCHECK|PRESENT",
+      "FAILURE_DIAGNOSTIC|RECORDED",
+      "DIAGNOSTIC_READ_ONLY_TRANSACTION|true",
+      "DIAGNOSTIC_ROLLBACK|true",
+      "HOSTED_AUTH_CONCURRENCY_BOUNDARIES|REJECTED|evidence_pair_interrupted_after_postcheck",
+    ]);
+    const orphanFailureLines = normalizeEol(fs.readFileSync(fixtureFailureEvidence, "utf8"))
+      .split("\n").filter(Boolean);
+    requireCondition(
+      inspectV8PublicationState(fixtureEvidence, fixturePostcheck, fixtureFailureEvidence)
+        === "existing_failure_evidence"
+        && orphanFailureLines.includes("V8_ORPHAN_POSTCHECK|PRESENT")
+        && !evidenceHasContradiction(orphanFailureLines)
+        && sha256Buffer(fs.readFileSync(fixturePostcheck)) === orphanPostcheckHash
+        && fs.statSync(publicationPredecessorPath).size === PREDECESSOR_EVIDENCE_BYTES
+        && publicationPredecessorHash === PREDECESSOR_EVIDENCE_SHA256
+        && sha256Buffer(fs.readFileSync(publicationPredecessorPath)) === publicationPredecessorHash,
+      "orphan_failure_publication_fixture_rejected",
+    );
+    fs.unlinkSync(fixtureFailureEvidence);
+    fs.unlinkSync(publicationPredecessorPath);
     let readOnlyOrphanRejected = false;
     let readOnlyOrphanUnlinks = 0;
     try {
@@ -3369,12 +3994,42 @@ async function runSelfTests(repoRoot) {
       requireCondition(
         unknownPostcheckRejected
           && fs.existsSync(fixturePostcheck)
-          && sha256Buffer(fs.readFileSync(fixturePostcheck)) === unknownPostcheckHash,
+          && sha256Buffer(fs.readFileSync(fixturePostcheck)) === unknownPostcheckHash
+          && inspectV8PublicationState(fixtureEvidence, fixturePostcheck, fixtureFailureEvidence) === "unknown"
+          && !v8FailurePublicationPlan("unknown").mayPublish,
         "unknown_orphan_postcheck_fixture_rejected",
       );
     }
     requireCondition(unknownPostcheckUnlinks === 0, "unknown_orphan_postcheck_unlink_fixture_rejected");
     fs.unlinkSync(fixturePostcheck);
+
+    const malformedPostcheckVariants = [
+      ["HARNESS_VERSION|unexpected", ...approvedPostcheck.slice(1)],
+      [...approvedPostcheck, "HOSTED_AUTH_CONCURRENCY_BOUNDARIES|REJECTED|fixture_failure"],
+      [...approvedPostcheck, `UNSAFE_DATA|${String.fromCharCode(64)}`],
+    ];
+    for (const malformedLines of malformedPostcheckVariants) {
+      fs.writeFileSync(fixturePostcheck, `${malformedLines.join("\n")}\n`, { encoding: "utf8", flag: "wx" });
+      const malformedHash = sha256Buffer(fs.readFileSync(fixturePostcheck));
+      let malformedRejected = false;
+      try {
+        reconcileEvidencePublication(fixtureEvidence, fixturePostcheck, {
+          recoverOrphanPostcheck: true,
+          unlinkFile: () => fail("malformed_orphan_unlink_attempted"),
+        });
+      } catch (error) {
+        malformedRejected = error instanceof SafeFailure && error.code === "unrecognized_orphan_postcheck";
+      }
+      requireCondition(
+        malformedRejected
+          && !isCanonicalV8Postcheck(fixturePostcheck)
+          && inspectV8PublicationState(fixtureEvidence, fixturePostcheck, fixtureFailureEvidence) === "unknown"
+          && fs.existsSync(fixturePostcheck)
+          && sha256Buffer(fs.readFileSync(fixturePostcheck)) === malformedHash,
+        "malformed_orphan_postcheck_fixture_rejected",
+      );
+      fs.unlinkSync(fixturePostcheck);
+    }
 
     writeExclusiveDurable(fixtureEvidence, approvedEvidence);
     const principalWithoutPostcheckHash = sha256Buffer(fs.readFileSync(fixtureEvidence));
@@ -3481,17 +4136,22 @@ async function runSelfTests(repoRoot) {
   }
 
   const mainSource = normalizeEol(main.toString());
+  const failureHandlerSource = normalizeEol(handleFailure.toString());
   const evidenceReconciliationPosition = mainSource.indexOf("reconcileEvidencePublication");
   const databaseConnectionPosition = mainSource.indexOf("parsePostgresConnectionUri");
   const handlerBaselinePosition = mainSource.indexOf('authHandlerContractSql("AUTH_HANDLER_BASELINE_SQL")');
   const lfOrder = assertMainIrreversibleOrder(mainSource);
   const crlfOrder = assertMainIrreversibleOrder(mainSource.replaceAll("\n", "\r\n"));
+  const resumeLfOrder = assertResumeMainOrder(mainSource);
+  const resumeCrlfOrder = assertResumeMainOrder(mainSource.replaceAll("\n", "\r\n"));
   requireCondition(
     evidenceReconciliationPosition >= 0
       && databaseConnectionPosition > evidenceReconciliationPosition
       && handlerBaselinePosition > databaseConnectionPosition
       && lfOrder.firstConfirmation > handlerBaselinePosition
-      && JSON.stringify(lfOrder) === JSON.stringify(crlfOrder),
+      && resumeLfOrder.predecessor < databaseConnectionPosition
+      && JSON.stringify(lfOrder) === JSON.stringify(crlfOrder)
+      && JSON.stringify(resumeLfOrder) === JSON.stringify(resumeCrlfOrder),
     "main_boundary_order_fixture_rejected",
   );
   const v2OrderFixture = `async function main() {
@@ -3523,11 +4183,31 @@ async function runSelfTests(repoRoot) {
       && ["main_boundary_order_fixture_rejected", "main_irreversible_boundary_fixture_rejected"].includes(error.code);
   }
   requireCondition(v2OrderRejected, "main_v2_order_negative_fixture_rejected");
+  const invalidResumeOrderFixture = mainSource.replace(
+    "validateV7PredecessorEvidence(reconciliationRoot)",
+    "predecessorValidationWasRemoved(reconciliationRoot)",
+  );
+  let invalidResumeOrderRejected = false;
+  try { assertResumeMainOrder(invalidResumeOrderFixture); } catch (error) {
+    invalidResumeOrderRejected = error instanceof SafeFailure;
+  }
+  requireCondition(invalidResumeOrderRejected, "resume_main_order_negative_fixture_rejected");
   requireCondition(
     (mainSource.match(/coordinateWorkerPair\(/g) ?? []).length === 4
       && (mainSource.match(/coordinateAuthorityLoss\(/g) ?? []).length === 3
       && mainSource.includes("runtimeState.advisoryObservations === REQUIRED_ADVISORY_OBSERVATIONS")
-      && mainSource.indexOf('authHandlerContractSql("AUTH_HANDLER_POSTCHECK_SQL")') > lfOrder.authority,
+      && mainSource.indexOf('authHandlerContractSql("AUTH_HANDLER_POSTCHECK_SQL")') > lfOrder.authority
+      && PREDECESSOR_EVIDENCE_NAME !== V8_EVIDENCE_NAME
+      && PREDECESSOR_EVIDENCE_NAME !== V8_POSTCHECK_NAME
+      && PREDECESSOR_EVIDENCE_NAME !== V8_FAILURE_EVIDENCE_NAME
+      && mainSource.includes('parseMarkerLine(sameRequest.holderLines, "HOLDER_READY", 4)')
+      && !mainSource.includes('parseMarkerLine(sameRequest.holderLines, "HOLDER_READY", 3)')
+      && mainSource.includes('parseWorkerPidMarker(holderPrepared.join("|"), "HOLDER_READY")')
+      && failureHandlerSource.includes("inspectV8PublicationState(")
+      && failureHandlerSource.includes('partial.push("V8_ORPHAN_POSTCHECK|PRESENT")')
+      && failureHandlerSource.includes('reportedCode = "v8_publication_state_rejected"')
+      && !mainSource.includes("PID|")
+      && REQUIRED_ADVISORY_OBSERVATIONS === 7,
     "main_observation_and_handler_fixture_rejected",
   );
   requireCondition(
@@ -3554,8 +4234,13 @@ function loadLocalContracts(repoRoot) {
   });
 }
 
-function assertNoCurrentEvidence(evidencePath, postcheckPath) {
-  requireCondition(!fs.existsSync(evidencePath) && !fs.existsSync(postcheckPath), "concurrency_evidence_already_exists");
+function assertNoCurrentEvidence(evidencePath, postcheckPath, failureEvidencePath = evidencePath) {
+  requireCondition(
+    !fs.existsSync(evidencePath)
+      && !fs.existsSync(postcheckPath)
+      && !fs.existsSync(failureEvidencePath),
+    "concurrency_evidence_already_exists",
+  );
   const directory = path.dirname(evidencePath);
   const names = fs.readdirSync(directory);
   requireCondition(
@@ -3564,19 +4249,32 @@ function assertNoCurrentEvidence(evidencePath, postcheckPath) {
   );
 }
 
-async function main({ readOnlyProbeOnly = false } = {}) {
+async function main({ readOnlyProbeOnly = false, resumeAfterV7ObserverFailure = false } = {}) {
   const repoRoot = path.resolve(process.env.SITAA_B3A_REPO_ROOT ?? "");
   requireCondition(repoRoot.length > 0 && process.cwd() === repoRoot, "repository_root_required");
-  requireCondition((process.env.SITAA_B3A_PROJECT_REF ?? "") === EXPECTED_PROJECT_REF, "project_ref_rejected");
+  if (!(readOnlyProbeOnly && resumeAfterV7ObserverFailure)) {
+    requireCondition((process.env.SITAA_B3A_PROJECT_REF ?? "") === EXPECTED_PROJECT_REF, "project_ref_rejected");
+  }
   requireCondition(process.version === EXPECTED_NODE_VERSION, "node_version_rejected");
   const { reconciliationRoot, adminA, adminB } = loadLocalContracts(repoRoot);
-  const evidencePath = path.join(reconciliationRoot, "b3a_matrix_hosted_auth_concurrency_boundaries.local.txt");
-  const postcheckPath = path.join(reconciliationRoot, "b3a_matrix_hosted_auth_concurrency_boundaries_postcheck.local.txt");
-  reconcileEvidencePublication(evidencePath, postcheckPath, {
-    recoverOrphanPostcheck: !readOnlyProbeOnly,
-  });
+  const resumePaths = resumeAfterV7ObserverFailure
+    ? validateV7PredecessorEvidence(reconciliationRoot)
+    : null;
+  if (resumePaths) recordApprovedPhase("RESUME_PREDECESSOR_EVIDENCE|APPROVED");
+  const evidencePath = resumePaths?.v8EvidencePath
+    ?? path.join(reconciliationRoot, PREDECESSOR_EVIDENCE_NAME);
+  const postcheckPath = resumePaths?.v8PostcheckPath
+    ?? path.join(reconciliationRoot, PREDECESSOR_POSTCHECK_NAME);
+  const failureEvidencePath = resumePaths?.v8FailurePath ?? evidencePath;
+  if (!resumeAfterV7ObserverFailure) {
+    reconcileEvidencePublication(evidencePath, postcheckPath, {
+      recoverOrphanPostcheck: !readOnlyProbeOnly,
+    });
+  }
   runtimeState.evidencePath = evidencePath;
   runtimeState.postcheckPath = postcheckPath;
+  runtimeState.failureEvidencePath = failureEvidencePath;
+  runtimeState.resumeAfterV7ObserverFailure = resumeAfterV7ObserverFailure;
   const connection = parsePostgresConnectionUri(process.env.SITAA_B3A_DB_URL ?? "");
   runtimeState.databaseConnection = connection;
   const baselineApprovedAt = utcNow();
@@ -3584,17 +4282,39 @@ async function main({ readOnlyProbeOnly = false } = {}) {
     connection,
     baselineSql(adminA.id, adminB.id),
     "CONCURRENCY_BOUNDARIES_BASELINE",
-  ));
+  ), resumeAfterV7ObserverFailure ? EXPECTED_RESUME_BASELINE_AGGREGATES : EXPECTED_BASELINE_AGGREGATES);
+  if (resumeAfterV7ObserverFailure) recordApprovedPhase("RESUME_BASELINE|APPROVED");
   parseAuthHandlerContract(executeReadOnlySql(
     connection,
     authHandlerContractSql("AUTH_HANDLER_BASELINE_SQL"),
     "AUTH_HANDLER_BASELINE_SQL",
   ), "AUTH_HANDLER_BASELINE_SQL");
   recordApprovedPhase("AUTH_HANDLER_BASELINE|APPROVED");
+  const resumeAuthority = resumeAfterV7ObserverFailure
+    ? parseSyntheticAuthorityReuse(executeReadOnlySql(
+      connection,
+      resolveSyntheticAuthorityForResumeSql(),
+      "SYNTHETIC_AUTHORITY_REUSE",
+    ))
+    : null;
+  if (resumeAuthority) {
+    runtimeState.syntheticAuthorityId = resumeAuthority.authorityId;
+    runtimeState.syntheticAuthorityAssignmentId = resumeAuthority.assignmentId;
+    runtimeState.syntheticAuthorityEnabled = false;
+    recordApprovedPhase("SYNTHETIC_AUTHORITY_REUSE_CONTRACT|APPROVED");
+  }
   if (readOnlyProbeOnly) {
     console.log(`HARNESS_VERSION|${HARNESS_VERSION}`);
-    console.log("BASELINE|APPROVED");
+    if (resumeAfterV7ObserverFailure) {
+      console.log("RESUME_PREDECESSOR_EVIDENCE|APPROVED");
+      console.log("RESUME_BASELINE|APPROVED");
+    } else {
+      console.log("BASELINE|APPROVED");
+    }
     console.log("AUTH_HANDLER_BASELINE|APPROVED");
+    if (resumeAfterV7ObserverFailure) {
+      console.log("SYNTHETIC_AUTHORITY_REUSE_CONTRACT|APPROVED");
+    }
     console.log("READ_ONLY_TRANSACTION|true");
     console.log("ROLLBACK|true");
     runtimeState.databaseConnection = null;
@@ -3620,10 +4340,16 @@ async function main({ readOnlyProbeOnly = false } = {}) {
   const adminBClient = createIsolatedClient(credentials.projectUrl, credentials.publicKey);
   const targetClient = createIsolatedClient(credentials.projectUrl, credentials.publicKey);
   const serviceClient = createIsolatedClient(credentials.projectUrl, credentials.serviceKey);
-  let adminASession = await signInExact(adminAClient, adminA.email, credentials.adminAPassword, adminA.id, "admin_a_login_failed");
-  let adminBSession = await signInExact(adminBClient, adminB.email, credentials.adminBPassword, adminB.id, "admin_b_login_failed");
+  let adminASession = null;
+  let adminBSession = null;
+  if (!resumeAfterV7ObserverFailure) {
+    adminASession = await signInExact(adminAClient, adminA.email, credentials.adminAPassword, adminA.id, "admin_a_login_failed");
+    adminBSession = await signInExact(adminBClient, adminB.email, credentials.adminBPassword, adminB.id, "admin_b_login_failed");
+  }
   const listedAuthUsers = await listAllAuthUsers(serviceClient);
-  const listedAuthUserIds = validateListedAuthUserIds(listedAuthUsers);
+  const listedAuthUserIds = resumeAuthority
+    ? validateResumeListedAuthUserIds(listedAuthUsers, resumeAuthority.authorityId)
+    : validateListedAuthUserIds(listedAuthUsers);
   const detailedAuthUsers = await loadDetailedAuthUsers(serviceClient, listedAuthUserIds);
   const authDetailCounts = validateDetailedAuthInventory(listedAuthUserIds, detailedAuthUsers);
   console.log(formatAuthDetailDiagnostic(authDetailCounts));
@@ -3641,15 +4367,28 @@ async function main({ readOnlyProbeOnly = false } = {}) {
     "target_auth_contract_rejected",
   );
   runtimeState.targetId = targetId;
+  if (resumeAuthority) {
+    const detailedAuthority = await getDetailedAuthUser(
+      serviceClient,
+      resumeAuthority.authorityId,
+      "synthetic_authority_auth_detail_fetch_failed",
+    );
+    validateSyntheticAuthorityAuthDetail(detailedAuthority, resumeAuthority.authorityId);
+    adminASession = await signInExact(adminAClient, adminA.email, credentials.adminAPassword, adminA.id, "admin_a_login_failed");
+    adminBSession = await signInExact(adminBClient, adminB.email, credentials.adminBPassword, adminB.id, "admin_b_login_failed");
+  }
   await signInExact(targetClient, targetEmail, credentials.targetPassword, targetId, "target_login_failed");
   adminASession = await refreshExact(adminAClient, adminASession, adminA.id, "admin_a_refresh_failed");
   adminBSession = await refreshExact(adminBClient, adminBSession, adminB.id, "admin_b_refresh_failed");
   void adminASession;
   void adminBSession;
 
+  const initialConfirmation = resumeAfterV7ObserverFailure
+    ? "CONTINUE_B3A_CONCURRENCY_BOUNDARIES_RESUME_V8"
+    : "CONTINUE_B3A_CONCURRENCY_BOUNDARIES";
   if (!await readConfirmation(
-    "CONTINUE_B3A_CONCURRENCY_BOUNDARIES",
-    "Escribe CONTINUE_B3A_CONCURRENCY_BOUNDARIES para preparar fixtures transaccionales.",
+    initialConfirmation,
+    `Escribe ${initialConfirmation} para preparar fixtures transaccionales.`,
   )) {
     console.log("HOSTED_AUTH_CONCURRENCY_BOUNDARIES|ABORTED");
     finishControlledExit(credentials, OPERATOR_ABORT_EXIT_CODE);
@@ -3670,9 +4409,12 @@ async function main({ readOnlyProbeOnly = false } = {}) {
   );
   requireCondition(case18SqlResult.join("|") === "CASE18_SQL|15|1|1|1|1", "case18_sql_boundary_rejected");
 
+  const irreversibleConfirmation = resumeAfterV7ObserverFailure
+    ? "CONTINUE_B3A_CONCURRENCY_BOUNDARIES_RESUME_V8_IRREVERSIBLE"
+    : "CONTINUE_B3A_CONCURRENCY_BOUNDARIES_IRREVERSIBLE";
   if (!await readConfirmation(
-    "CONTINUE_B3A_CONCURRENCY_BOUNDARIES_IRREVERSIBLE",
-    "Escribe CONTINUE_B3A_CONCURRENCY_BOUNDARIES_IRREVERSIBLE para persistir operaciones B.3a y ejecutar Auth Admin.",
+    irreversibleConfirmation,
+    `Escribe ${irreversibleConfirmation} para persistir operaciones B.3a y ejecutar Auth Admin.`,
   )) {
     console.log("HOSTED_AUTH_CONCURRENCY_BOUNDARIES|ABORTED");
     finishControlledExit(credentials, OPERATOR_ABORT_EXIT_CODE);
@@ -3681,7 +4423,7 @@ async function main({ readOnlyProbeOnly = false } = {}) {
   runtimeState.irreversible = true;
   runtimeState.advisoryObservations = 0;
   const irreversibleStartedAt = utcNow();
-  assertNoCurrentEvidence(evidencePath, postcheckPath);
+  assertNoCurrentEvidence(evidencePath, postcheckPath, failureEvidencePath);
 
   runtimeState.phase = "case_17_hosted_boundary";
   const case17Before = executeReadOnlySql(connection, profileAndLedgerSnapshotSql(targetId, "CASE17_EDGE_BEFORE"), "CASE17_EDGE_BEFORE");
@@ -3715,17 +4457,25 @@ async function main({ readOnlyProbeOnly = false } = {}) {
   fs.mkdirSync(runDirectory, { recursive: false });
   runtimeState.runDirectory = runDirectory;
 
-  runtimeState.phase = "synthetic_authority_creation";
-  const authorityId = crypto.randomUUID();
-  const authorityEmail = `b3a-authority-d-${crypto.randomBytes(10).toString("hex")}@example.invalid`;
-  requireCondition(new RegExp(SYNTHETIC_AUTHORITY_EMAIL_SQL_PATTERN).test(authorityEmail), "synthetic_authority_email_rejected");
-  const authorityCreation = executeTransactionalSql(
-    connection,
-    createSyntheticAuthoritySql(authorityId, authorityEmail, adminA.id),
-    "SYNTHETIC_AUTHORITY_CREATED",
-  );
-  requireCondition(authorityCreation.length === 5 && UUID_PATTERN.test(authorityCreation[1]) && authorityCreation.slice(2).join("|") === "1|1|1", "synthetic_authority_creation_rejected");
-  const authorityAssignmentId = authorityCreation[1];
+  let authorityId;
+  let authorityAssignmentId;
+  if (resumeAuthority) {
+    runtimeState.phase = "synthetic_authority_reuse";
+    authorityId = resumeAuthority.authorityId;
+    authorityAssignmentId = resumeAuthority.assignmentId;
+  } else {
+    runtimeState.phase = "synthetic_authority_creation";
+    authorityId = crypto.randomUUID();
+    const authorityEmail = `b3a-authority-d-${crypto.randomBytes(10).toString("hex")}@example.invalid`;
+    requireCondition(new RegExp(SYNTHETIC_AUTHORITY_EMAIL_SQL_PATTERN).test(authorityEmail), "synthetic_authority_email_rejected");
+    const authorityCreation = executeTransactionalSql(
+      connection,
+      createSyntheticAuthoritySql(authorityId, authorityEmail, adminA.id),
+      "SYNTHETIC_AUTHORITY_CREATED",
+    );
+    requireCondition(authorityCreation.length === 5 && UUID_PATTERN.test(authorityCreation[1]) && authorityCreation.slice(2).join("|") === "1|1|1", "synthetic_authority_creation_rejected");
+    authorityAssignmentId = authorityCreation[1];
+  }
   runtimeState.syntheticAuthorityId = authorityId;
   runtimeState.syntheticAuthorityAssignmentId = authorityAssignmentId;
 
@@ -3739,9 +4489,18 @@ async function main({ readOnlyProbeOnly = false } = {}) {
     waiterName: "same-request-waiter",
     runDirectory,
   });
-  const holderPrepared = parseMarkerLine(sameRequest.holderLines, "HOLDER_READY", 3);
+  const holderPrepared = parseMarkerLine(sameRequest.holderLines, "HOLDER_READY", 4);
   const waiterPrepared = parseMarkerLine(sameRequest.waiterLines, "WAITER_RESULT", 3);
-  requireCondition(UUID_PATTERN.test(holderPrepared[1]) && holderPrepared[1] === waiterPrepared[1], "same_request_operation_mismatch");
+  const holderPreparedPidMarker = parseWorkerPidMarker(holderPrepared.join("|"), "HOLDER_READY");
+  requireCondition(
+    holderPrepared[0] === "HOLDER_READY"
+      && UUID_PATTERN.test(holderPrepared[1])
+      && holderPreparedPidMarker.semanticValue === holderPrepared[1]
+      && String(holderPreparedPidMarker.pid) === holderPrepared[2]
+      && holderPreparedPidMarker.timestamp === holderPrepared[3]
+      && holderPrepared[1] === waiterPrepared[1],
+    "same_request_operation_mismatch",
+  );
   const deactivationOperationId = holderPrepared[1];
   const preparedContract = executeReadOnlySql(
     connection,
@@ -3993,8 +4752,41 @@ async function main({ readOnlyProbeOnly = false } = {}) {
     "mandatory_advisory_observations_incomplete",
   );
   const completedAt = utcNow();
+  const modeEvidenceLines = resumeAfterV7ObserverFailure
+    ? [
+      "RESUME_MODE|v7_advisory_observer_failure",
+      `PREDECESSOR_HARNESS_VERSION|${PREDECESSOR_HARNESS_VERSION}`,
+      `PREDECESSOR_EVIDENCE_SHA256|${PREDECESSOR_EVIDENCE_SHA256}`,
+      "RESUME_PREDECESSOR_EVIDENCE|APPROVED",
+      "RESUME_BASELINE|APPROVED",
+      "SYNTHETIC_AUTHORITY_REUSE_CONTRACT|APPROVED",
+      "SYNTHETIC_AUTHORITY_REUSED|true",
+    ]
+    : [];
+  const deltaEvidenceLines = resumeAfterV7ObserverFailure
+    ? [
+      `V8_RUN_DELTA_AUTH_USERS|+${EXPECTED_RESUME_DELTA.authUsers}`,
+      `V8_RUN_DELTA_AUTH_IDENTITIES|+${EXPECTED_RESUME_DELTA.authIdentities}`,
+      `V8_RUN_DELTA_PROFILES|+${EXPECTED_RESUME_DELTA.profiles}`,
+      `V8_RUN_DELTA_ROLE_ASSIGNMENTS|+${EXPECTED_RESUME_DELTA.roleAssignments}`,
+      `V8_RUN_DELTA_OPERATIONS|+${EXPECTED_RESUME_DELTA.operations}`,
+      `V8_RUN_DELTA_ADMIN_EVENTS|+${EXPECTED_RESUME_DELTA.administrativeEvents}`,
+      `V8_RUN_DELTA_AUTH_SUCCESS_EVENTS|+${EXPECTED_RESUME_DELTA.authSuccessEvents}`,
+      `V8_RUN_DELTA_AUTH_FAILURE_EVENTS|+${EXPECTED_RESUME_DELTA.authFailureEvents}`,
+    ]
+    : [
+      `PERSISTENT_DELTA_AUTH_USERS|+${EXPECTED_DELTA.authUsers}`,
+      `PERSISTENT_DELTA_AUTH_IDENTITIES|+${EXPECTED_DELTA.authIdentities}`,
+      `PERSISTENT_DELTA_PROFILES|+${EXPECTED_DELTA.profiles}`,
+      `PERSISTENT_DELTA_ROLE_ASSIGNMENTS|+${EXPECTED_DELTA.roleAssignments}`,
+      `PERSISTENT_DELTA_OPERATIONS|+${EXPECTED_DELTA.operations}`,
+      `PERSISTENT_DELTA_ADMIN_EVENTS|+${EXPECTED_DELTA.administrativeEvents}`,
+      `PERSISTENT_DELTA_AUTH_SUCCESS_EVENTS|+${EXPECTED_DELTA.authSuccessEvents}`,
+      `PERSISTENT_DELTA_AUTH_FAILURE_EVENTS|+${EXPECTED_DELTA.authFailureEvents}`,
+    ];
   const evidenceLines = [
     `HARNESS_VERSION|${HARNESS_VERSION}`,
+    ...modeEvidenceLines,
     `NODE_RUNTIME|${process.version}`,
     `SUPABASE_JS_VERSION|${supabaseJsVersion}`,
     `BASELINE_APPROVED_UTC|${baselineApprovedAt}`,
@@ -4027,43 +4819,11 @@ async function main({ readOnlyProbeOnly = false } = {}) {
     "REQUESTER_FINALIZER_DISTINCT|true",
     "B1_ACTIVE_AUTHORITY|2/2",
     "BASELINE_ADMIN_ASSIGNMENTS_PRESERVED|true",
-    `PERSISTENT_DELTA_AUTH_USERS|+${EXPECTED_DELTA.authUsers}`,
-    `PERSISTENT_DELTA_AUTH_IDENTITIES|+${EXPECTED_DELTA.authIdentities}`,
-    `PERSISTENT_DELTA_PROFILES|+${EXPECTED_DELTA.profiles}`,
-    `PERSISTENT_DELTA_ROLE_ASSIGNMENTS|+${EXPECTED_DELTA.roleAssignments}`,
-    `PERSISTENT_DELTA_OPERATIONS|+${EXPECTED_DELTA.operations}`,
-    `PERSISTENT_DELTA_ADMIN_EVENTS|+${EXPECTED_DELTA.administrativeEvents}`,
-    `PERSISTENT_DELTA_AUTH_SUCCESS_EVENTS|+${EXPECTED_DELTA.authSuccessEvents}`,
-    `PERSISTENT_DELTA_AUTH_FAILURE_EVENTS|+${EXPECTED_DELTA.authFailureEvents}`,
+    ...deltaEvidenceLines,
     "HOSTED_AUTH_CONCURRENCY_BOUNDARIES|APPROVED",
   ];
-  const postcheckLines = [
-    `HARNESS_VERSION|${HARNESS_VERSION}`,
-    "AUTH_USERS|4",
-    "AUTH_IDENTITIES|3",
-    "PROFILES|4",
-    "ROLE_ASSIGNMENTS|3",
-    "B1_ACTIVE_AUTHORITY|2/2",
-    "TARGET_C_ACTIVE|true",
-    "TARGET_C_BANNED|false",
-    "TARGET_C_ASSIGNMENTS|0",
-    "B3A_OPERATIONS|6",
-    "B3A_SUCCEEDED_COMPLETED|6",
-    "B3A_NONFINAL|0",
-    "B3A_NONSUCCEEDED|0",
-    "B3A_ADMIN_EVENTS|12",
-    "B3A_AUTH_FAILURE_EVENTS|0",
-    "B3A_AUTH_SUCCESS_EVENTS|6",
-    "BASELINE_ADMIN_ASSIGNMENTS_PRESERVED|true",
-    "SYNTHETIC_AUTHORITY_ACTIVE|false",
-    "ACTIVE_LEASES|0",
-    "LIVE_WORKERS|0",
-    "AUTH_HANDLER_STATE|CANONICAL",
-    "READ_ONLY_TRANSACTION|true",
-    "ROLLBACK|true",
-    "HOSTED_AUTH_CONCURRENCY_BOUNDARIES_POSTCHECK|APPROVED",
-  ];
-  assertNoCurrentEvidence(evidencePath, postcheckPath);
+  const postcheckLines = canonicalV8PostcheckLines();
+  assertNoCurrentEvidence(evidencePath, postcheckPath, failureEvidencePath);
   publishEvidencePair(evidencePath, postcheckPath, evidenceLines, postcheckLines);
   console.log("HOSTED_AUTH_CONCURRENCY_BOUNDARIES|APPROVED");
   finishControlledExit(credentials, 0);
@@ -4095,17 +4855,37 @@ async function handleFailure(error) {
     runtimeState.runDirectory = null;
   }
   let reportedCode = safeCode;
+  const partialEvidencePath = runtimeState.failureEvidencePath ?? runtimeState.evidencePath;
+  let failurePublicationPlan = null;
   if (runtimeState.irreversible
       && runtimeState.evidencePath
       && runtimeState.postcheckPath
-      && !fs.existsSync(runtimeState.evidencePath)
-      && !fs.existsSync(runtimeState.postcheckPath)) {
+      && partialEvidencePath) {
+    if (runtimeState.resumeAfterV7ObserverFailure) {
+      const publicationState = inspectV8PublicationState(
+        runtimeState.evidencePath,
+        runtimeState.postcheckPath,
+        partialEvidencePath,
+      );
+      failurePublicationPlan = v8FailurePublicationPlan(publicationState);
+      if (publicationState === "unknown") reportedCode = "v8_publication_state_rejected";
+    } else {
+      failurePublicationPlan = Object.freeze({
+        mayPublish: !fs.existsSync(runtimeState.evidencePath)
+          && !fs.existsSync(runtimeState.postcheckPath)
+          && !fs.existsSync(partialEvidencePath),
+        orphanPostcheckPresent: false,
+      });
+    }
+  }
+  if (failurePublicationPlan?.mayPublish) {
     const partial = [
       `HARNESS_VERSION|${HARNESS_VERSION}`,
       `FAILURE_PHASE|${/^[a-z][a-z0-9_]{0,79}$/.test(runtimeState.phase) ? runtimeState.phase : "unknown"}`,
       `FAILURE_CODE|${safeCode}`,
       ...runtimeState.approvedPhases,
     ];
+    if (failurePublicationPlan.orphanPostcheckPresent) partial.push("V8_ORPHAN_POSTCHECK|PRESENT");
     if (runtimeState.databaseConnection && runtimeState.targetId && runtimeState.syntheticAuthorityId) {
       try {
         const diagnostic = executeReadOnlySql(
@@ -4130,7 +4910,7 @@ async function handleFailure(error) {
     }
     partial.push(`HOSTED_AUTH_CONCURRENCY_BOUNDARIES|REJECTED|${safeCode}`);
     try {
-      publishPartialEvidence(runtimeState.evidencePath, partial);
+      publishPartialEvidence(partialEvidencePath, partial);
     } catch {
       reportedCode = "partial_evidence_publication_failed";
     }
@@ -4149,9 +4929,14 @@ try {
     requireCondition(repoRoot.length > 0, "repository_root_required");
     await runSelfTests(repoRoot);
   } else if (process.argv.includes("--read-only-probe")) {
-    await main({ readOnlyProbeOnly: true });
+    await main({
+      readOnlyProbeOnly: true,
+      resumeAfterV7ObserverFailure: process.argv.includes("--resume-v7-observer-failure"),
+    });
   } else {
-    await main();
+    await main({
+      resumeAfterV7ObserverFailure: process.argv.includes("--resume-v7-observer-failure"),
+    });
   }
 } catch (error) {
   if (process.argv.includes("--self-test")) {
@@ -4261,6 +5046,9 @@ $modeCount = @($ValidateOnly.IsPresent, $ReadOnlyProbeOnly.IsPresent) |
 if ($modeCount -gt 1) {
   throw "execution_mode_rejected"
 }
+if ($ValidateOnly -and $ResumeAfterV7ObserverFailure) {
+  throw "execution_mode_rejected"
+}
 if (-not $currentRoot.Equals($repoRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
   throw "repository_root_rejected"
 }
@@ -4295,7 +5083,7 @@ try {
   if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
     throw "supabase_js_package_required"
   }
-  if ([string]::IsNullOrWhiteSpace($env:SITAA_B3A_PROJECT_REF)) {
+  if (-not ($ReadOnlyProbeOnly -and $ResumeAfterV7ObserverFailure) -and [string]::IsNullOrWhiteSpace($env:SITAA_B3A_PROJECT_REF)) {
     throw "project_ref_required"
   }
   if ([string]::IsNullOrWhiteSpace($env:SITAA_B3A_DB_URL)) {
@@ -4303,8 +5091,14 @@ try {
   }
   $env:SITAA_B3A_PSQL_PATH = Resolve-PsqlExecutable
 
-  if ($ReadOnlyProbeOnly) {
+  if ($ReadOnlyProbeOnly -and $ResumeAfterV7ObserverFailure) {
+    & node $nodeModulePath --read-only-probe --resume-v7-observer-failure
+  }
+  elseif ($ReadOnlyProbeOnly) {
     & node $nodeModulePath --read-only-probe
+  }
+  elseif ($ResumeAfterV7ObserverFailure) {
+    & node $nodeModulePath --resume-v7-observer-failure
   }
   else {
     & node $nodeModulePath
