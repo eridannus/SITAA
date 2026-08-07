@@ -65,7 +65,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-051 | Transiciones administrativas de ciclo de vida B.2b | Implementada, aplicada, verificada, reconciliada y cerrada mediante 0009 |
 | DEC-052 | Límite Auth confiable y coordinación B.3a | Implementada, aplicada, verificada, probada, reconciliada y cerrada mediante 0010 |
 | DEC-053 | Prioridad del MVP operativo | Aceptada |
-| DEC-054 | Google OAuth público como gate de lanzamiento | Aceptada |
+| DEC-054 | Google OAuth público como gate de lanzamiento | Aceptada; AUTH-01 activo/en curso |
 | DEC-055 | Formularios dinámicos diferidos, no abandonados | Aceptada |
 | DEC-056 | Administración mínima de semestres | Aceptada |
 | DEC-057 | Registro y asistencia atómicos | Aceptada |
@@ -597,7 +597,7 @@ Toda construcción textual o hash que incluya un campo interno `char` de catálo
 
 **Decisión:** adoptar `MVP_OPERATIONAL_ROADMAP.md` como plan canónico próximo, con los IDs estables `DOC-00`, `AUTH-01`, `SEM-01`, `ATT-01`, `EXP-01`, `ROLE-01`, `GRP-01`, `DASH-01`, `ALERT-01` y `PILOT-01`. El objetivo inmediato es sustituir registro y asistencia manuales y habilitar operación por semestre, rol, grupo y programa. Esta decisión sustituye DEC-004 y el orden de ejecución de DEC-038 para el MVP inmediato, sin retirar sus límites de seguridad.
 
-**Consecuencias:** `DOC-00` es el paquete actual/siguiente; los paquetes de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible y se asignará cuando el primer diseño estructural sea aprobado. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
+**Consecuencias:** `DOC-00` fue aprobado y publicado; `AUTH-01` es el paquete activo/en curso. Los demás paquetes de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible y se asignará cuando el primer diseño estructural sea aprobado. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
 
 **Estado:** Aceptada.
 
@@ -607,9 +607,9 @@ Toda construcción textual o hash que incluya un campo interno `char` de catálo
 
 **Decisión:** `AUTH-01` es un gate obligatorio que avanza en paralelo. SITAA solicita únicamente `openid`, `userinfo.email` y `userinfo.profile`; audita Audience, Branding, Data Access y Clients; publica inicio/acerca de y privacidad; verifica dominio y marca; revisa separación producción/pruebas; cambia a audiencia de producción y prueba cuentas Gmail e institucionales no tester. Los requisitos se revalidan contra documentación oficial al ejecutar.
 
-**Consecuencias:** no se añaden scopes de Gmail, Drive, Calendar ni otras APIs. La preparación técnica previa no equivale a publicación pública aprobada.
+**Consecuencias:** no se añaden scopes de Gmail, Drive, Calendar ni otras APIs. La auditoría manual confirmó Audience External/Testing, un cliente web de producción separado y sólo los tres scopes básicos, con cero sensibles y cero restringidos. `/acerca-de` y `/privacidad` están implementadas localmente; todavía faltan despliegue, verificación de dominio y marca, publicación y smoke tests con cuentas no tester. No se requiere página de términos para el lanzamiento inicial. La preparación técnica previa no equivale a publicación pública aprobada.
 
-**Estado:** Aceptada.
+**Estado:** Aceptada; `AUTH-01` activo/en curso.
 
 ## DEC-055 — Formularios dinámicos diferidos, no abandonados
 
@@ -685,9 +685,9 @@ Toda construcción textual o hash que incluya un campo interno `char` de catálo
 
 **Contexto:** los avisos académicos informales pueden perder destinatarios e historia, pero almacenar expedientes o narrativa clínica ampliaría de forma injustificada la sensibilidad y responsabilidad del sistema.
 
-**Decisión:** todo profesor activo puede crear una señal mínima con categorías cerradas `absences`, `missing_work` o `socioemotional_attention`. SITAA fija destinatarios académicos según programa/categoría y conserva estados `new`, `acknowledged` y `archived`. No diagnostica, gestiona casos, guarda notas clínicas ni sustituye protocolos institucionales.
+**Decisión:** todo profesor activo puede crear una señal mínima con categorías cerradas `absences`, `missing_work` o `socioemotional_attention`. SITAA fija destinatarios académicos según programa/categoría y conserva estados técnicos de routing `registered`, `routing_pending`, `routed` y `routing_failed`. La interacción de cada destinatario se representa por separado mediante los conceptos `delivered_at`, `read_at` y `archived_at`. No diagnostica, gestiona casos, guarda notas clínicas ni sustituye protocolos institucionales.
 
-**Consecuencias:** los destinatarios quedan en snapshot al crear la alerta; cambios posteriores de roles no reescriben historia. Las pruebas usan perfiles académicos ficticios.
+**Consecuencias:** los destinatarios quedan en snapshot al crear la alerta; cambios posteriores de roles no reescriben historia. `read_at` significa únicamente apertura del elemento y `archived_at` únicamente organización o retiro del inbox activo. Ninguna marca afirma atención al estudiante, activación de protocolo, investigación, resolución, descarte o seguimiento. SITAA no almacena el resultado de la situación subyacente: sólo la alerta y el routing técnico realizado por el sistema. Las pruebas usan perfiles académicos ficticios.
 
 **Estado:** Aceptada.
 

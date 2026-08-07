@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PublicPolicyLinks } from "@/components/public-policy-links";
 import { guardPublicRegistrationEntry } from "@/lib/auth/guard-public-registration";
 
 export const metadata: Metadata = { title: "Registro" };
@@ -54,6 +55,7 @@ export default async function RegisterPage() {
           </Link>
         ))}
       </div>
+      <PublicPolicyLinks className="mt-8 border-t border-[var(--sitaa-border)] pt-3" />
     </main>
   );
 }

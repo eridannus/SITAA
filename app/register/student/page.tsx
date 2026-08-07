@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GoogleRegistrationStart } from "@/components/google-registration-start";
+import { PublicPolicyLinks } from "@/components/public-policy-links";
 import { guardPublicRegistrationEntry } from "@/lib/auth/guard-public-registration";
 
 export const metadata: Metadata = { title: "Registro de alumno" };
@@ -28,6 +29,7 @@ export default async function StudentRegistrationPage({ searchParams }: Props) {
           Puedes usar cualquier cuenta de Google. Recomendamos una cuenta personal controlada por ti; una cuenta compartida o de oficina reduce la trazabilidad individual.
         </div>
         <GoogleRegistrationStart personType="student" />
+        <PublicPolicyLinks className="mt-6 border-t border-[var(--sitaa-border)] pt-3" />
       </div>
     </main>
   );

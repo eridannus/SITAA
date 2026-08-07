@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { AuthenticatedIdentity } from "@/components/authenticated-identity";
+import { PublicPolicyLinks } from "@/components/public-policy-links";
 import { RegistrationForm } from "@/components/registration-form";
 import { getRegistrationPrograms } from "@/lib/registration/programs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -27,6 +28,7 @@ export async function CompletionRegistrationPage({ personType }: { personType: R
         <h1 className="mt-3 text-3xl font-bold text-[var(--sitaa-blue-dark)]">Completar registro de {isStudent ? "alumno" : "profesor"}</h1>
         <p className="mt-4 leading-7 text-slate-600">Tu cuenta de Google ya fue autenticada. Captura ahora tus datos institucionales; esta información pertenece a SITAA y no se enviará a Google.</p>
         <div className="mt-6"><AuthenticatedIdentity user={user} /></div>
+        <PublicPolicyLinks showRegistrationNotice className="mt-6 border-y border-[var(--sitaa-border)] py-3" />
         <RegistrationForm personType={personType} programs={programs} />
       </div>
     </main>

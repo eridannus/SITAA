@@ -38,19 +38,33 @@ La vinculación automática de identidades por correo verificado se administra e
 
 ## Publicación pública a producción
 
-**Estado de preparación:** pendiente. La Fase A funciona técnicamente, pero `AUTH-01` es un gate de lanzamiento y requiere revisar la configuración pública vigente antes del piloto.
+**Estado de preparación:** `AUTH-01` activo/en curso. La Fase A funciona técnicamente y la auditoría manual inicial de Google Cloud está completa; la publicación pública y sus pruebas no tester siguen pendientes.
 
-- [ ] Auditar **Audience**, **Branding**, **Data Access** y **OAuth Clients** en Google Cloud.
-- [ ] Confirmar que sólo se solicitan `openid`, `userinfo.email` y `userinfo.profile`.
-- [ ] Revisar separación entre producción y pruebas por proyecto o cliente OAuth.
-- [ ] Publicar una página pública de inicio/acerca de SITAA.
-- [ ] Publicar la política de privacidad accesible sin iniciar sesión.
-- [ ] Decidir y, si aplica, publicar una página de términos.
-- [ ] Verificar la propiedad de todos los dominios autorizados.
-- [ ] Completar la verificación de marca y su publicación.
-- [ ] Configurar audiencia de producción.
-- [ ] Probar acceso y registro con cuentas Gmail e institucionales que no pertenezcan a la lista de testers.
-- [ ] Confirmar que no se añadió Gmail, Drive, Calendar ni otro scope o API de Google.
+Estado manual observado y aprobado para este checkpoint:
+
+- Audience: **External / Testing**.
+- Un cliente **Web application** de producción, con origen JavaScript y callback Supabase de producción configurados.
+- El cliente de producción no contiene URI local, Preview ni LAB.
+- Data Access solicita únicamente `openid`, `userinfo.email` y `userinfo.profile`.
+- Cero scopes sensibles y cero scopes restringidos.
+- Ningún scope o API de Gmail, Drive, Calendar u otro producto Google.
+
+- [x] Auditar **Audience**, **Branding**, **Data Access** y **OAuth Clients** en Google Cloud.
+- [x] Confirmar que sólo se solicitan `openid`, `userinfo.email` y `userinfo.profile`.
+- [x] Confirmar cero scopes sensibles y cero scopes restringidos.
+- [x] Revisar la separación entre producción y pruebas del cliente OAuth.
+- [x] Implementar localmente la página pública `/acerca-de`.
+- [x] Implementar localmente el aviso público `/privacidad`.
+- [x] Decidir que no se requiere una página de términos para el lanzamiento inicial.
+- [ ] Desplegar y verificar manualmente `/acerca-de` y `/privacidad` en producción.
+- [ ] Verificar la propiedad del dominio mediante Search Console.
+- [ ] Completar los campos de **Branding**.
+- [ ] Cargar el logotipo de la aplicación.
+- [ ] Completar la verificación de marca.
+- [ ] Publicar la aplicación para audiencia de producción.
+- [ ] Probar acceso y registro con una cuenta Gmail que no sea tester.
+- [ ] Probar acceso y registro con una cuenta institucional que no sea tester.
+- [ ] Confirmar nuevamente que no se añadió Gmail, Drive, Calendar ni otro scope o API de Google.
 
 Los requisitos, nombres de pantallas y procesos de verificación de Google pueden cambiar. Antes de ejecutar cada paso deben contrastarse nuevamente con la documentación oficial vigente; esta lista no sustituye esa revisión.
 

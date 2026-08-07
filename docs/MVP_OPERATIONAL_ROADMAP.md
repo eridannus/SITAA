@@ -12,7 +12,7 @@ Línea base aprobada:
 - [x] Rollback 0010 prohibido permanentemente.
 - [x] Build de producción en Vercel aprobado.
 - [x] LAB desechable pausado y conservado.
-- [ ] **DOC-00 — En curso / siguiente:** aprobar y publicar esta rebase documental.
+- [x] **DOC-00 — Completado y publicado:** rebase documental aprobada como fuente canónica.
 
 `0011` es sólo el siguiente número disponible. Se asignará cuando el primer paquete estructural haya sido diseñado, revisado y aprobado; ningún paquete de esta hoja queda ligado anticipadamente a un número de migración.
 
@@ -35,6 +35,7 @@ Los formularios dinámicos permanecen aceptados como arquitectura futura, pero n
 - `[x]` completado y sustentado por evidencia.
 - `[ ]` pendiente o gate todavía no aprobado.
 - **En curso / siguiente:** paquete documental activo antes de abrir implementación.
+- **Activo / en curso:** paquete que recibe el trabajo local actual, todavía sin cierre ni publicación de producción.
 - **Gate de lanzamiento:** condición obligatoria para el piloto, aunque pueda desarrollarse en paralelo.
 - Tamaño relativo: `S` pequeño, `M` mediano, `L` grande; no representa calendario ni compromiso de fecha.
 
@@ -58,8 +59,8 @@ DOC-00
 
 | ID | Paquete | Estado | Criticidad | Tamaño | Dependencias directas |
 | --- | --- | --- | --- | --- | --- |
-| `DOC-00` | Rebase documental | En curso / siguiente | Bloqueante | S | Ninguna |
-| `AUTH-01` | Publicación de Google OAuth | Pendiente | Gate de lanzamiento | M | `DOC-00` |
+| `DOC-00` | Rebase documental | Completado | Bloqueante | S | Ninguna |
+| `AUTH-01` | Publicación de Google OAuth | Activo / en curso | Gate de lanzamiento | M | `DOC-00` |
 | `SEM-01` | Administración mínima de semestres | Pendiente | Crítica | M | `DOC-00` |
 | `ATT-01` | Registro y asistencia atómicos | Pendiente | Crítica | L | `DOC-00` |
 | `EXP-01` | Exportaciones CSV y PDF | Pendiente | Crítica | M | `DOC-00` |
@@ -77,8 +78,8 @@ DOC-00
 - [x] Definir IDs estables para los paquetes operativos.
 - [x] Sustituir la secuencia inmediata anterior sin borrar su historia.
 - [x] Registrar decisiones de producto, seguridad y autoridad.
-- [ ] Revisar, aprobar y publicar el cambio documental.
-- [ ] Seleccionar el primer paquete estructural y realizar su kickoff.
+- [x] Revisar, aprobar y publicar el cambio documental.
+- [x] Activar `AUTH-01` como siguiente gate; el primer paquete estructural se seleccionará después conforme al grafo.
 
 **Salida:** documentación canónica coherente y autorización explícita para diseñar el siguiente paquete, sin reservar todavía una migración.
 
@@ -86,15 +87,18 @@ DOC-00
 
 **Objetivo:** habilitar el acceso público real con identidad básica y sin scopes elevados.
 
-- [ ] Auditar Audience, Branding, Data Access y OAuth Clients.
-- [ ] Confirmar únicamente `openid`, `userinfo.email` y `userinfo.profile`.
-- [ ] Revisar separación de producción y pruebas por proyecto o cliente.
-- [ ] Publicar página pública de inicio/acerca de y política de privacidad.
-- [ ] Decidir si se requiere página de términos.
-- [ ] Verificar propiedad del dominio autorizado.
-- [ ] Completar verificación de marca y publicación.
-- [ ] Cambiar a audiencia de producción.
-- [ ] Probar cuentas Gmail e institucionales que no sean testers.
+- [x] Auditar manualmente Audience, Branding, Data Access y OAuth Clients: audiencia External/Testing y un cliente web de producción sin URI local, Preview o LAB.
+- [x] Confirmar únicamente `openid`, `userinfo.email` y `userinfo.profile`, con cero scopes sensibles y cero restringidos.
+- [x] Revisar la separación de producción y pruebas del cliente OAuth.
+- [x] Implementar localmente `/acerca-de` y `/privacidad`; todavía no están desplegadas ni verificadas manualmente en producción.
+- [x] Decidir que no se requiere página de términos para el lanzamiento inicial.
+- [ ] Desplegar y verificar manualmente `/acerca-de` y `/privacidad` en producción.
+- [ ] Verificar el dominio mediante Search Console.
+- [ ] Completar los campos de Branding y cargar el logotipo.
+- [ ] Completar la verificación de marca.
+- [ ] Publicar la aplicación para audiencia de producción.
+- [ ] Probar una cuenta Gmail que no sea tester.
+- [ ] Probar una cuenta institucional que no sea tester.
 - [ ] Revalidar los requisitos vigentes en documentación oficial de Google al ejecutar el paquete.
 
 **No incluye:** Gmail, Drive, Calendar ni otros scopes o APIs de Google.
@@ -238,12 +242,15 @@ Contextos iniciales: alumno; profesor ordinario; tutor o asesor; lead de tutorí
 - [ ] Enrutar ausencias/trabajos a leads de tutoría y asesoría y coordinación del programa.
 - [ ] Enrutar atención socioemocional al enlace divisional y coordinación del programa.
 - [ ] Fijar destinatarios al crear la alerta para que cambios de roles no reescriban historia.
-- [ ] Usar estados `new`, `acknowledged` y `archived`.
+- [ ] Usar estados técnicos de routing `registered`, `routing_pending`, `routed` y `routing_failed`.
+- [ ] Representar por separado la interacción de cada destinatario mediante los conceptos `delivered_at`, `read_at` y `archived_at`.
 - [ ] Implementar inbox interno con contadores como fuente de verdad.
 - [ ] Restringir `technical_admin` a diagnósticos sanitizados de entrega, sin contenido de alerta.
 - [ ] Probar contenido sólo con perfiles académicos ficticios y LAB para escenarios destructivos.
 
-SITAA no diagnostica, gestiona casos, almacena notas clínicas ni sustituye protocolos institucionales. Un correo futuro sería secundario y sólo avisaría genéricamente que existe una alerta nueva.
+`read_at` significa únicamente que el destinatario abrió el elemento; `archived_at`, únicamente que lo organizó o retiró del inbox activo. Ninguna de esas marcas prueba atención al estudiante, activación de un protocolo, investigación, resolución, descarte o seguimiento. SITAA no almacena el resultado de la situación subyacente: sólo registra la alerta y el routing técnico realizado por el sistema. No diagnostica, gestiona casos, almacena notas clínicas ni sustituye protocolos institucionales. Un correo futuro sería secundario y sólo avisaría genéricamente que existe una alerta nueva.
+
+Antes de desplegar `ALERT-01` se debe revisar y actualizar el aviso público de privacidad para incorporar, de forma expresa y minimizada, la nueva categoría de datos.
 
 ## 15. PILOT-01 — Preparación y decisión go/no-go
 

@@ -31,6 +31,8 @@ npm run start  # Inicia la compilación de producción
 - `/health`: comprobación básica del servicio; muestra `SITAA OK`.
 - `/supabase-test`: verifica la configuración y consulta `public.system_health`.
 - `/login`: Google como acceso principal y correo/contraseña heredado como opción secundaria.
+- `/acerca-de`: información pública sobre SITAA, su alcance académico, identidad y contactos institucionales.
+- `/privacidad`: aviso público sobre datos, finalidades, infraestructura, cookies, conservación y corrección.
 - `/register`: elección de registro de alumno o profesor.
 - `/register/student` y `/register/professor`: inicio Google sin capturar PII institucional.
 - `/auth/callback`: intercambio PKCE y selección de la ruta de finalización.
@@ -67,6 +69,8 @@ Después de configurar `.env.local`, inicia la aplicación y abre `/login`. Los 
 La Fase A de identidad y Google OAuth está operativa. El snapshot canónico `2026-08-06T23:33:15Z` quedó reconciliado contra 0001–0010 sin deriva inexplicada. 0006 mantiene los nombres personales estructurados como autoridad y `full_name` como compatibilidad derivada. Fase B.1 está cerrada mediante 0007, B.2a mediante 0008, B.2b mediante 0009 y B.3a mediante 0010. Las migraciones 0001–0010 están aplicadas, verificadas, reconciliadas e inmutables; los casos 1–20 y los smoke tests productivos están aprobados.
 
 La navegación autenticada usa avatar Google validado o iniciales, menú de cuenta accesible y estados seleccionados de alto contraste. El acceso público emplea una tarjeta única que cabe en el viewport; el fondo canvas es decorativo, pausa en pestañas ocultas y respeta movimiento reducido.
+
+`DOC-00` está aprobado y publicado. `AUTH-01` está activo/en curso: la auditoría manual de Audience, Branding, Data Access y cliente confirmó el cliente web de producción y sólo `openid`, `userinfo.email` y `userinfo.profile`, sin scopes sensibles o restringidos. `/acerca-de` y `/privacidad` están implementadas localmente y enlazadas desde acceso y registro, pero todavía requieren despliegue y verificación manual. El lanzamiento inicial no requiere una página de términos.
 
 El sistema visual canónico está en `docs/DESIGN_SYSTEM.md`. Toda interfaz usa la identidad azul y oro y reserva el verde exclusivamente para estados semánticos de éxito. Antes de entregar cambios visuales es obligatorio ejecutar `npm run check:ui`.
 

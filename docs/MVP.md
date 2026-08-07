@@ -15,7 +15,7 @@ La secuencia canónica de entrega está en `MVP_OPERATIONAL_ROADMAP.md`.
 - Cuentas técnicas internas separadas del registro público.
 - Acceso por correo/contraseña sólo para cuentas heredadas.
 - Perfiles activos y completos como requisito de operación; identidad no concede automáticamente tutoría, asesoría o gestión.
-- Página pública de inicio/acerca de, política de privacidad, dominio verificado y configuración Google publicada para audiencia de producción.
+- Rutas públicas `/acerca-de` y `/privacidad`, además de dominio verificado y configuración Google publicada para audiencia de producción.
 
 ### Configuración de semestre
 
@@ -82,10 +82,12 @@ La secuencia canónica de entrega está en `MVP_OPERATIONAL_ROADMAP.md`.
 - Categorías cerradas: `absences`, `missing_work` y `socioemotional_attention`.
 - Ausencias y trabajos pendientes se enrutan a leads de tutoría/asesoría y coordinación del programa; atención socioemocional, a enlace divisional y coordinación.
 - Los destinatarios se fijan al crear la alerta.
-- Estados: `new`, `acknowledged` y `archived`.
+- Estados técnicos de routing: `registered`, `routing_pending`, `routed` y `routing_failed`.
+- Interacción del destinatario representada por separado con `delivered_at`, `read_at` y `archived_at`.
 - El inbox interno con contadores es la entrega primaria.
 - El rol técnico por sí solo no permite leer contenido de alerta; sólo diagnósticos sanitizados.
-- SITAA registra y enruta señales: no diagnostica, gestiona casos ni almacena narrativa clínica.
+- `read_at` sólo indica apertura y `archived_at` sólo organización del inbox; no prueban atención, activación de protocolo, investigación, resolución, descarte o seguimiento.
+- SITAA sólo registra la alerta y el routing técnico; no almacena el resultado de la situación subyacente, diagnostica, gestiona casos ni guarda narrativa clínica.
 
 ## Formularios dinámicos: arquitectura conservada y ejecución diferida
 

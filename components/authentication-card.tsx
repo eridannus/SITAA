@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { login, loginWithGoogle } from "@/app/login/actions";
+import { PublicPolicyLinks } from "@/components/public-policy-links";
 
 export function AuthenticationCard({ errorMessage, nextPath }: { errorMessage?: string; nextPath?: string | null }) {
   return (
@@ -48,6 +49,7 @@ export function AuthenticationCard({ errorMessage, nextPath }: { errorMessage?: 
         </form>
       </details>
       <p className="mt-5 text-center text-xs leading-5 text-[var(--sitaa-text-secondary)]">El acceso heredado se conserva temporalmente para cuentas existentes.</p>
+      <PublicPolicyLinks className="mt-3 border-t border-[var(--sitaa-border)] pt-2" />
     </div>
   );
 }
