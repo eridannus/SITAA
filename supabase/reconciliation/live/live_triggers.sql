@@ -6,6 +6,8 @@ activity_participants	guard_activity_participants_pending_deadline	CREATE TRIGGE
 activity_participants	set_activity_participants_updated_at	CREATE TRIGGER set_activity_participants_updated_at BEFORE UPDATE ON activity_participants FOR EACH ROW EXECUTE FUNCTION set_updated_at()
 admin_audit_events	prevent_admin_audit_event_mutation	CREATE TRIGGER prevent_admin_audit_event_mutation BEFORE DELETE OR UPDATE ON admin_audit_events FOR EACH ROW EXECUTE FUNCTION prevent_admin_audit_event_mutation()
 admin_audit_events	prevent_admin_audit_event_truncate	CREATE TRIGGER prevent_admin_audit_event_truncate BEFORE TRUNCATE ON admin_audit_events FOR EACH STATEMENT EXECUTE FUNCTION prevent_admin_audit_event_mutation()
+admin_auth_operations	guard_admin_auth_operation_b3a	CREATE TRIGGER guard_admin_auth_operation_b3a BEFORE INSERT OR DELETE OR UPDATE ON admin_auth_operations FOR EACH ROW EXECUTE FUNCTION guard_admin_auth_operation_b3a()
+admin_auth_operations	guard_admin_auth_operation_truncate_b3a	CREATE TRIGGER guard_admin_auth_operation_truncate_b3a BEFORE TRUNCATE ON admin_auth_operations FOR EACH STATEMENT EXECUTE FUNCTION guard_admin_auth_operation_b3a()
 profiles	enforce_sitaa_profile_identity	CREATE TRIGGER enforce_sitaa_profile_identity BEFORE INSERT OR UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION enforce_sitaa_profile_identity()
 profiles	normalize_sitaa_profile_names	CREATE TRIGGER normalize_sitaa_profile_names BEFORE INSERT OR UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION normalize_sitaa_profile_names()
 profiles	set_profiles_updated_at	CREATE TRIGGER set_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION set_updated_at()

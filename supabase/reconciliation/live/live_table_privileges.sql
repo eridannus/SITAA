@@ -130,6 +130,13 @@ public	admin_audit_events	postgres	postgres	TRUNCATE	YES	NO
 public	admin_audit_events	postgres	postgres	UPDATE	YES	NO
 public	admin_audit_events	postgres	service_role	INSERT	NO	NO
 public	admin_audit_events	postgres	service_role	SELECT	NO	YES
+public	admin_auth_operations	postgres	postgres	DELETE	YES	NO
+public	admin_auth_operations	postgres	postgres	INSERT	YES	NO
+public	admin_auth_operations	postgres	postgres	REFERENCES	YES	NO
+public	admin_auth_operations	postgres	postgres	SELECT	YES	YES
+public	admin_auth_operations	postgres	postgres	TRIGGER	YES	NO
+public	admin_auth_operations	postgres	postgres	TRUNCATE	YES	NO
+public	admin_auth_operations	postgres	postgres	UPDATE	YES	NO
 public	attention_categories	postgres	authenticated	SELECT	NO	YES
 public	attention_categories	postgres	postgres	DELETE	YES	NO
 public	attention_categories	postgres	postgres	INSERT	YES	NO

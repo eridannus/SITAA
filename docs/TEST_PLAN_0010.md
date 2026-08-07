@@ -15,7 +15,7 @@ Este plan separa evidencia local, PostgreSQL, Edge, Auth hospedado y producción
 - la auditoría productiva de ausencia de secretos aprobó el caso 19 y dejó el checkpoint sanitizado `supabase/reconciliation/0010_production_secret_audit_evidence.md`;
 - el smoke test productivo controlado aprobó el caso 20 y dejó el checkpoint sanitizado `supabase/reconciliation/0010_production_smoke_test_evidence.md`;
 - la primera operación real revocó definitivamente la elegibilidad del rollback 0010;
-- los casos 1–20 y los smoke tests productivos están aprobados; sólo la captura y reconciliación post‑0010 permanecen pendientes, por lo que B.3a continúa abierta.
+- los casos 1–20, los smoke tests productivos y la reconciliación post‑0010 están aprobados; B.3a está cerrada dentro de su alcance aprobado.
 
 La revisión local previa a aplicación detectó y corrigió defectos del arnés y del contrato todavía no desplegado: el verificador usaba un nombre obsoleto para el rechazo de objetivo pendiente, mientras la implementación emitía el contrato canónico `sitaa_account_lifecycle_pending_target`; el guard aceptaba implícitamente un writer `NULL`; la consulta de `request_id` precedía al advisory lock; contexto y claim discrepaban para `processing/auth_synchronized`; y la Edge no validaba de forma total las filas ni el replay final. Estas correcciones son sólo diseño y pruebas estáticas locales: no constituyen evidencia PostgreSQL ni Auth hospedada.
 
@@ -169,7 +169,7 @@ El checkpoint central del 3 de agosto de 2026 está en `supabase/reconciliation/
 | Aprobada por la auditoría productiva de ausencia de secretos | 19 Variables visibles de Vercel, logs Production y artefactos locales/remotos revisados sin secreto ni cliente privilegiado. |
 | Aprobada por el smoke test productivo | 20 Interfaz, denegación durante suspensión, restauración, sanitización y preservación de datos observadas en un recorrido controlado. |
 
-El checkpoint failure/recovery v11 está en `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`. El checkpoint `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md` conserva la ejecución v8 que aprobó el mismo `request_id` con payload igual y distinto, solicitudes concurrentes contra un objetivo, espera real por advisory lock, tiempo posterior al lock, lease fresco, recuperación después de cinco minutos, recuperación de `processing/auth_synchronized`, pérdida de autoridad durante la espera y límites Hosted Auth. `0010_production_secret_audit_evidence.md` aprueba el caso 19 y `0010_production_smoke_test_evidence.md` aprueba el caso 20. Sólo la captura y reconciliación post‑0010 permanecen pendientes.
+El checkpoint failure/recovery v11 está en `supabase/reconciliation/0010_hosted_auth_failure_recovery_evidence.md`. El checkpoint `supabase/reconciliation/0010_hosted_auth_concurrency_boundaries_evidence.md` conserva la ejecución v8 que aprobó el mismo `request_id` con payload igual y distinto, solicitudes concurrentes contra un objetivo, espera real por advisory lock, tiempo posterior al lock, lease fresco, recuperación después de cinco minutos, recuperación de `processing/auth_synchronized`, pérdida de autoridad durante la espera y límites Hosted Auth. `0010_production_secret_audit_evidence.md` aprueba el caso 19 y `0010_production_smoke_test_evidence.md` aprueba el caso 20. La captura y reconciliación post‑0010 también están aprobadas y se resumen antes del criterio de cierre.
 
 La evidencia v8 aprobada tiene 1797 bytes y SHA-256 `c150a18ac429f206735f38569ae43c69f62cba35ceeb02f6e683e440b065f829`; su postcheck tiene 595 bytes y SHA-256 `567e9d9c1f23a18780dbb281ec00ba77f7f69f9bc97f9edc0aad9260a7acd507`. El artefacto v8 de fallo está ausente. La predecesora v7 rechazada permanece preservada con 601 bytes y SHA-256 `b022d7c1dcb1eb7278d0c7b6d87e8917d2a409d74405d5a5400906441f899755`.
 
@@ -261,14 +261,36 @@ El recorrido aprobó:
 
 La consulta del dashboard Edge se realizó después de completar la desactivación y antes de iniciar la reactivación. En ese momento la telemetría seguía diferida y sin filas; no se realizó una segunda consulta al finalizar el round trip y no se observa ni se atribuye un conteo de invocaciones. La ejecución está corroborada por las dos operaciones finales con `attempt_count = 1`, referencias Auth no nulas, ban y retiro de ban observados, eventos de suspensión/restauración y denegación/restauración de acceso. Esta evidencia concreta no generaliza la semántica futura del proveedor.
 
-## 7. Criterio de cierre
+## Reconciliación estructural post‑0010 aprobada
 
-B.3a sólo puede cerrarse cuando exista evidencia aprobada de preflight, `COMMIT`, verificador con `ROLLBACK`, despliegue Edge, matriz Auth desechable completa, smoke tests y snapshot post‑0010 reconciliado. Todos esos gates salvo la captura y reconciliación del snapshot están aprobados. Hasta entonces:
+El snapshot canónico `2026-08-06T23:33:15Z` fue reconciliado contra post‑0009, la migración 0010 inmutable y el verificador final. El inventario observado fue:
+
+| Categoría | Post‑0009 | Post‑0010 | Delta observado/esperado |
+| --- | ---: | ---: | ---: |
+| Tablas públicas | 18 | 19 | +1 / +1 |
+| Columnas | 165 | 183 | +18 / +18 |
+| Restricciones | 80 | 96 | +16 / +16 |
+| Índices | 43 | 48 | +5 / +5 |
+| Triggers públicos no internos | 11 | 13 | +2 / +2 |
+| Firmas públicas | 54 | 60 | +6 / +6 |
+| Políticas RLS | 25 | 25 | 0 / 0 |
+| Tablas con RLS | 18 | 19 | +1 / +1 |
+| Catálogos controlados | 51 | 51 | 0 / 0 |
+| Grants de rutina | 137 | 147 | +10 / +10 |
+| Grants de tabla | 267 | 274 | +7 / +7 |
+| Grants de secuencia | 6 | 6 | 0 / 0 |
+| Entradas ACL expandidas | 445 | 463 | +18 / +18 |
+
+Cada diferencia quedó atribuida al contrato 0010: tabla, funciones, triggers, RLS y ACL B.3a, incluida la revocación prevista del mutador B.2b. Políticas, secuencias y catálogos permanecieron iguales. La deriva inexplicada fue cero. El detalle y las catorce huellas de evidencia están en `supabase/reconciliation/0010_post_apply_reconciliation.md`.
+
+## 7. Criterio de cierre cumplido
+
+B.3a exigía evidencia aprobada de preflight, `COMMIT`, verificador con `ROLLBACK`, despliegue Edge, matriz Auth desechable completa, smoke tests y snapshot post‑0010 reconciliado. Todos los gates están aprobados y no queda un gate 0010 pendiente. En consecuencia:
 
 - describir el rechazo de JWT, refresh y login, y la restauración observada, sólo como evidencia empírica de la ejecución hospedada documentada;
-- no habilitar la función para uso operativo general antes del cierre; el único smoke test previo quedó documentado en la sección 6;
-- describir el verificador PostgreSQL y los casos 1–20 como aprobados con sus atribuciones respectivas, pero no B.3a como cerrada;
-- no crear 0011;
+- el smoke test controlado previo al cierre permanece documentado en la sección 6 y no generaliza la conducta futura del proveedor;
+- describir el verificador PostgreSQL, los casos 1–20 y la reconciliación como aprobados con sus atribuciones respectivas, y B.3a como cerrada;
+- `0011` es el siguiente número disponible, pero no fue creado por este cierre;
 - B.3b y Fase C permanecen fuera de alcance.
 
 La matriz central creó las primeras operaciones y eventos B.3a reales; el rollback 0010 quedó revocado y está prohibido por diseño.

@@ -94,6 +94,24 @@ admin_audit_events	6	reason	text	text	YES
 admin_audit_events	7	role_assignment_id	uuid	uuid	YES					
 admin_audit_events	8	metadata	jsonb	jsonb	NO	'{}'::jsonb				
 admin_audit_events	9	occurred_at	timestamp with time zone	timestamptz	NO	now()				6
+admin_auth_operations	1	id	uuid	uuid	NO	gen_random_uuid()				
+admin_auth_operations	2	request_id	uuid	uuid	NO					
+admin_auth_operations	3	requested_by_profile_id	uuid	uuid	NO					
+admin_auth_operations	4	completed_by_profile_id	uuid	uuid	YES					
+admin_auth_operations	5	target_profile_id	uuid	uuid	NO					
+admin_auth_operations	6	operation_code	text	text	NO					
+admin_auth_operations	7	status	text	text	NO	'open'::text				
+admin_auth_operations	8	completed_stage	text	text	NO	'prepared'::text				
+admin_auth_operations	9	reason	text	text	NO					
+admin_auth_operations	10	attempt_count	integer	int4	NO	0		32	0	
+admin_auth_operations	11	last_error_code	text	text	YES					
+admin_auth_operations	12	profile_audit_event_id	uuid	uuid	YES					
+admin_auth_operations	13	auth_audit_event_id	uuid	uuid	YES					
+admin_auth_operations	14	requested_at	timestamp with time zone	timestamptz	NO	now()				6
+admin_auth_operations	15	processing_started_at	timestamp with time zone	timestamptz	YES					6
+admin_auth_operations	16	auth_synchronized_at	timestamp with time zone	timestamptz	YES					6
+admin_auth_operations	17	completed_at	timestamp with time zone	timestamptz	YES					6
+admin_auth_operations	18	updated_at	timestamp with time zone	timestamptz	NO	now()				6
 attention_categories	1	code	text	text	NO					
 attention_categories	2	label	text	text	NO					
 attention_categories	3	description	text	text	YES					

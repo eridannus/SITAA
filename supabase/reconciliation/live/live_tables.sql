@@ -8,6 +8,7 @@ public	activity_participants	table	true	false
 public	activity_statuses	table	true	false
 public	activity_types	table	true	false
 public	admin_audit_events	table	true	false
+public	admin_auth_operations	table	true	false
 public	attention_categories	table	true	false
 public	divisions	table	true	false
 public	location_types	table	true	false

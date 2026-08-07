@@ -1,6 +1,6 @@
 # Administración de cuentas de usuario
 
-**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. Las tres están aplicadas, verificadas, probadas y reconciliadas dentro de sus alcances aprobados. B.3a está implementada y aplicada mediante 0010: el verificador PostgreSQL y los casos 1–20 están aprobados con su atribución correspondiente, incluido el recorrido productivo del caso 20. Permanece abierta únicamente por la captura y reconciliación post‑0010. B.3b y Fase C siguen pendientes.
+**Estado funcional:** Fase B.1 está cerrada mediante 0007, Fase B.2a mediante 0008 y Fase B.2b mediante 0009. B.3a está cerrada mediante 0010: aplicada, verificada, probada en los checkpoints hospedados y productivos, y reconciliada contra el snapshot `2026-08-06T23:33:15Z`. Los casos 1–20 están aprobados con su atribución correspondiente. B.3b y Fase C siguen pendientes; `0011` todavía no se ha creado.
 
 La separación inicial de cuentas realizada al cerrar la Fase A fue una limpieza revisada del entorno; no es una operación reutilizable de fusión, conversión o transferencia.
 
@@ -38,11 +38,11 @@ La primera ejecución del verificador pasó los controles estáticos y comenzó 
 
 Implementada mediante 0009: desactivación y reactivación del estado operativo en `profiles`, con auditoría y sin mutar Auth, roles ni historia. `pending_registration` no puede activarse administrativamente y continúa en el flujo propio de registro.
 
-### B.3a — Suspensión/restauración coordinada implementada
+### B.3a — Suspensión/restauración coordinada cerrada
 
 0010 implementa un ledger idempotente y una única Edge Function autenticada. Desactivar deja primero el perfil inactivo e inserta la operación directamente en `profile_suspended`; reactivar sólo vuelve a activar el perfil después de sincronizar Auth y revalidar la autoridad B.1. Un fallo conserva la última etapa confirmada y permite reintento por una autoridad exacta, sin repetir el evento de ciclo ya persistido. La operación más reciente se conserva como contexto aunque sea final; sólo una operación no final bloquea un nuevo cambio. Si Auth ya está sincronizado, otro administrador exacto puede finalizar inmediatamente sin repetir la llamada privilegiada. Cada persistencia de resultado presenta el `attempt_count` reclamado y un intento obsoleto falla antes de mutar evidencia o auditoría. Los timestamps de mutación usan reloj de pared posterior a los locks, y la evidencia ya establecida no puede sustituirse. La barrera 0008 niega operaciones aunque un JWT emitido siga vigente.
 
-0010 está aplicada, la Edge Function está `ACTIVE` y el verificador PostgreSQL está aprobado. La matriz central en un proyecto desechable observó rechazo con `user_banned` para dos JWT existentes, dos refresh tokens y dos logins nuevos durante la suspensión; al restaurar se permitió un login fresco, pero los refresh tokens anteriores no recuperaron acceso. Son resultados empíricos de esa ejecución, no garantías universales del proveedor. `service_role` queda confinado al paquete Edge; la aplicación Next.js no obtiene un cliente privilegiado.
+0010 está aplicada, la Edge Function está `ACTIVE`, el verificador PostgreSQL está aprobado y el snapshot post‑0010 está reconciliado. La matriz central en un proyecto desechable observó rechazo con `user_banned` para dos JWT existentes, dos refresh tokens y dos logins nuevos durante la suspensión; al restaurar se permitió un login fresco, pero los refresh tokens anteriores no recuperaron acceso. Son resultados empíricos de esa ejecución, no garantías universales del proveedor. `service_role` queda confinado al paquete Edge; la aplicación Next.js no obtiene un cliente privilegiado.
 
 Una cuenta reactivada debe iniciar una sesión nueva. La interfaz y la comunicación operativa no deben prometer que una pestaña o refresh token anterior recuperará acceso automáticamente.
 
@@ -58,7 +58,9 @@ La auditoría productiva del caso 19 comprobó las superficies de navegador y Ve
 
 El smoke test productivo del caso 20 aprobó un recorrido completo de desactivación y reactivación sobre una cuenta institucional estudiantil ficticia. Las dos operaciones terminaron `succeeded/completed`, con un intento cada una y cuatro eventos append-only. Durante la suspensión se negaron la sesión existente y un login nuevo; después de restaurar Auth, una sesión nueva accedió correctamente. La asignación, las actividades, la asistencia, la identidad y la historia permanecieron conservadas.
 
-La primera operación real revocó definitivamente el rollback 0010. Los casos 1–20 y los smoke tests productivos están aprobados; B.3a continúa abierta únicamente por la captura y reconciliación post‑0010.
+La primera operación real revocó definitivamente el rollback 0010. Los casos 1–20, los smoke tests productivos y la reconciliación estructural están aprobados; B.3a está cerrada dentro de su alcance.
+
+El snapshot canónico `2026-08-06T23:33:15Z` confirmó `admin_auth_operations`, las seis funciones B.3a, sus triggers, RLS y privilegios exactos sin deriva inexplicada. El ledger no tiene políticas ni acceso directo de clientes o `service_role`; claim y record son las únicas superficies de servicio aprobadas. Las filas operativas del round trip no se exportaron en el snapshot estructural y permanecen sustentadas por la evidencia productiva separada. B.3b y Fase C continúan pendientes; `0011` es el siguiente número disponible, pero no fue creado.
 
 ### B.3b — Otras operaciones Auth pendientes
 

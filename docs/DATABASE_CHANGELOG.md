@@ -2,6 +2,10 @@
 
 Los cambios SQL anteriores a la baseline fueron aplicados manualmente durante el prototipo. Desde la baseline reconciliada, cada cambio se conserva como una migración numerada en el repositorio.
 
+## Estado vigente
+
+La cadena `0001`–`0010` está aplicada, verificada y reconciliada. El snapshot canónico `2026-08-06T23:33:15Z` coincide con esa cadena sin deriva inexplicada; los casos 1–20 están aprobados y B.3a está cerrada. `0011` es el siguiente número de migración disponible, pero todavía no se ha creado. B.3b y Fase C permanecen pendientes.
+
 ## 0001_baseline_current_schema.sql — baseline reconciliada
 
 - Fecha: 2026-07-16.
@@ -58,7 +62,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0010` están aplicadas e inmutables. `0001`–`0009` están verificadas y reconciliadas. Para `0010`, el verificador PostgreSQL y los casos 1–20 están aprobados con su atribución correspondiente; el smoke test productivo aprobó el caso 20. Sólo faltan la captura y reconciliación post‑0010. B.3a permanece abierta y no se debe crear `0011`. Todo cambio futuro debe:
+`0001`–`0010` están aplicadas, verificadas, reconciliadas e inmutables. Los casos 1–20 y los smoke tests productivos están aprobados; B.3a está cerrada. `0011` es el siguiente número disponible, pero no se ha creado. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0010`;
@@ -313,3 +317,16 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - La consulta del dashboard Edge se realizó después de la desactivación y antes de la reactivación. En ese momento todavía no mostraba agregados o filas y advertía una posible demora de hasta 24 horas; no se realizó una segunda consulta al finalizar el round trip. Se registra como telemetría diferida, no como fallo ni como conteo de invocaciones observado. La ejecución queda corroborada por ledger, referencias Auth, ban/restauración y resultados de acceso.
 - El caso 20 y los smoke tests productivos quedaron aprobados. Sólo el snapshot y la reconciliación post‑0010 permanecen pendientes; B.3a continúa abierta, el proyecto desechable debe conservarse y no debe crearse 0011.
 - El resumen sanitizado versionado está en `supabase/reconciliation/0010_production_smoke_test_evidence.md`; no se versionan capturas, identidades, razones completas ni respuestas crudas.
+
+## Reconciliación posterior a 0010 — 2026-08-06
+
+- Snapshot comparado: `2026-08-06T23:33:15Z`, estado `SUCCESS`, generado con `pg_dump 18.4`, `psql 18.4`, UTF-8 y alcance exclusivo del esquema `public`.
+- Cadena reconciliada: `0001 + 0002 + 0003 + 0004 + 0005 + 0006 + 0007 + 0008 + 0009 + 0010`.
+- Inventario vivo: 19 tablas, 183 columnas, 96 restricciones, 48 índices, 13 triggers públicos no internos, 60 firmas de función, 25 políticas, RLS en 19 tablas y 51 filas de catálogos controlados.
+- Privilegios vivos: 147 grants de rutina, 274 de tabla publicados por `information_schema`, 6 de secuencia y 463 entradas ACL expandidas.
+- Delta post‑0009: +1 tabla, +18 columnas, +16 restricciones, +5 índices, +2 triggers, +6 funciones, 0 políticas, +1 tabla con RLS, 0 semillas, +10 grants de rutina, +7 grants de tabla, 0 de secuencia y +18 ACL expandidas.
+- La diferencia estructural corresponde a `admin_auth_operations`, sus cinco índices, dos triggers, RLS sin políticas cliente y seis funciones B.3a. El delta de rutina agrega once grants de las funciones nuevas y retira el grant `authenticated` del mutador B.2b; el ACL expandido añade once entradas de función y ocho del ledger, y retira aquella misma entrada B.2b.
+- Las 25 políticas, los 6 privilegios de secuencia y las 51 filas de los once catálogos controlados permanecen byte por byte iguales a post‑0009. No se detectó cambio en objetos preexistentes fuera de la revocación B.2b prevista.
+- `live_columns.sql` y `live_functions.sql` conservan el whitespace canónico crudo emitido por PostgreSQL; no se recortaron ni normalizaron. El token aleatorio `\restrict`/`\unrestrict` y el timestamp de metadata son diferencias ambientales esperadas.
+- Resultado: cero deriva inexplicada. El informe completo está en `supabase/reconciliation/0010_post_apply_reconciliation.md`.
+- Cierre: 0010 queda aplicada, inmutable, verificada, probada y reconciliada; los casos 1–20 están aprobados y B.3a queda cerrada. `0011` es el siguiente número disponible, pero no fue creado. B.3b y Fase C continúan pendientes.
