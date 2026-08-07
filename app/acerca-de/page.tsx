@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PublicPolicyLinks } from "@/components/public-policy-links";
 
 const description = "Conoce el propósito, alcance académico y uso de Google como proveedor de identidad de SITAA.";
 
@@ -33,7 +32,6 @@ export default function AboutSitaaPage() {
         <p className="sitaa-section-description mt-4 max-w-3xl">
           SITAA significa Sistema Integral de Tutorías y Asesorías Académicas. Es operado por la División de Diseño y Edificación de la Facultad de Estudios Superiores Acatlán para apoyar sus programas internos de tutoría y asesoría académica.
         </p>
-        <PublicPolicyLinks className="mt-5 border-t border-[var(--sitaa-border)] pt-3" />
       </header>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">

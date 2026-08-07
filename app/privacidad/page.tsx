@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PublicPolicyLinks } from "@/components/public-policy-links";
 
 const description = "Consulta cómo SITAA obtiene, utiliza, protege y conserva datos personales e institucionales.";
 
@@ -36,7 +35,6 @@ export default function PrivacyPage() {
           <p className="mt-4 text-sm font-semibold text-[var(--sitaa-text-secondary)]">
             Última actualización: <time dateTime="2026-08-07">7 de agosto de 2026</time>.
           </p>
-          <PublicPolicyLinks className="mt-5" />
         </header>
 
         <div className="mt-8 space-y-8">
