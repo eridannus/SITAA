@@ -77,6 +77,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-063 | Separación entre diagnóstico técnico y contenido de alertas | Aceptada |
 | DEC-064 | Inbox interno como entrega primaria de alertas | Aceptada |
 | DEC-065 | Production OAuth acceptance by a complete non-tester journey | Aceptada |
+| DEC-066 | Academic-period administration and automatic-resolution contract for SEM-01 | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -189,7 +190,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Decisión:** todos los campos operativos de una actividad son obligatorios salvo description. Las fechas se muestran como DD/MM/YYYY y las horas en formato de 24 horas. El módulo base permite editar y eliminar actividades, siempre sujeto a autenticación, confirmación explícita para eliminar y políticas RLS.
 
-**Consecuencias:** creación y edición comparten validación y conservan los valores rechazados. El periodo se obtiene del único periodo activo; responsible_profile_id y created_by no cambian al editar. La opción «Ambos programas» queda pendiente: requerirá un modelo posterior de alcance de actividad para que division_tutoring_liaison pueda seleccionar Diseño Gráfico, Arquitectura o ambos sin debilitar permisos.
+**Consecuencias:** en ese flujo inicial, creación y edición compartían validación y conservaban los valores rechazados; el periodo se obtenía del único periodo activo. `responsible_profile_id` y `created_by` no cambiaban al editar. La opción «Ambos programas» quedaba pendiente: requería un modelo posterior de alcance de actividad para que `division_tutoring_liaison` pudiera seleccionar Diseño Gráfico, Arquitectura o ambos sin debilitar permisos. La decisión canónica posterior de `SEM-01` sustituye únicamente esa suposición histórica de periodo único.
 
 **Estado:** Aceptada.
 
@@ -598,7 +599,7 @@ Toda construcción textual o hash que incluya un campo interno `char` de catálo
 
 **Decisión:** adoptar `MVP_OPERATIONAL_ROADMAP.md` como plan canónico próximo, con los IDs estables `DOC-00`, `AUTH-01`, `SEM-01`, `ATT-01`, `EXP-01`, `ROLE-01`, `GRP-01`, `DASH-01`, `ALERT-01` y `PILOT-01`. El objetivo inmediato es sustituir registro y asistencia manuales y habilitar operación por semestre, rol, grupo y programa. Esta decisión sustituye DEC-004 y el orden de ejecución de DEC-038 para el MVP inmediato, sin retirar sus límites de seguridad.
 
-**Consecuencias:** `DOC-00` y `AUTH-01` están completados. `SEM-01` fue seleccionado como el siguiente paquete estructural, pero su kickoff permanece pendiente. Los demás paquetes de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible, no existe ni está asignado, y únicamente podrá asignarse después de aprobar el diseño estructural correspondiente. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
+**Consecuencias:** `DOC-00` y `AUTH-01` están completados. Al seleccionarse `SEM-01` como siguiente paquete estructural, su kickoff todavía estaba pendiente; la decisión canónica posterior aprobó el contrato de producto y dejó la implementación bajo revisión separada. Los demás paquetes de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible, no existe ni está asignado, y únicamente podrá asignarse después de aprobar el paquete de implementación correspondiente. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
 
 **Estado:** Aceptada.
 
@@ -733,5 +734,17 @@ Las variaciones de Gmail de consumidor, `pc.puma` / UNAM y organizaciones Worksp
 - las restricciones específicas de una organización que se descubran durante el piloto serán hallazgos operativos, no fallos retroactivos de `AUTH-01`;
 - la distinción entre identidad y autoridad de rol permanece obligatoria;
 - el registro público continúa creando un perfil sin asignaciones de rol académicas o administrativas.
+
+**Estado:** Aceptada.
+
+## DEC-066 — Academic-period administration and automatic-resolution contract for SEM-01
+
+**Contexto:** DEC-022 estableció asignación automática de semestre, DEC-024 permitió borradores incompletos y DEC-056 reservó la administración mínima a `technical_admin`. El snapshot post-0010 confirma la tabla y resolver actuales, pero todavía no existe una superficie administrativa ni integridad concurrente completa, y el resolver vigente prolonga de hecho el último periodo sin límite.
+
+**Decisión:** aprobar el diseño canónico `SEM_01_DESIGN.md`. La administración futura se concentra en `/admin/periods` y exige autoridad exacta `technical_admin/system/technical`, activa, vigente según la fecha de Ciudad de México y sin programa o división. Los nuevos códigos `YYYY-1|YYYY-2` son únicos, normalizados e inmutables; varios periodos pueden estar activos, con fechas ordinarias completas y sin traslapes bajo concurrencia. La fila inactiva heredada `pilot` se preserva. La atribución automática cubre el rango oficial y, cuando ya existe un sucesor activo, el intersemestre hasta el día previo a su inicio; el último periodo no se extiende más allá de `ends_on`.
+
+Los borradores pueden conservar `academic_period_id = NULL`. Publicar vuelve a resolver transaccionalmente y bloquea con lenguaje neutral cuando no hay semestre disponible; nunca se ofrece selección manual. Crear un periodo o corregir sus fechas o estado no puede cambiar ni eliminar una atribución almacenada ni modificar la resolución de una actividad no borrador. Se permite que un borrador con `academic_period_id = NULL`, antes no resoluble, pase a ser resoluble, porque la mutación del calendario no escribe la actividad y la publicación posterior vuelve a resolverla transaccionalmente. La creación continúa exenta de un motivo administrativo separado. Los periodos no se eliminan: se desactivan y preservan. Las mutaciones exitosas usarán una auditoría append-only por recurso, sanitizada y no acoplada falsamente a un perfil objetivo.
+
+**Consecuencias:** `/catalogs` permanece de sólo lectura y la administración genérica de catálogos sigue diferida. El contrato de producto está aprobado, pero la implementación, preflight, migración, verificador, concurrencia, rollback y reconciliación permanecen pendientes. `0011` no existe ni está asignada; sólo podrá asignarse tras revisar el paquete de implementación.
 
 **Estado:** Aceptada.

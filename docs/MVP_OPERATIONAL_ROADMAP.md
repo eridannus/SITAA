@@ -15,7 +15,7 @@ Línea base aprobada:
 - [x] **DOC-00 — Completado y publicado:** rebase documental aprobada como fuente canónica.
 - [x] **AUTH-01 — Completado:** gate de lanzamiento público satisfecho y respaldado por evidencia sanitizada.
 
-`SEM-01` fue seleccionado como el siguiente paquete estructural, pero su kickoff permanece pendiente. `0011` es sólo el siguiente número disponible: no existe, no está asignado y únicamente podrá asignarse después de revisar y aprobar el diseño de `SEM-01`, su preflight, límite de migración, estrategia de verificación y rollback.
+`SEM-01` es el siguiente paquete estructural activo. Su contrato de producto fue aprobado y quedó documentado en `SEM_01_DESIGN.md`; la revisión y ejecución del paquete de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible: no existe, no está asignado y únicamente podrá asignarse después de aprobar por separado el preflight, límite de migración, estrategia de verificación y rollback.
 
 ## 2. Principio del MVP inmediato
 
@@ -54,7 +54,7 @@ DOC-00
                  └─ ALERT-01 --------------------------┘
 ```
 
-`DOC-00` y el gate obligatorio `AUTH-01` están completados. `SEM-01` es el siguiente paquete estructural y su kickoff permanece pendiente. `PILOT-01` no puede aprobarse hasta que las ramas pendientes hayan producido evidencia suficiente.
+`DOC-00` y el gate obligatorio `AUTH-01` están completados. `SEM-01` es el siguiente paquete estructural activo: diseño canónico aprobado, implementación no iniciada. `PILOT-01` no puede aprobarse hasta que las ramas pendientes hayan producido evidencia suficiente.
 
 ## 5. Resumen de paquetes
 
@@ -62,7 +62,7 @@ DOC-00
 | --- | --- | --- | --- | --- | --- |
 | `DOC-00` | Rebase documental | Completado | Bloqueante | S | Ninguna |
 | `AUTH-01` | Publicación de Google OAuth | Completado | Gate satisfecho | M | `DOC-00` |
-| `SEM-01` | Administración mínima de semestres | Siguiente / kickoff pendiente | Crítica | M | `DOC-00` |
+| `SEM-01` | Administración mínima de semestres | Diseño aprobado / implementación pendiente | Crítica | M | `DOC-00` |
 | `ATT-01` | Registro y asistencia atómicos | Pendiente | Crítica | L | `DOC-00` |
 | `EXP-01` | Exportaciones CSV y PDF | Pendiente | Crítica | M | `DOC-00` |
 | `ROLE-01` | Autoridad y roles mínimos del piloto | Pendiente | Crítica | L | `DOC-00` |
@@ -107,16 +107,19 @@ DOC-00
 
 **Objetivo:** permitir que sólo una autoridad técnica exacta administre los semestres oficiales requeridos para la operación, sin restringir las lecturas de referencia ya autorizadas.
 
-- [ ] Revisar y aprobar el kickoff de diseño de `SEM-01`, incluido preflight, límite de migración, verificador y rollback, sin asignar todavía `0011`.
-- [ ] Autorizar exclusivamente a `technical_admin` exacto y activo para acceder a la superficie administrativa.
-- [ ] Reservar el listado administrativo y la creación, actualización, activación o desactivación de semestres a esa autoridad técnica.
-- [ ] Mantener disponibles las lecturas autorizadas de periodos activos o históricos como datos de referencia en actividades, filtros, reportes y otras vistas ya permitidas por el universo visible de cada perfil.
-- [ ] Garantizar que leer un periodo nunca conceda permiso para administrarlo.
-- [ ] Derivar el periodo de cada actividad desde su fecha; usuarios operativos no lo eligen ni lo reescriben manualmente.
-- [ ] Exigir códigos únicos.
-- [ ] Impedir traslape de rangos de fechas.
-- [ ] Conservar semestres históricos ya referenciados; no borrarlos destructivamente.
-- [ ] Probar concurrencia, RLS, auditoría y fechas de Ciudad de México.
+- [x] Aprobar el contrato de producto y documentarlo canónicamente en `SEM_01_DESIGN.md`.
+- [ ] Revisar y aprobar el preflight y el límite exacto de la futura migración; `0011` continúa inexistente y sin asignar.
+- [ ] Implementar `/admin/periods` como superficie dedicada, sin convertir `/catalogs` en editor genérico.
+- [ ] Aplicar la autoridad exacta `technical_admin/system/technical`, activa, vigente y sin programa o división en ruta, acciones y RPC independientes.
+- [ ] Preservar las lecturas de referencia autorizadas sin conceder administración ni ampliar universos visibles.
+- [ ] Implementar resolución automática intersemestral desde la fecha, con cierre del último periodo en `ends_on` y sin selección manual.
+- [ ] Preservar borradores con `academic_period_id = NULL` y exigir re-resolución transaccional al publicar.
+- [ ] Garantizar código ordinario estable, fechas completas y no traslape activo bajo concurrencia, conservando la excepción histórica `pilot`.
+- [ ] Implementar diagnóstico transaccional de impacto sin remapeo silencioso y sin ruta de eliminación.
+- [ ] Añadir auditoría append-only sanitizada y desacoplada de perfiles.
+- [ ] Aprobar el checker SQL, verificador transaccional y arnés multisesión de concurrencia y pérdida de autoridad.
+- [ ] Revisar un rollback fail-closed que preserve historia, referencias y auditoría.
+- [ ] Aplicar, verificar, probar, capturar snapshot y reconciliar sólo después de las aprobaciones anteriores.
 
 La administración general de catálogos permanece diferida.
 
@@ -332,7 +335,7 @@ Estos detalles requieren diseño, amenaza, preflight y revisión propios. No se 
 
 - Cada paquete inicia con revisión de fuentes canónicas, amenazas, permisos y datos sensibles.
 - La documentación y la decisión preceden al código o DDL.
-- Ningún número de migración se reserva antes de aprobar el diseño estructural; `0011` permanece sin asignar y sólo podrá asignarse después de revisar y aprobar el diseño de `SEM-01`, su preflight, límite de migración, estrategia de verificación y rollback.
+- Ningún número de migración se reserva sólo por aprobar un contrato de producto; `0011` permanece inexistente y sin asignar hasta revisar y aprobar por separado el paquete de implementación de `SEM-01`, su preflight, límite de migración, estrategia de verificación y rollback.
 - Las migraciones aplicadas permanecen inmutables y todo cambio nuevo es incremental, no destructivo y reconciliable.
 - RLS/RPC construyen el universo autorizado; la interfaz nunca sustituye autorización de base.
 - Todo cambio estructural exige preflight, aplicación coordinada, verificador transaccional, rollback revisado, pruebas, snapshot y reconciliación según riesgo.

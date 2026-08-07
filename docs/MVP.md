@@ -20,11 +20,13 @@ La secuencia canónica de entrega está en `MVP_OPERATIONAL_ROADMAP.md`.
 
 ### Configuración de semestre
 
-- `academic_periods` representa semestres oficiales con código único y rango de fechas no traslapado.
-- Sólo `technical_admin` exacto puede acceder al listado administrativo y crear, actualizar, activar o desactivar semestres en el MVP inmediato.
+- `academic_periods` representa semestres oficiales. Los nuevos periodos ordinarios usan código único e inmutable `YYYY-1|YYYY-2`, fechas completas y rangos activos no traslapados; la fila inactiva heredada `pilot` se preserva como excepción controlada.
+- Pueden coexistir periodos activos históricos, actuales y futuros. El último periodo configurado deja de resolver después de `ends_on`; sólo cuando ya existe un sucesor, el periodo anterior cubre el intersemestre hasta el día previo al siguiente `starts_on`.
+- La futura superficie dedicada será `/admin/periods`. Sólo una autoridad `technical_admin/system/technical` exacta, activa, vigente en fecha de Ciudad de México y sin programa ni división podrá listar administrativamente, crear, corregir, activar o desactivar semestres.
 - Las lecturas autorizadas de periodos activos o históricos como referencia para actividades, filtros y reportes permanecen disponibles dentro del universo visible de quien consulta; leer un periodo no concede autoridad para administrarlo.
-- Los semestres históricos referenciados no se eliminan destructivamente.
-- Las actividades reciben el semestre automáticamente desde su fecha de inicio; usuarios operativos no lo eligen ni lo reescriben.
+- Las actividades reciben el semestre automáticamente desde su fecha de inicio; usuarios operativos no lo eligen ni lo reescriben. Un borrador puede conservar `academic_period_id = NULL`, mientras la publicación re-resuelve obligatoriamente y de forma transaccional.
+- Crear un periodo o corregir fechas o estado exige diagnóstico transaccional cuando cambia el calendario efectivo. No puede alterarse una atribución almacenada ni la resolución de una actividad no borrador. Sí puede habilitarse un borrador con `academic_period_id = NULL` que antes no resolvía ningún semestre; la mutación del periodo no escribe esa actividad y la publicación posterior vuelve a resolverla.
+- Los semestres no se eliminan destructivamente, incluso cuando todavía no tienen referencias; se desactivan y preservan.
 - La administración general de catálogos no forma parte de este alcance.
 
 ### Actividades, participantes y asistencia

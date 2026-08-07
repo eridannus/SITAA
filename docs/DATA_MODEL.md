@@ -1,6 +1,6 @@
 # Modelo de datos
 
-> **Vigencia:** este documento describe el esquema vivo reconciliado después de 0008. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
+> **Vigencia:** este documento describe el esquema vivo reconciliado después de 0010 y distingue el contrato físico actual del diseño futuro aprobado. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
 
 ## Tablas implementadas
 
@@ -13,7 +13,7 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 | `roles` | Catálogo estable de roles, con `code` como llave primaria | `code`, `label`, `description`, `sort_order` |
 | `profiles` | Identidad de cuenta estable vinculada a Auth | `id`, `email`, `first_names`, `paternal_surname`, `maternal_surname`, `full_name`, `account_kind`, `account_status`, `person_type`, `institutional_id_type`, `institutional_id_value`, `primary_program_id`, `activated_at`, `deactivated_at` |
 | `role_assignments` | Asignaciones múltiples, vigentes o históricas V1 | `id`, `user_id`, `role_code`, `scope_type`, `service_area`, `division_id`, `program_id`, `starts_at`, `ends_at`, `is_active`, `assigned_by`, timestamps |
-| `academic_periods` | Semestres académicos operativos y rangos oficiales | `id`, `code`, `label` o `name`, `description`, rangos oficiales de fecha, `is_active` |
+| `academic_periods` | Semestres académicos operativos y rangos oficiales | `id`, `code`, `name`, `starts_on`, `ends_on`, `is_active`, `sort_order`, `created_at`, `updated_at` |
 | `activity_types` | Tipos de actividad | `id`, `code`, `label` o `name`, `description`, `is_active` |
 | `service_types` | Tipos de servicio | `id`, `code`, `label` o `name`, `description`, `is_active` |
 | `attention_categories` | Categorías de atención | `id`, `code`, `label` o `name`, `description`, `is_active` |
@@ -73,7 +73,7 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 
 ### Reglas temporales de actividades
 
-- El semestre de la actividad se asigna automáticamente desde `start_date`, usando rangos oficiales mantenidos por usuarios técnicos o administrativos; no es editable por usuarios operativos.
+- El semestre de la actividad se asigna automáticamente desde `start_date`, usando rangos oficiales. La futura administración de esos rangos queda reservada a una cuenta activa con asignación vigente `technical_admin/system/technical`, sin programa ni división, evaluada con la fecha de `America/Mexico_City`; no es editable por usuarios operativos.
 - `start_date` y `start_time` son obligatorios y usan hora de 24 horas.
 - `duration_mode` admite `one_hour`, `two_hours` y `custom`.
 - Las duraciones de una y dos horas calculan automáticamente `end_date` y `end_time`; la personalizada exige ambos campos.
@@ -85,9 +85,12 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 ### Reglas de semestre académico
 
 - La interfaz debe mostrar la etiqueta **Semestre**; no debe mostrar “periodo calculado”.
-- SITAA asigna el semestre automáticamente a partir de la fecha de inicio de la actividad.
-- Los usuarios operativos no seleccionan ni editan el semestre manualmente.
-- Usuarios técnicos o administrativos mantienen los rangos oficiales de semestre con base en calendarios UNAM.
+- `code` es único. Los nuevos periodos ordinarios usan exclusivamente `YYYY-1|YYYY-2`; el código queda normalizado e inmutable. `name` es la etiqueta visible almacenada e inicia con el mismo valor. `sort_order` es compatibilidad interna y no un campo editable.
+- La fila inactiva `pilot`, con fechas nulas, es una excepción histórica controlada y se preserva. Todo nuevo periodo ordinario exige ambas fechas y `starts_on <= ends_on`; varios periodos pueden permanecer activos, pero sus rangos no pueden traslaparse ni bajo concurrencia.
+- SITAA asigna el semestre automáticamente a partir de la fecha de inicio de la actividad. El intervalo cubre el rango oficial y, si ya existe un periodo activo sucesor, el intersemestre hasta el día anterior al `starts_on` siguiente. El último periodo configurado no se extiende más allá de su propio `ends_on`.
+- Los usuarios operativos no seleccionan ni editan `academic_period_id`. Un borrador puede conservarlo en `NULL`; publicar exige resolverlo nuevamente dentro de la transacción.
+- La administración futura corresponde exclusivamente a una autoridad técnica exacta mediante `/admin/periods`; `/catalogs` permanece como referencia de sólo lectura y no se adopta un modelo genérico de edición de catálogos.
+- Crear un periodo bajo el calendario propuesto o corregir fechas o estado exige diagnóstico transaccional. Ninguna atribución almacenada ni resolución de una actividad no borrador puede cambiar o desaparecer. Como excepción no bloqueante, un borrador con `academic_period_id = NULL` y resolución actual `NULL` puede pasar a resolver un periodo; la mutación del calendario no modifica la fila y la publicación posterior persiste la atribución mediante su resolución transaccional. No se introduce remapeo masivo. No existe ciclo de eliminación de producto: los periodos se desactivan y preservan.
 - Convención institucional:
   - el primer semestre calendario del año corresponde al semestre 2 de ese mismo año académico;
   - el segundo semestre calendario del año corresponde al semestre 1 del año académico siguiente.
@@ -167,7 +170,8 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 
 ## Estado de implementación
 
-La Fase A de identidad Google y los nombres estructurados de 0006 están aplicados, verificados y reconciliados. Participantes, asistencia y check-in son módulos implementados. La Fase B.1 está cerrada mediante 0007, B.2a mediante 0008 y B.2b mediante 0009. B.3 y Fase C permanecen pendientes.
+La Fase A de identidad Google y los nombres estructurados de 0006 están aplicados, verificados y reconciliados. Participantes, asistencia y check-in son módulos implementados. La Fase B.1 está cerrada mediante 0007, B.2a mediante 0008, B.2b mediante 0009 y B.3a mediante 0010. B.3b y Fase C permanecen pendientes.
+
 ### Accesos de asistencia por QR, enlace y código
 
 `activity_checkin_tokens` representa el acceso temporal para confirmar asistencia de participantes ya registrados. El enlace directo usa `secret_token`; el código manual usa `three_word_code`. Ambos actualizan los mismos campos de asistencia de `activity_participants` mediante `check_in_activity`.
@@ -192,13 +196,13 @@ La Fase A de identidad Google y los nombres estructurados de 0006 están aplicad
 
 Una corrección exitosa conserva UUID de perfil, email, vínculo Auth, clase/estado de cuenta, ciclo de vida, asignaciones y toda la historia operativa. Inserta exactamente un evento append-only en `admin_audit_events` con `action_code = account_identity_corrected`, `outcome = success`, razón normalizada y metadata que contiene sólo el arreglo ordenado `changed_fields`.
 
-## Ledger B.3a preparado por 0010
+## Ledger B.3a implementado y reconciliado por 0010
 
 `admin_auth_operations` coordina sin falsa atomicidad una transición de perfil y su sincronización con Auth. Su identidad inmutable es `request_id`, actor solicitante, objetivo, operación y motivo. Usa estados `open|processing|retryable_failure|succeeded|terminal_failure` y etapas monotónicas: reactivación admite `prepared|auth_synchronized|completed`; desactivación se inserta directamente en `profile_suspended` y admite `profile_suspended|auth_synchronized|completed`, por lo que nunca persiste como `open/prepared`. Las restricciones definen de forma exacta evidencia, actor y timestamps finales; el trigger limita cada writer a sus columnas autorizadas y rechaza writer ausente, vacío o desconocido. Un índice parcial permite como máximo una operación no final por objetivo. RLS está habilitado sin políticas y el ACL directo de tabla/columnas es exclusivamente del owner.
 
 El contexto B.3a expone `current_operation_id`, que significa la operación más reciente del objetivo aunque ya sea final; sólo es `NULL` si no existe historia 0010. Los controles de nueva transición se suprimen únicamente mientras esa operación sea no final. `processing/auth_synchronized` puede recuperarse de inmediato para finalizar la base sin repetir Auth; otro `processing` fresco conserva un lease de cinco minutos.
 
-El ledger no almacena email, metadata Auth, tokens, respuestas del proveedor ni errores crudos. `admin_audit_events` conserva separadamente la evidencia del ciclo de perfil y la sincronización Auth. Este modelo está sólo en la migración local 0010 y no pertenece todavía al snapshot vivo post‑0009.
+El ledger no almacena email, metadata Auth, tokens, respuestas del proveedor ni errores crudos. `admin_audit_events` conserva separadamente la evidencia del ciclo de perfil y la sincronización Auth. Este modelo está aplicado mediante 0010 y forma parte del snapshot canónico post‑0010 `2026-08-06T23:33:15Z`. B.3a está cerrada dentro de su alcance aprobado y B.3b permanece diferida.
 
 ## Ciclo de vida administrativo implementado por 0009
 

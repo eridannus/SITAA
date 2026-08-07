@@ -6,7 +6,7 @@ La ejecución inmediata se rige por `MVP_OPERATIONAL_ROADMAP.md`. Sus paquetes c
 
 1. `DOC-00`: completado.
 2. `AUTH-01`: completado; gate de lanzamiento de OAuth público satisfecho.
-3. `SEM-01`: siguiente paquete estructural; kickoff pendiente.
+3. `SEM-01`: siguiente paquete estructural activo; contrato de producto aprobado y documentado, revisión de implementación pendiente.
 4. `ATT-01`: registro y asistencia atómicos, pendiente.
 5. `EXP-01`: exportaciones CSV y PDF, pendiente.
 6. `ROLE-01`: roles y autoridad mínima del piloto, pendiente.
@@ -15,7 +15,7 @@ La ejecución inmediata se rige por `MVP_OPERATIONAL_ROADMAP.md`. Sus paquetes c
 9. `ALERT-01`: alertas de riesgo e inboxes, pendiente.
 10. `PILOT-01`: preparación y decisión go/no-go, pendiente.
 
-`DOC-00` y `AUTH-01` están completados. `SEM-01` es el siguiente paquete estructural y su kickoff permanece pendiente. `0011` continúa sin asignarse y no existe; sólo podrá asignarse después de revisar y aprobar el diseño estructural correspondiente. La ejecución canónica se mantiene en `MVP_OPERATIONAL_ROADMAP.md`.
+`DOC-00` y `AUTH-01` están completados. El contrato de producto de `SEM-01` está aprobado y documentado en `SEM_01_DESIGN.md`; la implementación no ha comenzado. `0011` continúa sin asignarse y no existe; sólo podrá asignarse después de revisar el paquete de implementación correspondiente. La ejecución canónica se mantiene en `MVP_OPERATIONAL_ROADMAP.md`.
 
 ## Secuencia histórica supersedida
 

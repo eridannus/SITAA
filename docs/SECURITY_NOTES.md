@@ -207,6 +207,17 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 
 ### Controles planificados para el MVP operativo
 
+#### Frontera futura de SEM-01
+
+El contrato de producto está aprobado en `SEM_01_DESIGN.md`, pero todavía no está implementado y no tiene migración asignada.
+
+- La futura `/admin/periods` y cada Server Action/RPC exigirán perfil activo, `profiles.is_active = true` y asignación vigente `technical_admin/system/technical`, sin programa ni división, con extremos inclusivos según la fecha de `America/Mexico_City`. Ocultar navegación no sustituye autorización.
+- Cada RPC revalidará esa autoridad exacta después de adquirir locks y antes de diagnosticar, auditar o escribir. No se usará `hasActiveRole` como decisión final ni se otorgará `EXECUTE` cliente a helpers privados.
+- `authenticated` conservará lecturas de referencia aprobadas, pero no tendrá DML directo ni capacidad administrativa por poder leer un periodo. Una consulta de periodos tampoco ampliará el universo de actividades visible.
+- PostgreSQL deberá impedir traslapes activos bajo concurrencia. Toda mutación del calendario ejecutará diagnóstico transaccional. Se rechazará cualquier cambio de atribución almacenada, cualquier alteración de resolución de una actividad no borrador y cualquier remapeo masivo. Sólo se permitirá que un borrador con `academic_period_id = NULL` y sin resolución actual pase a ser resoluble; la mutación del periodo no escribirá esa actividad.
+- No habrá `DELETE` de cliente, RPC ni interfaz. El ciclo es desactivar y preservar.
+- La auditoría futura será append-only, sanitizada, acotada y desacoplada del perfil objetivo de `admin_audit_events`; rechazará `UPDATE`, `DELETE` y `TRUNCATE` y no guardará secretos, sesiones, SQL crudo ni filas ajenas completas.
+
 Los paquetes de `MVP_OPERATIONAL_ROADMAP.md` deberán incorporar estos controles antes del piloto:
 
 - **Registro y asistencia atómicos:** el autorregistro inicia deshabilitado por actividad; exige cuenta activa y perfil estudiantil completo. La inserción de participación y confirmación de asistencia se resuelven en una sola transacción idempotente para QR, enlace y código. Un fallo no deja participación parcial ni asistencia huérfana. La corrección manual autorizada permanece disponible y auditada.
