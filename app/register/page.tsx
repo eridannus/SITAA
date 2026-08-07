@@ -55,6 +55,11 @@ export default async function RegisterPage() {
           </Link>
         ))}
       </div>
+      <nav aria-label="Acciones de registro" className="mt-8 flex justify-center">
+        <Link href="/login" className="sitaa-secondary-action">
+          ← Volver al inicio de sesión
+        </Link>
+      </nav>
       <PublicPolicyLinks className="mt-8 border-t border-[var(--sitaa-border)] pt-3" />
     </main>
   );
