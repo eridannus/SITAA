@@ -65,7 +65,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-051 | Transiciones administrativas de ciclo de vida B.2b | Implementada, aplicada, verificada, reconciliada y cerrada mediante 0009 |
 | DEC-052 | Límite Auth confiable y coordinación B.3a | Implementada, aplicada, verificada, probada, reconciliada y cerrada mediante 0010 |
 | DEC-053 | Prioridad del MVP operativo | Aceptada |
-| DEC-054 | Google OAuth público como gate de lanzamiento | Aceptada; AUTH-01 activo/en curso |
+| DEC-054 | Google OAuth público como gate de lanzamiento | Aceptada; AUTH-01 cerrado mediante DEC-065 |
 | DEC-055 | Formularios dinámicos diferidos, no abandonados | Aceptada |
 | DEC-056 | Administración mínima de semestres | Aceptada |
 | DEC-057 | Registro y asistencia atómicos | Aceptada |
@@ -76,6 +76,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-062 | Alertas como enrutamiento, no gestión de casos | Aceptada |
 | DEC-063 | Separación entre diagnóstico técnico y contenido de alertas | Aceptada |
 | DEC-064 | Inbox interno como entrega primaria de alertas | Aceptada |
+| DEC-065 | Production OAuth acceptance by a complete non-tester journey | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -587,7 +588,7 @@ Toda construcción textual o hash que incluya un campo interno `char` de catálo
 
 **Consecuencias:** B.3a tolera fallos parciales sin activar prematuramente una cuenta, permite que otra autoridad B.1 exacta recupere una operación varada y no repite una mutación ya persistida. B.3b —provisión técnica, invitaciones, recuperación y otras operaciones Auth— permanece separada; Fase C conserva la administración de roles. En la etapa de diseño previa a la aplicación, 0010 debía permanecer local y sin aplicar hasta aprobar preflight, migración, verificador, despliegue, matrices Auth y smoke tests.
 
-**Actualización de ejecución:** 0010 fue aplicada y el verificador PostgreSQL corregido fue aprobado. Los casos Hosted Auth 1–12 fueron aprobados por la matriz central; los casos 13–15, por failure/recovery v11; el caso 16, por el verificador; los casos 17–18, por la matriz concurrency/boundaries v8; el caso 19, por la auditoría productiva de secretos; y el caso 20, por el smoke test controlado de producción. El snapshot canónico post‑0010 fue reconciliado sin deriva inexplicada. El rollback 0010 está permanentemente prohibido. B.3a está cerrada y B.3b permanece pendiente.
+**Actualización de ejecución:** 0010 fue aplicada y el verificador PostgreSQL corregido fue aprobado. Los casos Hosted Auth 1–12 fueron aprobados por la matriz central; los casos 13–15, por failure/recovery v11; el caso 16, por el verificador; los casos 17–18, por la matriz concurrency/boundaries v8; el caso 19, por la auditoría productiva de secretos; y el caso 20, por el smoke test controlado de producción. El snapshot canónico post‑0010 fue reconciliado sin deriva inexplicada. El rollback 0010 está permanentemente prohibido. B.3a está cerrada y B.3b permanece diferida.
 
 **Estado:** Implementada, aplicada, verificada, probada, reconciliada y cerrada mediante 0010.
 
@@ -597,19 +598,19 @@ Toda construcción textual o hash que incluya un campo interno `char` de catálo
 
 **Decisión:** adoptar `MVP_OPERATIONAL_ROADMAP.md` como plan canónico próximo, con los IDs estables `DOC-00`, `AUTH-01`, `SEM-01`, `ATT-01`, `EXP-01`, `ROLE-01`, `GRP-01`, `DASH-01`, `ALERT-01` y `PILOT-01`. El objetivo inmediato es sustituir registro y asistencia manuales y habilitar operación por semestre, rol, grupo y programa. Esta decisión sustituye DEC-004 y el orden de ejecución de DEC-038 para el MVP inmediato, sin retirar sus límites de seguridad.
 
-**Consecuencias:** `DOC-00` fue aprobado y publicado; `AUTH-01` es el paquete activo/en curso. Los demás paquetes de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible y se asignará cuando el primer diseño estructural sea aprobado. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
+**Consecuencias:** `DOC-00` y `AUTH-01` están completados. `SEM-01` fue seleccionado como el siguiente paquete estructural, pero su kickoff permanece pendiente. Los demás paquetes de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible, no existe ni está asignado, y únicamente podrá asignarse después de aprobar el diseño estructural correspondiente. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
 
 **Estado:** Aceptada.
 
 ## DEC-054 — Google OAuth público como gate de lanzamiento
 
-**Contexto:** el flujo Google está técnicamente operativo, pero el piloto requiere que la configuración pública, la marca, el dominio, la audiencia y las cuentas no tester hayan sido revisados conforme a requisitos actuales.
+**Contexto:** al aprobar esta decisión, el flujo Google estaba técnicamente operativo, pero el piloto requería revisar la configuración pública, la marca, el dominio, la audiencia y las cuentas no tester conforme a los requisitos vigentes.
 
-**Decisión:** `AUTH-01` es un gate obligatorio que avanza en paralelo. SITAA solicita únicamente `openid`, `userinfo.email` y `userinfo.profile`; audita Audience, Branding, Data Access y Clients; publica inicio/acerca de y privacidad; verifica dominio y marca; revisa separación producción/pruebas; cambia a audiencia de producción y prueba cuentas Gmail e institucionales no tester. Los requisitos se revalidan contra documentación oficial al ejecutar.
+**Decisión:** establecer `AUTH-01` como gate obligatorio de lanzamiento que debía avanzar en paralelo. SITAA solicita únicamente `openid`, `userinfo.email` y `userinfo.profile`; audita Audience, Branding, Data Access y Clients; publica inicio/acerca de y privacidad; verifica dominio y marca; revisa separación producción/pruebas; cambia a audiencia de producción y prueba cuentas no tester. Los requisitos se revalidan contra documentación oficial al ejecutar.
 
-**Consecuencias:** no se añaden scopes de Gmail, Drive, Calendar ni otras APIs. La auditoría manual confirmó Audience External/Testing, un cliente web de producción separado y sólo los tres scopes básicos, con cero sensibles y cero restringidos. `/acerca-de` y `/privacidad` están implementadas localmente; todavía faltan despliegue, verificación de dominio y marca, publicación y smoke tests con cuentas no tester. No se requiere página de términos para el lanzamiento inicial. La preparación técnica previa no equivale a publicación pública aprobada.
+**Consecuencias:** no se añaden scopes de Gmail, Drive, Calendar ni otras APIs. El cierre documentado confirmó audiencia **External**, estado **In production**, marca y propiedad de `sitaa.net` verificadas, páginas públicas desplegadas y sólo los tres scopes básicos, con cero sensibles y cero restringidos. Un recorrido completo con una identidad que nunca fue usuario de prueba produjo un perfil activo sin autoridad elevada automática. No se requiere página de términos para este alcance. DEC-065 precisa el criterio de aceptación y conserva las variaciones por clase de cuenta como regresiones de `PILOT-01`.
 
-**Estado:** Aceptada; `AUTH-01` activo/en curso.
+**Estado:** Aceptada; `AUTH-01` cerrado mediante DEC-065.
 
 ## DEC-055 — Formularios dinámicos diferidos, no abandonados
 
@@ -708,5 +709,29 @@ Toda construcción textual o hash que incluya un campo interno `char` de catálo
 **Decisión:** el inbox interno con contadores es la fuente de verdad para entrega de alertas. El email queda diferido y, si se incorpora, contiene sólo un aviso genérico de que existe una alerta nueva en SITAA.
 
 **Consecuencias:** ningún correo incluye alumno, programa, materia, categoría o contenido de alerta. La entrega interna y sus destinatarios históricos permanecen autoritativos.
+
+**Estado:** Aceptada.
+
+## DEC-065 — Production OAuth acceptance by a complete non-tester journey
+
+**Contexto:** la redacción anterior de `AUTH-01` requería recorridos separados con cuentas no tester de Gmail e institucionales. Crear identidades desechables de producción sólo para repetir el mismo contrato básico de OAuth añadiría perfiles de prueba persistentes sin mejorar materialmente la evidencia actual de lanzamiento.
+
+**Decisión:** cerrar `AUTH-01` cuando se cumplan todas estas condiciones:
+
+- la aplicación es **External** y está **In production**;
+- la marca y la propiedad del dominio están verificadas;
+- sólo se solicitan scopes básicos de identidad;
+- las páginas públicas de inicio y privacidad están desplegadas;
+- al menos una identidad de Google que nunca fue usuario de prueba completa todo el recorrido de registro en producción;
+- el perfil SITAA resultante no recibe autoridad elevada automáticamente.
+
+Las variaciones de Gmail de consumidor, `pc.puma` / UNAM y organizaciones Workspace adicionales permanecen como pruebas de regresión explícitas de `PILOT-01`.
+
+**Consecuencias:**
+
+- no se requiere una identidad de producción desechable adicional únicamente para el cierre documental;
+- las restricciones específicas de una organización que se descubran durante el piloto serán hallazgos operativos, no fallos retroactivos de `AUTH-01`;
+- la distinción entre identidad y autoridad de rol permanece obligatoria;
+- el registro público continúa creando un perfil sin asignaciones de rol académicas o administrativas.
 
 **Estado:** Aceptada.

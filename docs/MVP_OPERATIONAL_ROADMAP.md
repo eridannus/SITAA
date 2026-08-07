@@ -13,8 +13,9 @@ Línea base aprobada:
 - [x] Build de producción en Vercel aprobado.
 - [x] LAB desechable pausado y conservado.
 - [x] **DOC-00 — Completado y publicado:** rebase documental aprobada como fuente canónica.
+- [x] **AUTH-01 — Completado:** gate de lanzamiento público satisfecho y respaldado por evidencia sanitizada.
 
-`0011` es sólo el siguiente número disponible. Se asignará cuando el primer paquete estructural haya sido diseñado, revisado y aprobado; ningún paquete de esta hoja queda ligado anticipadamente a un número de migración.
+`SEM-01` fue seleccionado como el siguiente paquete estructural, pero su kickoff permanece pendiente. `0011` es sólo el siguiente número disponible: no existe, no está asignado y únicamente podrá asignarse después de revisar y aprobar el diseño de `SEM-01`, su preflight, límite de migración, estrategia de verificación y rollback.
 
 ## 2. Principio del MVP inmediato
 
@@ -34,7 +35,7 @@ Los formularios dinámicos permanecen aceptados como arquitectura futura, pero n
 
 - `[x]` completado y sustentado por evidencia.
 - `[ ]` pendiente o gate todavía no aprobado.
-- **En curso / siguiente:** paquete documental activo antes de abrir implementación.
+- **Siguiente / kickoff pendiente:** paquete estructural seleccionado cuyo diseño e implementación todavía no comienzan.
 - **Activo / en curso:** paquete que recibe el trabajo local actual, todavía sin cierre ni publicación de producción.
 - **Gate de lanzamiento:** condición obligatoria para el piloto, aunque pueda desarrollarse en paralelo.
 - Tamaño relativo: `S` pequeño, `M` mediano, `L` grande; no representa calendario ni compromiso de fecha.
@@ -53,15 +54,15 @@ DOC-00
                  └─ ALERT-01 --------------------------┘
 ```
 
-`AUTH-01` avanza en paralelo, pero es gate obligatorio de lanzamiento. `PILOT-01` no puede aprobarse hasta que todas las ramas hayan producido evidencia suficiente.
+`DOC-00` y el gate obligatorio `AUTH-01` están completados. `SEM-01` es el siguiente paquete estructural y su kickoff permanece pendiente. `PILOT-01` no puede aprobarse hasta que las ramas pendientes hayan producido evidencia suficiente.
 
 ## 5. Resumen de paquetes
 
 | ID | Paquete | Estado | Criticidad | Tamaño | Dependencias directas |
 | --- | --- | --- | --- | --- | --- |
 | `DOC-00` | Rebase documental | Completado | Bloqueante | S | Ninguna |
-| `AUTH-01` | Publicación de Google OAuth | Activo / en curso | Gate de lanzamiento | M | `DOC-00` |
-| `SEM-01` | Administración mínima de semestres | Pendiente | Crítica | M | `DOC-00` |
+| `AUTH-01` | Publicación de Google OAuth | Completado | Gate satisfecho | M | `DOC-00` |
+| `SEM-01` | Administración mínima de semestres | Siguiente / kickoff pendiente | Crítica | M | `DOC-00` |
 | `ATT-01` | Registro y asistencia atómicos | Pendiente | Crítica | L | `DOC-00` |
 | `EXP-01` | Exportaciones CSV y PDF | Pendiente | Crítica | M | `DOC-00` |
 | `ROLE-01` | Autoridad y roles mínimos del piloto | Pendiente | Crítica | L | `DOC-00` |
@@ -79,7 +80,7 @@ DOC-00
 - [x] Sustituir la secuencia inmediata anterior sin borrar su historia.
 - [x] Registrar decisiones de producto, seguridad y autoridad.
 - [x] Revisar, aprobar y publicar el cambio documental.
-- [x] Activar `AUTH-01` como siguiente gate; el primer paquete estructural se seleccionará después conforme al grafo.
+- [x] Cerrar `AUTH-01` con evidencia sanitizada y seleccionar `SEM-01` como el primer paquete estructural.
 
 **Salida:** documentación canónica coherente y autorización explícita para diseñar el siguiente paquete, sin reservar todavía una migración.
 
@@ -87,26 +88,26 @@ DOC-00
 
 **Objetivo:** habilitar el acceso público real con identidad básica y sin scopes elevados.
 
-- [x] Auditar manualmente Audience, Branding, Data Access y OAuth Clients: audiencia External/Testing y un cliente web de producción sin URI local, Preview o LAB.
+- [x] Auditar manualmente Audience, Branding, Data Access y OAuth Clients: audiencia **External**, estado **In production** y un cliente web de producción sin URI local, Preview o LAB.
 - [x] Confirmar únicamente `openid`, `userinfo.email` y `userinfo.profile`, con cero scopes sensibles y cero restringidos.
 - [x] Revisar la separación de producción y pruebas del cliente OAuth.
-- [x] Implementar localmente `/acerca-de` y `/privacidad`; todavía no están desplegadas ni verificadas manualmente en producción.
+- [x] Desplegar y verificar manualmente `/acerca-de` y `/privacidad` en producción.
+- [x] Verificar la propiedad de `sitaa.net` mediante Search Console y conservar el registro DNS correspondiente.
+- [x] Completar y verificar la marca, incluido el logotipo mostrado a las personas usuarias.
 - [x] Decidir que no se requiere página de términos para el lanzamiento inicial.
-- [ ] Desplegar y verificar manualmente `/acerca-de` y `/privacidad` en producción.
-- [ ] Verificar el dominio mediante Search Console.
-- [ ] Completar los campos de Branding y cargar el logotipo.
-- [ ] Completar la verificación de marca.
-- [ ] Publicar la aplicación para audiencia de producción.
-- [ ] Probar una cuenta Gmail que no sea tester.
-- [ ] Probar una cuenta institucional que no sea tester.
-- [ ] Revalidar los requisitos vigentes en documentación oficial de Google al ejecutar el paquete.
+- [x] Completar un recorrido de producción con una identidad que nunca fue usuario de prueba y confirmar que el perfil resultante no recibió autoridad elevada automáticamente, conforme a DEC-065.
+- [x] Revalidar los requisitos vigentes de Google al cerrar el paquete.
+- [x] Registrar la evidencia sanitizada en `docs/AUTH_01_PUBLIC_OAUTH_EVIDENCE.md`.
 
 **No incluye:** Gmail, Drive, Calendar ni otros scopes o APIs de Google.
+
+**Estado:** completado; gate de lanzamiento público satisfecho. Las variaciones de Gmail de consumidor, `pc.puma` / UNAM y organizaciones Workspace adicionales permanecen como regresiones de `PILOT-01`.
 
 ## 8. SEM-01 — Administración mínima de semestres
 
 **Objetivo:** permitir que sólo una autoridad técnica exacta administre los semestres oficiales requeridos para la operación, sin restringir las lecturas de referencia ya autorizadas.
 
+- [ ] Revisar y aprobar el kickoff de diseño de `SEM-01`, incluido preflight, límite de migración, verificador y rollback, sin asignar todavía `0011`.
 - [ ] Autorizar exclusivamente a `technical_admin` exacto y activo para acceder a la superficie administrativa.
 - [ ] Reservar el listado administrativo y la creación, actualización, activación o desactivación de semestres a esa autoridad técnica.
 - [ ] Mantener disponibles las lecturas autorizadas de periodos activos o históricos como datos de referencia en actividades, filtros, reportes y otras vistas ya permitidas por el universo visible de cada perfil.
@@ -256,7 +257,13 @@ Antes de desplegar `ALERT-01` se debe revisar y actualizar el aviso público de 
 
 **Objetivo:** demostrar que el flujo completo puede operar con seguridad, soporte y procedimientos claros.
 
-- [ ] Publicar Google OAuth para audiencia real.
+- [x] Conservar como línea base el gate `AUTH-01` aprobado para audiencia **External** y estado **In production**.
+- [ ] Probar una cuenta Gmail de consumidor.
+- [ ] Probar una cuenta Google `pc.puma` / UNAM.
+- [ ] Probar otra organización institucional de Workspace cuando esté disponible.
+- [ ] Probar la cancelación del consentimiento.
+- [ ] Probar el rechazo por política organizacional y el retorno posterior.
+- [ ] Probar el inicio de sesión repetido después de completar un registro existente.
 - [ ] Configurar un semestre real.
 - [ ] Asignar roles iniciales y grupos del piloto.
 - [ ] Completar asignaciones de tutores con sus roles habilitantes.
@@ -271,7 +278,7 @@ Antes de desplegar `ALERT-01` se debe revisar y actualizar el aviso público de 
 ## 16. Gates de entrega
 
 1. **Gate documental:** `DOC-00` aprobado y publicado.
-2. **Gate de identidad pública:** `AUTH-01` aprobado con cuentas no tester.
+2. **Gate de identidad pública:** `AUTH-01` aprobado mediante al menos una identidad de Google que nunca fue usuario de prueba, conforme a `DEC-065`.
 3. **Gate de configuración:** semestre real válido y administrable.
 4. **Gate de autoridad:** roles mínimos, tutores y grupos consistentes.
 5. **Gate de operación:** actividad publicada, registro/check-in atómico y corrección manual.
@@ -325,7 +332,7 @@ Estos detalles requieren diseño, amenaza, preflight y revisión propios. No se 
 
 - Cada paquete inicia con revisión de fuentes canónicas, amenazas, permisos y datos sensibles.
 - La documentación y la decisión preceden al código o DDL.
-- Ningún número de migración se reserva antes de aprobar el diseño estructural; `0011` se asignará sólo al primer paquete que realmente lo requiera.
+- Ningún número de migración se reserva antes de aprobar el diseño estructural; `0011` permanece sin asignar y sólo podrá asignarse después de revisar y aprobar el diseño de `SEM-01`, su preflight, límite de migración, estrategia de verificación y rollback.
 - Las migraciones aplicadas permanecen inmutables y todo cambio nuevo es incremental, no destructivo y reconciliable.
 - RLS/RPC construyen el universo autorizado; la interfaz nunca sustituye autorización de base.
 - Todo cambio estructural exige preflight, aplicación coordinada, verificador transaccional, rollback revisado, pruebas, snapshot y reconciliación según riesgo.

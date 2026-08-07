@@ -10,12 +10,13 @@ La secuencia canónica de entrega está en `MVP_OPERATIONAL_ROADMAP.md`.
 
 ### Identidad y acceso público
 
-- Google OAuth público como gate de lanzamiento, con `openid`, `userinfo.email` y `userinfo.profile` exclusivamente.
+- Gate de lanzamiento de Google OAuth público completado: audiencia **External**, estado **In production** y `openid`, `userinfo.email` y `userinfo.profile` exclusivamente.
 - Flujos públicos diferenciados para alumnos y profesores, con identidad institucional completada después de Google.
 - Cuentas técnicas internas separadas del registro público.
 - Acceso por correo/contraseña sólo para cuentas heredadas.
 - Perfiles activos y completos como requisito de operación; identidad no concede automáticamente tutoría, asesoría o gestión.
 - Rutas públicas `/acerca-de` y `/privacidad`, además de dominio verificado y configuración Google publicada para audiencia de producción.
+- Las variaciones por clase de cuenta —Gmail de consumidor, `pc.puma` / UNAM y organizaciones Workspace adicionales— permanecen como regresiones explícitas de `PILOT-01`.
 
 ### Configuración de semestre
 
@@ -128,7 +129,7 @@ En paralelo, cualquier profesor activo puede emitir una alerta mínima; SITAA fi
 
 ## Criterios de aceptación globales
 
-- Google OAuth público funciona con cuentas no tester y scopes básicos exclusivamente.
+- Google OAuth público tiene su gate aprobado mediante un recorrido completo de producción con una identidad que nunca fue usuario de prueba y scopes básicos exclusivamente.
 - RLS y RPC limitan toda operación por cuenta activa, rol, alcance, servicio, programa y vigencia.
 - Ninguna participación o asistencia válida carece de perfil SITAA elegible.
 - Autorregistro y asistencia se confirman atómicamente e idempotentemente.

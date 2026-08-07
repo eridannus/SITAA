@@ -9,6 +9,7 @@ SITAA manejará identidad, matrícula o número de empleado, pertenencia académ
 ### Identidad y sesión
 
 - Usar Supabase Auth con Google OAuth para registro y login público. No restringir dominios ni usar `hd`; aceptar Gmail, Workspace y `pc.puma` con scopes básicos `openid`, `email`, `profile`.
+- `AUTH-01` está cerrado: Google OAuth público usa audiencia **External**, está **In production**, muestra la marca verificada y opera sobre la propiedad verificada de `sitaa.net`. Solicita únicamente los tres scopes básicos de identidad y el registro público no concede roles de forma automática. Las variaciones de Gmail de consumidor, `pc.puma` / UNAM y otras organizaciones institucionales permanecen como regresiones de `PILOT-01`.
 - 0004 crea `pending_registration` para Google nuevo y sólo activa mediante un RPC autenticado que completa el propio perfil. SMTP no es requisito. El acceso correo/contraseña permanece únicamente para identidades heredadas.
 - Las cuentas `technical` siguen siendo exclusivamente administrativas: sólo `app_metadata` confiable puede originarlas; el formulario público no controla tipo de cuenta, estado ni roles.
 - SITAA no permite cuentas que existan sólo en Auth. Cada alta debe resolver exactamente un camino institucional o técnico y crear exactamente un perfil; metadata ausente, no soportada o ambigua aborta la transacción completa sin dejar un Auth user huérfano.
@@ -202,7 +203,7 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - La reconciliación del snapshot `2026-08-06T23:33:15Z` confirmó `admin_auth_operations` con RLS habilitado, cero políticas cliente y ACL directo exclusivo del owner. `PUBLIC`, `anon`, `authenticated` y `service_role` no tienen acceso directo a la tabla; el servicio confiable opera únicamente mediante claim y record aprobados.
 - Las seis funciones B.3a conservan ACL exactas sin grant option delegado: trigger owner-only; contexto, prepare y finalize para owner más `authenticated`; claim y record para owner más `service_role`. El mutador B.2b ya no es ejecutable directamente por `authenticated` y queda owner-only.
 - Las políticas RLS previas, los privilegios de secuencia y los 51 registros de catálogos controlados permanecen sin cambio. El snapshot estructural no contiene secretos, perfiles ni filas de ledger, auditoría u otros datos operativos; esas operaciones reales se sustentan por la evidencia separada del smoke test.
-- B.3a está cerrada: 1–12 están aprobados por la matriz central, 13–15 por failure/recovery v11, 16 por el verificador, 17–18 por concurrencia/límites v8, 19 por la auditoría productiva de ausencia de secretos, 20 por el smoke test productivo y el estado estructural por la reconciliación post‑0010. B.3b permanece pendiente.
+- B.3a está cerrada: 1–12 están aprobados por la matriz central, 13–15 por failure/recovery v11, 16 por el verificador, 17–18 por concurrencia/límites v8, 19 por la auditoría productiva de ausencia de secretos, 20 por el smoke test productivo y el estado estructural por la reconciliación post‑0010. B.3b permanece diferida.
 
 ### Controles planificados para el MVP operativo
 

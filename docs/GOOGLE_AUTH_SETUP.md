@@ -38,43 +38,51 @@ La vinculación automática de identidades por correo verificado se administra e
 
 ## Publicación pública a producción
 
-**Estado de preparación:** `AUTH-01` activo/en curso. La Fase A funciona técnicamente y la auditoría manual inicial de Google Cloud está completa; la publicación pública y sus pruebas no tester siguen pendientes.
+**Estado:** `AUTH-01` cerrado. Google OAuth público usa audiencia **External**, está **In production** y completó un recorrido de registro en producción con una identidad que nunca perteneció a la lista anterior de usuarios de prueba.
 
 Estado manual observado y aprobado para este checkpoint:
 
-- Audience: **External / Testing**.
+- Audience: **External**.
+- Publishing status: **In production**.
+- La marca está verificada, se muestra a las personas usuarias e incluye la identidad y el logotipo de SITAA.
+- La propiedad de `sitaa.net` está verificada en Search Console y el registro DNS de verificación permanece presente.
+- La página pública `https://www.sitaa.net/acerca-de` y el aviso `https://www.sitaa.net/privacidad` están desplegados.
+- No se configuró una página específica de términos de servicio para este alcance.
 - Un cliente **Web application** de producción, con origen JavaScript y callback Supabase de producción configurados.
 - El cliente de producción no contiene URI local, Preview ni LAB.
 - Data Access solicita únicamente `openid`, `userinfo.email` y `userinfo.profile`.
 - Cero scopes sensibles y cero scopes restringidos.
 - Ningún scope o API de Gmail, Drive, Calendar u otro producto Google.
+- Un registro completo de producción produjo un perfil institucional de alumno activo y cero asignaciones de rol automáticas.
+- La evidencia sanitizada de cierre está en `docs/AUTH_01_PUBLIC_OAUTH_EVIDENCE.md`.
 
 - [x] Auditar **Audience**, **Branding**, **Data Access** y **OAuth Clients** en Google Cloud.
 - [x] Confirmar que sólo se solicitan `openid`, `userinfo.email` y `userinfo.profile`.
 - [x] Confirmar cero scopes sensibles y cero scopes restringidos.
 - [x] Revisar la separación entre producción y pruebas del cliente OAuth.
-- [x] Implementar localmente la página pública `/acerca-de`.
-- [x] Implementar localmente el aviso público `/privacidad`.
+- [x] Desplegar y verificar manualmente `/acerca-de` y `/privacidad` en producción.
+- [x] Verificar la propiedad de `sitaa.net` mediante Search Console y conservar el registro DNS correspondiente.
+- [x] Completar los campos de **Branding**, cargar el logotipo y comprobar que la marca verificada se muestra.
+- [x] Publicar la aplicación para audiencia de producción.
+- [x] Completar un recorrido de registro en producción con una identidad que nunca fue usuario de prueba, conforme a DEC-065.
 - [x] Decidir que no se requiere una página de términos para el lanzamiento inicial.
-- [ ] Desplegar y verificar manualmente `/acerca-de` y `/privacidad` en producción.
-- [ ] Verificar la propiedad del dominio mediante Search Console.
-- [ ] Completar los campos de **Branding**.
-- [ ] Cargar el logotipo de la aplicación.
-- [ ] Completar la verificación de marca.
-- [ ] Publicar la aplicación para audiencia de producción.
-- [ ] Probar acceso y registro con una cuenta Gmail que no sea tester.
-- [ ] Probar acceso y registro con una cuenta institucional que no sea tester.
-- [ ] Confirmar nuevamente que no se añadió Gmail, Drive, Calendar ni otro scope o API de Google.
+- [x] Confirmar nuevamente que no se añadió Gmail, Drive, Calendar ni otro scope o API de Google.
 
 Los requisitos, nombres de pantallas y procesos de verificación de Google pueden cambiar. Antes de ejecutar cada paso deben contrastarse nuevamente con la documentación oficial vigente; esta lista no sustituye esa revisión.
 
 ## Criterios operativos
 
-- Probar Gmail personal, `pcpuma.acatlan.unam.mx` y otro Workspace.
+Las variaciones de cuenta y recuperación permanecen como regresiones de `PILOT-01`, no como bloqueos de `AUTH-01`:
+
+- probar una cuenta Gmail de consumidor;
+- probar una cuenta Google `pc.puma` / UNAM;
+- probar otra organización institucional de Workspace cuando esté disponible;
+- cancelar el consentimiento y comprobar el retorno con error sanitizado;
+- comprobar el retorno después de un rechazo por política organizacional;
+- repetir el inicio de sesión después de completar un registro existente.
+
 - Confirmar que no se envía correo de activación ni se requiere SMTP.
-- Confirmar que cancelar consentimiento vuelve con error sanitizado.
 - Confirmar que cuentas activas, inactivas y pendientes siguen rutas distintas.
 - Confirmar que una cuenta compartida muestra advertencia, pero no se detecta ni bloquea automáticamente.
-- La configuración External/Testing debe incluir expresamente las cuentas Gmail y `pc.puma` usadas como test users.
 - 0005 permite que Supabase complete su secuencia OAuth aunque `email_confirmed_at` sea nulo durante el `INSERT`; la verificación final ocurre contra la identidad Google enlazada al completar el perfil.
 - El snapshot `2026-07-17T23:20:07Z` reconcilia el resultado vivo de 0001–0005. No quedaron cuentas fallidas que requirieran limpieza.
