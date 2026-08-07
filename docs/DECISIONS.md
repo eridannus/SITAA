@@ -15,7 +15,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-001 | Plataforma web y stack base | Aceptada |
 | DEC-002 | Supabase como backend administrado | Aceptada |
 | DEC-003 | Autorización mediante RLS | Aceptada |
-| DEC-004 | Primera entrega limitada al MVP | Aceptada |
+| DEC-004 | Primera entrega limitada al MVP | Sustituida por DEC-053 |
 | DEC-005 | Formularios dinámicos versionados | Aceptada |
 | DEC-006 | Roles mediante asignaciones múltiples y acotadas | Aceptada |
 | DEC-007 | Evidencia interna y participantes registrados | Aceptada |
@@ -54,11 +54,28 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-047 | Directorio de cuentas de sólo lectura y base de auditoría administrativa | Aceptada |
 | DEC-048 | Cierre y reconciliación de Fase B.1 / migración 0007 | Aceptada |
 | DEC-037 | Administración confiable y filtrado posterior a autorización | Aceptada |
-| DEC-038 | Implementación por fases y check-in abierto posterior | Aceptada |
+| DEC-038 | Implementación por fases y check-in abierto posterior | Sustituida para ejecución inmediata por DEC-053 |
 | DEC-039 | Sincronización Auth/profile en Fase A | Aceptada |
 | DEC-040 | Contrato de aplicación coordinada de identidad 0004 | Aceptada |
 | DEC-041 | Verificación Google diferida hasta la finalización institucional | Aceptada |
 | DEC-042 | Cierre reconciliado de identidad y Google OAuth | Aceptada |
+| DEC-043 | Identidad visual y nombres personales estructurados | Implementada, aplicada, verificada y reconciliada en 0006 |
+| DEC-049 | Barrera operativa de cuenta activa y corrección administrativa de identidad | Aceptada e implementada; cierre canónico en DEC-050 |
+| DEC-050 | Cierre y reconciliación de Fase B.2a / migración 0008 | Aceptada; Fase B.2a cerrada y reconciliada sin deriva inexplicada |
+| DEC-051 | Transiciones administrativas de ciclo de vida B.2b | Implementada, aplicada, verificada, reconciliada y cerrada mediante 0009 |
+| DEC-052 | Límite Auth confiable y coordinación B.3a | Implementada, aplicada, verificada, probada, reconciliada y cerrada mediante 0010 |
+| DEC-053 | Prioridad del MVP operativo | Aceptada |
+| DEC-054 | Google OAuth público como gate de lanzamiento | Aceptada |
+| DEC-055 | Formularios dinámicos diferidos, no abandonados | Aceptada |
+| DEC-056 | Administración mínima de semestres | Aceptada |
+| DEC-057 | Registro y asistencia atómicos | Aceptada |
+| DEC-058 | CSV y PDF como salidas operativas centrales | Aceptada |
+| DEC-059 | Grupos de tutoría por programa y periodo | Aceptada |
+| DEC-060 | Rol de tutor previo a la asignación de grupo | Aceptada |
+| DEC-061 | Autoridad mínima de roles para el piloto | Aceptada |
+| DEC-062 | Alertas como enrutamiento, no gestión de casos | Aceptada |
+| DEC-063 | Separación entre diagnóstico técnico y contenido de alertas | Aceptada |
+| DEC-064 | Inbox interno como entrega primaria de alertas | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -90,7 +107,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Consecuencias:** el constructor configura campos y versiones, pero no es todavía un motor general de procesos.
 
-**Estado:** Aceptada.
+**Estado:** Sustituida por DEC-053 para el alcance inmediato. Su límite general de complejidad y la arquitectura posterior de formularios se conservan.
 
 ## DEC-005 — Formularios dinámicos versionados
 
@@ -444,7 +461,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 
 **Consecuencias:** el check-in abierto no forma parte de la Fase A. Conserva el mensaje normal de éxito, valida cuenta/programa/elegibilidad y no cambia la ausencia normal de participantes registrados que no asisten. Cada fase puede usar una o más migraciones posteriores sin reescribir 0001–0005.
 
-**Estado:** Aceptada.
+**Estado:** Sustituida por DEC-053 para la ejecución inmediata. Sus dependencias de seguridad y el contrato atómico de check-in se conservan.
 
 ## DEC-041 — Verificación Google diferida hasta la finalización institucional
 
@@ -560,7 +577,7 @@ El hardening previo a aplicación fija una máquina de estados exacta, writers d
 
 Cada resultado privilegiado queda cercado por el `attempt_count` exacto devuelto por claim. Un resultado tardío de un intento anterior falla con `sitaa_auth_operation_stale_attempt` antes de insertar auditoría o mutar la fila. Prepare, claim, record y finalize capturan un único `clock_timestamp()` después de los locks requeridos y nunca retroceden respecto de `updated_at`; el contexto puede usar `statement_timestamp()` sólo para presentar reintentabilidad. La evidencia no nula (`profile_audit_event_id`, `auth_audit_event_id`, `auth_synchronized_at`, `completed_at`) es inmutable por valor. Un fallo terminal sólo es válido antes de sincronizar Auth y sin evidencia previa de éxito.
 
-Los eventos de ciclo B.2b y sincronización Auth son evidencias diferentes, no duplicación: el primero acredita el perfil y conserva al actor de esa mutación; el segundo acredita la fase privilegiada y usa como actor al administrador que realmente ejecutó o reintentó Auth. `requested_by_profile_id` permanece como solicitante original y `completed_by_profile_id` como ejecutor final. No se almacenan errores crudos, tokens, correo ni identidad del proveedor. El valor de restauración `ban_duration = 'none'` y la duración larga de suspensión se aislaron conforme a los tipos instalados de `@supabase/auth-js`; su comportamiento en el servicio hospedado todavía requiere prueba empírica desechable. Hasta esa comprobación y hasta diseñar una recuperación explícita, el adaptador provisional clasifica 400, 401, 403, 404, 422, red, timeout, 429, 5xx y desconocidos como reintentables; el modelo SQL conserva `terminal_failure`, pero la Edge provisional no lo emite. No se afirma invalidación inmediata de JWT ni de refresh tokens.
+Los eventos de ciclo B.2b y sincronización Auth son evidencias diferentes, no duplicación: el primero acredita el perfil y conserva al actor de esa mutación; el segundo acredita la fase privilegiada y usa como actor al administrador que realmente ejecutó o reintentó Auth. `requested_by_profile_id` permanece como solicitante original y `completed_by_profile_id` como ejecutor final. No se almacenan errores crudos, tokens, correo ni identidad del proveedor. En la etapa de diseño previa a la aplicación, el valor de restauración `ban_duration = 'none'` y la duración larga de suspensión se aislaron conforme a los tipos instalados de `@supabase/auth-js`, pero su comportamiento en el servicio hospedado todavía requería prueba empírica desechable. Hasta esa comprobación y hasta diseñar una recuperación explícita, el adaptador provisional clasificaba 400, 401, 403, 404, 422, red, timeout, 429, 5xx y desconocidos como reintentables; el modelo SQL conservaba `terminal_failure`, pero la Edge provisional no lo emitía. Esa etapa no afirmaba invalidación inmediata de JWT ni de refresh tokens.
 
 La restricción única de `request_id` y su índice físico comparten el nombre canónico `admin_auth_operations_request_id_key`; se prohíbe construirlos mediante un índice de nombre distinto y `UNIQUE USING INDEX`. El contrato se verifica por `pg_constraint.conindid` y por la forma completa de `pg_index`. La preparación acepta únicamente `deactivate|reactivate` exactos y rechaza también `NULL`. Antes de capturar hashes transaccionales, el preflight embebido debe demostrar el mismo baseline post‑0009 que el independiente; el rollback repite los mapas canónicos de metadata, ACL, estructura, semillas, Auth y auditoría antes de destruir y después de restaurar.
 
@@ -568,6 +585,128 @@ El verificador 0010 separa estrictamente ejecución cliente y observación owner
 
 Toda construcción textual o hash que incluya un campo interno `char` de catálogos PostgreSQL debe convertirlo explícitamente con `::text`; no se admiten casts implícitos. Las RPC mutables B.3a autorizan de forma optimista, adquieren sus locks y vuelven a exigir autoridad B.1 exacta antes de replay, estado, intento, auditoría o DML. La Edge representa una pérdida posterior como `authorization_lost/pending` y aplica una matriz cerrada de código/estado/UUID. `completed` por sí solo no prueba éxito: el código debe corresponder exactamente a la transición enviada.
 
-**Consecuencias:** B.3a tolera fallos parciales sin activar prematuramente una cuenta, permite que otra autoridad B.1 exacta recupere una operación varada y no repite una mutación ya persistida. B.3b —provisión técnica, invitaciones, recuperación y otras operaciones Auth— permanece separada; Fase C conserva la administración de roles. 0010 continúa local y sin aplicar hasta aprobar preflight, migración, verificador, despliegue, matriz Auth desechable y smoke tests.
+**Consecuencias:** B.3a tolera fallos parciales sin activar prematuramente una cuenta, permite que otra autoridad B.1 exacta recupere una operación varada y no repite una mutación ya persistida. B.3b —provisión técnica, invitaciones, recuperación y otras operaciones Auth— permanece separada; Fase C conserva la administración de roles. En la etapa de diseño previa a la aplicación, 0010 debía permanecer local y sin aplicar hasta aprobar preflight, migración, verificador, despliegue, matrices Auth y smoke tests.
 
-**Estado:** Diseño aceptado y preparado localmente; B.3a abierta y sin evidencia hospedada.
+**Actualización de ejecución:** 0010 fue aplicada y el verificador PostgreSQL corregido fue aprobado. Los casos Hosted Auth 1–12 fueron aprobados por la matriz central; los casos 13–15, por failure/recovery v11; el caso 16, por el verificador; los casos 17–18, por la matriz concurrency/boundaries v8; el caso 19, por la auditoría productiva de secretos; y el caso 20, por el smoke test controlado de producción. El snapshot canónico post‑0010 fue reconciliado sin deriva inexplicada. El rollback 0010 está permanentemente prohibido. B.3a está cerrada y B.3b permanece pendiente.
+
+**Estado:** Implementada, aplicada, verificada, probada, reconciliada y cerrada mediante 0010.
+
+## DEC-053 — Prioridad del MVP operativo
+
+**Contexto:** las bases de identidad, actividades y asistencia ya existen, pero la secuencia inmediata anterior mantenía formularios dinámicos y fases generales por delante de los procesos que hoy continúan en papel, Formularios de Google y hojas de cálculo.
+
+**Decisión:** adoptar `MVP_OPERATIONAL_ROADMAP.md` como plan canónico próximo, con los IDs estables `DOC-00`, `AUTH-01`, `SEM-01`, `ATT-01`, `EXP-01`, `ROLE-01`, `GRP-01`, `DASH-01`, `ALERT-01` y `PILOT-01`. El objetivo inmediato es sustituir registro y asistencia manuales y habilitar operación por semestre, rol, grupo y programa. Esta decisión sustituye DEC-004 y el orden de ejecución de DEC-038 para el MVP inmediato, sin retirar sus límites de seguridad.
+
+**Consecuencias:** `DOC-00` es el paquete actual/siguiente; los paquetes de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible y se asignará cuando el primer diseño estructural sea aprobado. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
+
+**Estado:** Aceptada.
+
+## DEC-054 — Google OAuth público como gate de lanzamiento
+
+**Contexto:** el flujo Google está técnicamente operativo, pero el piloto requiere que la configuración pública, la marca, el dominio, la audiencia y las cuentas no tester hayan sido revisados conforme a requisitos actuales.
+
+**Decisión:** `AUTH-01` es un gate obligatorio que avanza en paralelo. SITAA solicita únicamente `openid`, `userinfo.email` y `userinfo.profile`; audita Audience, Branding, Data Access y Clients; publica inicio/acerca de y privacidad; verifica dominio y marca; revisa separación producción/pruebas; cambia a audiencia de producción y prueba cuentas Gmail e institucionales no tester. Los requisitos se revalidan contra documentación oficial al ejecutar.
+
+**Consecuencias:** no se añaden scopes de Gmail, Drive, Calendar ni otras APIs. La preparación técnica previa no equivale a publicación pública aprobada.
+
+**Estado:** Aceptada.
+
+## DEC-055 — Formularios dinámicos diferidos, no abandonados
+
+**Contexto:** DEC-005 acepta formularios configurables y versionados, pero su implementación no sustituye la necesidad inmediata de registro, asistencia y padrones operativos.
+
+**Decisión:** conservar íntegra la arquitectura de DEC-005 y programarla después del MVP operativo inicial. Los formularios dinámicos no son gate de `PILOT-01`.
+
+**Consecuencias:** no se implementa una solución rígida que invalide la arquitectura futura, pero tampoco se retrasa el piloto por el constructor, respuestas versionadas o reportes configurables.
+
+**Estado:** Aceptada.
+
+## DEC-056 — Administración mínima de semestres
+
+**Contexto:** las actividades ya asignan semestre automáticamente, pero la operación requiere mantener rangos oficiales sin abrir administración general de catálogos.
+
+**Decisión:** en `SEM-01`, sólo `technical_admin` exacto y activo puede acceder al listado administrativo y crear, actualizar, activar o desactivar semestres. Los códigos son únicos, los rangos no se traslapan y un semestre histórico referenciado no se elimina destructivamente. Esta autoridad exclusiva no impide que perfiles operativos autorizados lean periodos activos o históricos como referencia en actividades, filtros, reportes u otras vistas dentro de su universo visible; leer un periodo nunca concede permiso para administrarlo.
+
+**Consecuencias:** usuarios operativos no seleccionan, asignan ni reescriben el semestre de una actividad; éste continúa derivándose de su fecha. La administración general de catálogos permanece diferida.
+
+**Estado:** Aceptada.
+
+## DEC-057 — Registro y asistencia atómicos
+
+**Contexto:** el check-in actual exige prerregistro. Para reemplazar formularios de registro, una actividad necesita permitir de manera explícita que un alumno SITAA se registre al confirmar asistencia.
+
+**Decisión:** `ATT-01` añade una opción por actividad, deshabilitada por defecto. Si está habilitada, QR, enlace y código validan perfil estudiantil activo y completo, insertan la participación faltante y confirman asistencia en una sola transacción. Los reintentos son idempotentes y la corrección manual continúa disponible.
+
+**Consecuencias:** un fallo no deja registro parcial. No se introducen participantes anónimos, texto libre, perfiles provisionales ni registro abierto separado de la asistencia.
+
+**Estado:** Aceptada.
+
+## DEC-058 — CSV y PDF como salidas operativas centrales
+
+**Contexto:** responsables y coordinación necesitan sustituir hojas de cálculo y listas impresas, aunque los reportes avanzados sigan fuera de alcance.
+
+**Decisión:** `EXP-01` entrega CSV UTF-8 con encabezados en español y PDF institucional imprimible. Ambos derivan del mismo dataset autorizado que el padrón visible e incluyen metadata y totales necesarios, sin UUID, tokens o identificadores técnicos.
+
+**Consecuencias:** CSV/PDF son núcleo del MVP operativo. Se prueban caracteres españoles, fórmulas CSV, paginación, permisos y consistencia de totales; el constructor configurable de reportes permanece diferido.
+
+**Estado:** Aceptada.
+
+## DEC-059 — Grupos de tutoría por programa y periodo
+
+**Contexto:** el grupo cambia por semestre y no es una propiedad estable del perfil. Los directorios informales no conservan membresía o tutoría histórica.
+
+**Decisión:** `GRP-01` modela grupos separados de `profiles`, acotados por programa y periodo, con código, turno, semestre nominal, cohorte/generación, etiqueta y estado. El código puede reutilizarse en otro periodo. Un alumno tiene como máximo un grupo actual por programa/periodo; un grupo tiene un tutor primario actual y un tutor puede tener varios grupos. Un `program_tutoring_lead` activo administra el ciclo de vida, las membresías y la asignación o transferencia de tutores sólo dentro de su programa y mediante una asignación habilitante `professor_tutor` vigente del mismo programa. El bootstrap técnico de roles no sustituye esa autoridad académica.
+
+**Consecuencias:** membresías y tutores se cierran o revocan, no se eliminan. La importación CSV sólo enlaza perfiles SITAA existentes; los identificadores no encontrados se reportan sin crear perfiles provisionales. Las selecciones filtradas materializan asignaciones sobre filas explícitas, no reglas dinámicas permanentes. Estudiantes consultan su grupo actual y el contacto de tutor expresamente permitido; tutores consultan sus grupos y padrones dentro del universo actual o histórico que tengan autorizado.
+
+**Estado:** Aceptada.
+
+## DEC-060 — Rol de tutor previo a la asignación de grupo
+
+**Contexto:** asignar un grupo directamente a un perfil de profesor permitiría omitir elegibilidad, programa, vigencia y autoridad del rol tutor.
+
+**Decisión:** el orden obligatorio es rol primero y grupo después. Una asignación de tutor referencia la fila concreta `professor_tutor` vigente para el mismo programa.
+
+**Consecuencias:** el rol no puede revocarse mientras existan grupos activos que dependan de él. Antes se transfieren o concluyen esos grupos; la historia de rol y tutoría permanece trazable.
+
+**Estado:** Aceptada.
+
+## DEC-061 — Autoridad mínima de roles para el piloto
+
+**Contexto:** el piloto requiere roles académicos concretos, pero no toda la administración, transferencia y delegación prevista por Fase C.
+
+**Decisión:** `ROLE-01` implementa `technical_admin`, `professor_tutor`, `professor_advisor`, `peer_tutor`, leads de tutoría/asesoría, coordinación de programa, enlace divisional y sólo roles adicionales justificados. `technical_admin` realiza el bootstrap institucional de alto nivel; `program_tutoring_lead` asigna o revoca `professor_tutor` y `peer_tutor` sólo en su programa; y `program_advising_lead` asigna o revoca `professor_advisor` sólo en su programa.
+
+**Consecuencias:** toda asignación valida elegibilidad, alcance, programa, estado de cuenta, vigencia y no autoasignación, y conserva auditoría. Transferencia completa de administración técnica, delegación general y retiro de A-02 permanecen diferidos.
+
+**Estado:** Aceptada.
+
+## DEC-062 — Alertas como enrutamiento, no gestión de casos
+
+**Contexto:** los avisos académicos informales pueden perder destinatarios e historia, pero almacenar expedientes o narrativa clínica ampliaría de forma injustificada la sensibilidad y responsabilidad del sistema.
+
+**Decisión:** todo profesor activo puede crear una señal mínima con categorías cerradas `absences`, `missing_work` o `socioemotional_attention`. SITAA fija destinatarios académicos según programa/categoría y conserva estados `new`, `acknowledged` y `archived`. No diagnostica, gestiona casos, guarda notas clínicas ni sustituye protocolos institucionales.
+
+**Consecuencias:** los destinatarios quedan en snapshot al crear la alerta; cambios posteriores de roles no reescriben historia. Las pruebas usan perfiles académicos ficticios.
+
+**Estado:** Aceptada.
+
+## DEC-063 — Separación entre diagnóstico técnico y contenido de alertas
+
+**Contexto:** soporte necesita saber si el routing funcionó, pero una asignación técnica no justifica leer información académica de riesgo.
+
+**Decisión:** `technical_admin` no obtiene contenido de alertas por su rol técnico. Sólo ve timestamp, programa de routing, conteo de destinatarios, estado de entrega, código estable de error y último intento.
+
+**Consecuencias:** no expone nombre, identificador, materia, categoría ni señal académica. Pruebas de contenido se realizan con perfiles académicos ficticios; LAB se reserva para escenarios sintéticos destructivos.
+
+**Estado:** Aceptada.
+
+## DEC-064 — Inbox interno como entrega primaria de alertas
+
+**Contexto:** el correo puede retrasarse, reenviarse o exponer información sensible fuera del control de SITAA.
+
+**Decisión:** el inbox interno con contadores es la fuente de verdad para entrega de alertas. El email queda diferido y, si se incorpora, contiene sólo un aviso genérico de que existe una alerta nueva en SITAA.
+
+**Consecuencias:** ningún correo incluye alumno, programa, materia, categoría o contenido de alerta. La entrega interna y sus destinatarios históricos permanecen autoritativos.
+
+**Estado:** Aceptada.

@@ -8,7 +8,7 @@ No guardar Client ID, Client Secret, cookies ni tokens en el repositorio. Esta g
 
 1. Crear o elegir un proyecto de Google Cloud.
 2. Configurar la audiencia OAuth como **External**.
-3. Solicitar únicamente identidad básica: `openid`, `email` y `profile`.
+3. Solicitar únicamente identidad básica: `openid`, `userinfo.email` y `userinfo.profile`.
 4. Crear un cliente OAuth de tipo **Web application**.
 5. Copiar desde la pantalla del proveedor Google en Supabase la URI exacta de callback de Supabase y registrarla en **Authorized redirect URIs** de Google.
 6. Guardar Client ID y Client Secret únicamente en la configuración del proveedor Google de Supabase.
@@ -35,6 +35,24 @@ La vinculación automática de identidades por correo verificado se administra e
 - No enviar identificadores, programa o nombre institucional en `redirectTo`, `state` o URLs.
 - El callback canónico es `/auth/callback`; la cookie temporal de tipo de registro es `HttpOnly`, contiene sólo `student` o `professor` y se limita a esa ruta.
 - Los datos institucionales se capturan después de Google; no existe escritura anónima de registro ni endpoint de disponibilidad de identificadores.
+
+## Publicación pública a producción
+
+**Estado de preparación:** pendiente. La Fase A funciona técnicamente, pero `AUTH-01` es un gate de lanzamiento y requiere revisar la configuración pública vigente antes del piloto.
+
+- [ ] Auditar **Audience**, **Branding**, **Data Access** y **OAuth Clients** en Google Cloud.
+- [ ] Confirmar que sólo se solicitan `openid`, `userinfo.email` y `userinfo.profile`.
+- [ ] Revisar separación entre producción y pruebas por proyecto o cliente OAuth.
+- [ ] Publicar una página pública de inicio/acerca de SITAA.
+- [ ] Publicar la política de privacidad accesible sin iniciar sesión.
+- [ ] Decidir y, si aplica, publicar una página de términos.
+- [ ] Verificar la propiedad de todos los dominios autorizados.
+- [ ] Completar la verificación de marca y su publicación.
+- [ ] Configurar audiencia de producción.
+- [ ] Probar acceso y registro con cuentas Gmail e institucionales que no pertenezcan a la lista de testers.
+- [ ] Confirmar que no se añadió Gmail, Drive, Calendar ni otro scope o API de Google.
+
+Los requisitos, nombres de pantallas y procesos de verificación de Google pueden cambiar. Antes de ejecutar cada paso deben contrastarse nuevamente con la documentación oficial vigente; esta lista no sustituye esa revisión.
 
 ## Criterios operativos
 

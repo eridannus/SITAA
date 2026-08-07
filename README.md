@@ -72,6 +72,8 @@ El sistema visual canónico está en `docs/DESIGN_SYSTEM.md`. Toda interfaz usa 
 
 ## Alcance actual
 
+La ejecución inmediata se rige por la [hoja de ruta canónica del MVP operativo](docs/MVP_OPERATIONAL_ROADMAP.md): primero sustituir papel y Formularios de Google para registro/asistencia, con OAuth público, semestres, roles, grupos, exportaciones, paneles y alertas como gates del piloto.
+
 Esta etapa incluye autenticación, perfiles, asignaciones de rol, catálogos, actividades, participantes, asistencia manual o por QR/enlace/código, el directorio B.1, la barrera operativa con corrección auditada de identidad de B.2a, la desactivación/reactivación auditada de B.2b y la coordinación Auth B.3a cerrada mediante 0010. B.3b, Fase C, paneles especializados, formularios dinámicos, reportes y exportaciones permanecen pendientes. La definición del producto se encuentra en `docs/`.
 
 B.2b está operativa mediante 0009: permite a una autoridad B.1 exacta desactivar o reactivar otra cuenta elegible, conserva asignaciones e historia y registra un evento append-only minimizado. B.3a implementa mediante 0010 un ledger idempotente y una única Edge Function confiable para coordinar perfil y Auth sin secretos en Next.js. La matriz central aprobó 1–12, failure/recovery v11 aprobó 13–15, el verificador cubrió 16, concurrencia/límites v8 aprobó 17–18, la auditoría productiva aprobó 19 y el smoke test productivo aprobó 20. El rollback 0010 está definitivamente revocado y B.3a está cerrada. `0011` es el siguiente número de migración disponible, pero todavía no se ha creado; B.3b y Fase C siguen pendientes.

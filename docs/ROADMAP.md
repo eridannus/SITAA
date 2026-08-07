@@ -1,6 +1,27 @@
 # Hoja de ruta
 
-Las fechas se definirán después de validar responsables y capacidad. Cada fase termina con evidencia verificable antes de avanzar.
+## Plan canónico vigente
+
+La ejecución inmediata se rige por `MVP_OPERATIONAL_ROADMAP.md`. Sus paquetes canónicos son:
+
+1. `DOC-00`: rebase documental, paquete actual/siguiente.
+2. `AUTH-01`: publicación de Google OAuth, en paralelo y gate de lanzamiento.
+3. `SEM-01`: administración mínima de semestres.
+4. `ATT-01`: registro y asistencia atómicos.
+5. `EXP-01`: exportaciones CSV y PDF.
+6. `ROLE-01`: roles y autoridad mínima del piloto.
+7. `GRP-01`: grupos, membresías y tutores.
+8. `DASH-01`: dashboard por capacidades y filtros autorizados.
+9. `ALERT-01`: alertas de riesgo e inboxes.
+10. `PILOT-01`: preparación y decisión go/no-go.
+
+Esta secuencia reemplaza la planificación de corto plazo que sigue. `0011` es el siguiente número disponible, pero sólo se asignará cuando el primer paquete estructural sea diseñado y aprobado.
+
+## Secuencia histórica supersedida
+
+Las fases siguientes se conservan como contexto de planeación inicial. Ya no definen el orden de ejecución próximo, los gates del piloto ni la prioridad del MVP operativo.
+
+Las fechas se definirán después de validar responsables y capacidad. Cada paquete vigente termina con evidencia verificable antes de avanzar.
 
 ## Fase 0 — Definición
 

@@ -203,6 +203,20 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 - Las políticas RLS previas, los privilegios de secuencia y los 51 registros de catálogos controlados permanecen sin cambio. El snapshot estructural no contiene secretos, perfiles ni filas de ledger, auditoría u otros datos operativos; esas operaciones reales se sustentan por la evidencia separada del smoke test.
 - B.3a está cerrada: 1–12 están aprobados por la matriz central, 13–15 por failure/recovery v11, 16 por el verificador, 17–18 por concurrencia/límites v8, 19 por la auditoría productiva de ausencia de secretos, 20 por el smoke test productivo y el estado estructural por la reconciliación post‑0010. B.3b permanece pendiente.
 
+### Controles planificados para el MVP operativo
+
+Los paquetes de `MVP_OPERATIONAL_ROADMAP.md` deberán incorporar estos controles antes del piloto:
+
+- **Registro y asistencia atómicos:** el autorregistro inicia deshabilitado por actividad; exige cuenta activa y perfil estudiantil completo. La inserción de participación y confirmación de asistencia se resuelven en una sola transacción idempotente para QR, enlace y código. Un fallo no deja participación parcial ni asistencia huérfana. La corrección manual autorizada permanece disponible y auditada.
+- **Historia de grupos:** grupos, membresías y tutores se acotan por programa y periodo. Se cierran, transfieren o revocan; no se borran para ocultar historia. La importación CSV sólo enlaza perfiles existentes y no crea identidades provisionales.
+- **Prerequisito del tutor:** una asignación de grupo debe referenciar una asignación vigente `professor_tutor` del mismo programa. La revocación del rol se bloquea mientras un grupo activo dependa de ella; primero se transfiere o concluye el grupo.
+- **Minimización de alertas:** las alertas contienen sólo los campos cerrados necesarios para enrutar una señal académica. SITAA no guarda narrativa clínica, diagnósticos, expedientes ni seguimiento de caso, y no afirma sustituir protocolos institucionales.
+- **Destinatarios históricos:** los receptores autorizados se resuelven y fijan al crear la alerta. Cambios posteriores de roles no reescriben quién recibió el evento histórico.
+- **Inbox autoritativo:** el inbox interno y sus estados de entrega son la fuente de verdad. Si se añade correo posteriormente, sólo incluirá un aviso genérico de que existe una alerta nueva; no contendrá alumno, materia, categoría ni contenido académico.
+- **Separación técnica:** `technical_admin` no accede al contenido de alertas por su rol técnico. Sólo puede observar timestamp de creación, programa de enrutamiento, número de destinatarios, estado de entrega, código estable de error y último intento.
+- **Pruebas de contenido:** se usan perfiles académicos de prueba —profesor emisor, alumno ficticio registrado y destinatarios de programa/división—, nunca la cuenta técnica para evadir permisos.
+- **LAB y producción:** el LAB pausado puede reanudarse para pruebas destructivas sintéticas de routing, RLS, concurrencia y recuperación. Los smoke tests productivos usan exclusivamente perfiles y alertas claramente ficticios, con datos minimizados y limpieza compatible con la auditoría append-only.
+
 ## Validaciones previas al piloto
 
 - Revisión de privacidad y aviso correspondiente.

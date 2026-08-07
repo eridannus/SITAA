@@ -90,6 +90,57 @@ El bootstrap o transferencia de la última cuenta técnica requiere un procedimi
 
 Durante desarrollo, el helper actual permite a `technical_admin` acceso académico amplio a contenido publicado. Esta excepción A-02 se conserva temporalmente para pruebas. No amplía la privacidad de borradores y debe eliminarse en una fase posterior, después de implementar administración de cuentas, roles y permisos y probar por separado la cuenta institucional y la cuenta técnica.
 
+## Subconjunto operativo del piloto
+
+La hoja `MVP_OPERATIONAL_ROADMAP.md` acota la primera implementación de Fase C al paquete `ROLE-01`. No sustituye el catálogo V2: define únicamente la autoridad necesaria para iniciar el piloto.
+
+### Roles necesarios ahora
+
+- `technical_admin`;
+- `professor_tutor`;
+- `professor_advisor`;
+- `peer_tutor`;
+- `program_tutoring_lead`;
+- `program_advising_lead`;
+- `program_coordinator`;
+- `division_tutoring_liaison`;
+- sólo roles institucionales adicionales que una necesidad concreta del piloto justifique.
+
+### Bootstrap y delegación mínima
+
+- Un `technical_admin` exacto y activo asigna los roles institucionales iniciales de alto nivel, con alcance explícito, vigencia y auditoría.
+- `program_tutoring_lead` puede asignar o revocar `professor_tutor` y `peer_tutor` sólo en su mismo programa.
+- `program_advising_lead` puede asignar o revocar `professor_advisor` sólo en su mismo programa.
+- La autoridad se revalida en la base de datos; una opción visible o un parámetro enviado por el cliente no concede rol.
+- Autoasignación, transferencia completa de `technical_admin` y delegación general siguen fuera del paquete mínimo.
+
+### Regla rol primero, grupo después
+
+Un profesor sólo puede recibir un grupo de tutoría después de tener una asignación vigente `professor_tutor` para el mismo programa. La asignación de tutor al grupo referencia la fila concreta de `role_assignments` que la habilita, no sólo el perfil.
+
+No se puede revocar ese rol mientras existan asignaciones activas de grupo dependientes. Primero deben transferirse o concluirse los grupos. Membresías, tutorías y roles conservan historia mediante cierre o revocación, nunca mediante borrado operativo.
+
+### Autoridad operativa de grupos
+
+- `program_tutoring_lead` es la autoridad operativa para crear, editar y cerrar grupos de tutoría exclusivamente dentro de su propio programa.
+- Dentro de ese programa administra membresías actuales y asigna o transfiere tutores.
+- Toda asignación de grupo exige una fila habilitante `professor_tutor` preexistente, vigente y del mismo programa; la asignación o transferencia referencia esa fila exacta.
+- Una búsqueda, un filtro o un control visible nunca concede autoridad; cada mutación debe revalidarse en la base de datos.
+- `program_coordinator`, `program_advising_lead` y profesores ordinarios no adquieren autoridad de gestión de grupos por su sola identidad.
+- `technical_admin` realiza bootstrap institucional y soporte técnico, pero su rol técnico no constituye la autoridad académica final sobre el contenido de los grupos.
+- La excepción transitoria A-02 no define un contrato permanente de gestión de grupos.
+
+### Capacidad básica de alertas
+
+Todo perfil activo con `person_type = professor` puede crear una alerta académica mínima sin ser tutor o asesor. La recepción depende de asignaciones académicas vigentes:
+
+- `absences` y `missing_work`: leads de tutoría y asesoría y coordinación del programa;
+- `socioemotional_attention`: enlace divisional de tutorías y coordinación del programa.
+
+Los destinatarios se fijan al crear la alerta. `technical_admin` no obtiene contenido de alertas por su rol técnico; sólo puede consultar diagnósticos sanitizados de creación y entrega. El acceso técnico amplio transitorio A-02 no debe interpretarse como autoridad sobre contenido de alertas.
+
+Fase C completa conserva administración de todos los roles, transferencia, delegación general y retiro de A-02. Estas capacidades permanecen diferidas y no se infieren del subconjunto del piloto.
+
 ## Mapeo organizacional para planeación
 
 > Ejemplos no ejecutables. Esta lista no es semilla, no asigna permisos y no debe copiarse a SQL. Las personas deben registrarse normalmente cuando aplique y recibir roles manualmente dentro de SITAA.
