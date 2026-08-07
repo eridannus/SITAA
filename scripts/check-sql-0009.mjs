@@ -35,15 +35,63 @@ function md5(value) {
 }
 
 function snapshotRows(source, fixedColumns) {
-  return source.split(/\r?\n/)
-    .filter((line) => line.length > 0 && !line.startsWith("--"))
-    .map((line) => {
-      const columns = line.split("\t");
-      assert.ok(columns.length >= fixedColumns, `Fila de snapshot incompleta: ${line}`);
-      if (columns.length === fixedColumns) return columns;
-      return [...columns.slice(0, fixedColumns - 1), columns.slice(fixedColumns - 1).join("\t")];
-    });
+  const rows = [];
+  for (const line of normalizeEol(source).split("\n")) {
+    if (line.length === 0 || line.startsWith("--")) continue;
+
+    const columns = line.split("\t");
+    if (columns.length >= fixedColumns) {
+      rows.push(columns.length === fixedColumns
+        ? columns
+        : [...columns.slice(0, fixedColumns - 1), columns.slice(fixedColumns - 1).join("\t")]);
+      continue;
+    }
+
+    assert.ok(rows.length > 0, `Continuación de snapshot sin fila previa: ${line}`);
+    rows.at(-1)[fixedColumns - 1] += `\n${line}`;
+  }
+  return rows;
 }
+
+function assertSnapshotRowsContract() {
+  assert.deepEqual(
+    snapshotRows("table\tconstraint\tcheck\tCHECK (enabled)", 4),
+    [["table", "constraint", "check", "CHECK (enabled)"]],
+  );
+
+  const multilineConstraint = [
+    "admin_auth_operations\tstate_check\tcheck\tCHECK (",
+    "CASE",
+    "    WHEN operation_code = 'reactivate'::text THEN 'prepared'::text",
+    "    ELSE 'profile_suspended'::text",
+    "END",
+    ")",
+  ].join("\n");
+  assert.deepEqual(snapshotRows(multilineConstraint, 4), [[
+    "admin_auth_operations",
+    "state_check",
+    "check",
+    [
+      "CHECK (",
+      "CASE",
+      "    WHEN operation_code = 'reactivate'::text THEN 'prepared'::text",
+      "    ELSE 'profile_suspended'::text",
+      "END",
+      ")",
+    ].join("\n"),
+  ]]);
+
+  assert.throws(
+    () => snapshotRows("CASE\n    WHEN orphaned THEN rejected", 4),
+    /Continuación de snapshot sin fila previa: CASE/,
+  );
+  assert.deepEqual(
+    snapshotRows("table\tconstraint\tcheck\tCHECK\t(field\t=\tvalue)", 4),
+    [["table", "constraint", "check", "CHECK\t(field\t=\tvalue)"]],
+  );
+}
+
+assertSnapshotRowsContract();
 
 function lineAtOffset(source, offset) {
   return source.slice(0, offset).split("\n").length;
@@ -347,9 +395,20 @@ assert.equal((allSql.match(/'account_reactivated'~'\^\[a-z\]/g) ?? []).length, 6
 
 const constraintRows = snapshotRows(snapshots.constraints, 4).sort((left, right) =>
   left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]));
-assert.equal(constraintRows.length, 80);
-assert.equal(md5(constraintRows.map((row) => row.join(":")).join("|")), "64f099164063d0cf500478dda3b5d25c");
-const actionConstraint = constraintRows.filter((row) => row[0] === "admin_audit_events" && row[1] === "admin_audit_events_action_code_check");
+assert.equal(constraintRows.length, 96);
+const adminAuthOperationConstraints = constraintRows.filter((row) => row[0] === "admin_auth_operations");
+assert.equal(adminAuthOperationConstraints.length, 16);
+assert.deepEqual(
+  Object.fromEntries(["primary_key", "unique", "foreign_key", "check"].map((type) => [
+    type,
+    adminAuthOperationConstraints.filter((row) => row[2] === type).length,
+  ])),
+  { primary_key: 1, unique: 1, foreign_key: 5, check: 9 },
+);
+const preservedConstraintRows = constraintRows.filter((row) => row[0] !== "admin_auth_operations");
+assert.equal(preservedConstraintRows.length, 80);
+assert.equal(md5(preservedConstraintRows.map((row) => row.join(":")).join("|")), "64f099164063d0cf500478dda3b5d25c");
+const actionConstraint = preservedConstraintRows.filter((row) => row[0] === "admin_audit_events" && row[1] === "admin_audit_events_action_code_check");
 assert.deepEqual(actionConstraint, [[
   "admin_audit_events",
   "admin_audit_events_action_code_check",
@@ -359,8 +418,15 @@ assert.deepEqual(actionConstraint, [[
 
 const triggerRows = snapshotRows(snapshots.triggers, 3).sort((left, right) =>
   left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]));
-assert.equal(triggerRows.length, 11);
-assert.equal(md5(triggerRows.map((row) => row.join(":")).join("|")), "67ee47bcd43c0594129facf3d7729bad");
+assert.equal(triggerRows.length, 13);
+const adminAuthOperationTriggers = triggerRows.filter((row) => row[0] === "admin_auth_operations");
+assert.deepEqual(
+  adminAuthOperationTriggers.map((row) => row[1]),
+  ["guard_admin_auth_operation_b3a", "guard_admin_auth_operation_truncate_b3a"],
+);
+const preservedTriggerRows = triggerRows.filter((row) => row[0] !== "admin_auth_operations");
+assert.equal(preservedTriggerRows.length, 11);
+assert.equal(md5(preservedTriggerRows.map((row) => row.join(":")).join("|")), "67ee47bcd43c0594129facf3d7729bad");
 
 const authenticatedTableRows = snapshotRows(snapshots.tablePrivileges, 7)
   .filter((row) => row[3] === "authenticated")
