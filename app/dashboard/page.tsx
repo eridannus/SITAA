@@ -191,9 +191,6 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        <p className="mt-7 text-sm leading-6 text-slate-500">
-          Los paneles especializados y permisos por función se incorporarán en etapas posteriores.
-        </p>
       </div>
     </section>
   );
