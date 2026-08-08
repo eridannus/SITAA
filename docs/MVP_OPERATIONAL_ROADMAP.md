@@ -15,7 +15,7 @@ Línea base aprobada:
 - [x] **DOC-00 — Completado y publicado:** rebase documental aprobada como fuente canónica.
 - [x] **AUTH-01 — Completado:** gate de lanzamiento público satisfecho y respaldado por evidencia sanitizada.
 
-`SEM-01` es el siguiente paquete estructural activo. Su contrato de producto fue aprobado y quedó documentado en `SEM_01_DESIGN.md`; la revisión y ejecución del paquete de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible: no existe, no está asignado y únicamente podrá asignarse después de aprobar por separado el preflight, límite de migración, estrategia de verificación y rollback.
+`SEM-01` es el siguiente paquete estructural activo. Su contrato de producto fue aprobado y quedó documentado en `SEM_01_DESIGN.md`; `0011` está asignada y el paquete de base de datos está preparado localmente, pendiente de revisión y sin aplicar. No se ha ejecutado preflight remoto, verificador ni rollback, y `/admin/periods` todavía no existe.
 
 ## 2. Principio del MVP inmediato
 
@@ -54,7 +54,7 @@ DOC-00
                  └─ ALERT-01 --------------------------┘
 ```
 
-`DOC-00` y el gate obligatorio `AUTH-01` están completados. `SEM-01` es el siguiente paquete estructural activo: diseño canónico aprobado, implementación no iniciada. `PILOT-01` no puede aprobarse hasta que las ramas pendientes hayan producido evidencia suficiente.
+`DOC-00` y el gate obligatorio `AUTH-01` están completados. `SEM-01` es el siguiente paquete estructural activo: diseño canónico aprobado y paquete de base de datos `0011` preparado localmente, pendiente de revisión. `PILOT-01` no puede aprobarse hasta que las ramas pendientes hayan producido evidencia suficiente.
 
 ## 5. Resumen de paquetes
 
@@ -62,7 +62,7 @@ DOC-00
 | --- | --- | --- | --- | --- | --- |
 | `DOC-00` | Rebase documental | Completado | Bloqueante | S | Ninguna |
 | `AUTH-01` | Publicación de Google OAuth | Completado | Gate satisfecho | M | `DOC-00` |
-| `SEM-01` | Administración mínima de semestres | Diseño aprobado / implementación pendiente | Crítica | M | `DOC-00` |
+| `SEM-01` | Administración mínima de semestres | Paquete DB `0011` preparado / revisión pendiente | Crítica | M | `DOC-00` |
 | `ATT-01` | Registro y asistencia atómicos | Pendiente | Crítica | L | `DOC-00` |
 | `EXP-01` | Exportaciones CSV y PDF | Pendiente | Crítica | M | `DOC-00` |
 | `ROLE-01` | Autoridad y roles mínimos del piloto | Pendiente | Crítica | L | `DOC-00` |
@@ -108,7 +108,8 @@ DOC-00
 **Objetivo:** permitir que sólo una autoridad técnica exacta administre los semestres oficiales requeridos para la operación, sin restringir las lecturas de referencia ya autorizadas.
 
 - [x] Aprobar el contrato de producto y documentarlo canónicamente en `SEM_01_DESIGN.md`.
-- [ ] Revisar y aprobar el preflight y el límite exacto de la futura migración; `0011` continúa inexistente y sin asignar.
+- [x] Asignar `0011` y preparar localmente el preflight, migración, verificador, rollback, checker y plan de pruebas de base de datos.
+- [ ] Revisar y aprobar el paquete completo antes de cualquier ejecución remota.
 - [ ] Implementar `/admin/periods` como superficie dedicada, sin convertir `/catalogs` en editor genérico.
 - [ ] Aplicar la autoridad exacta `technical_admin/system/technical`, activa, vigente y sin programa o división en ruta, acciones y RPC independientes.
 - [ ] Preservar las lecturas de referencia autorizadas sin conceder administración ni ampliar universos visibles.
@@ -335,7 +336,7 @@ Estos detalles requieren diseño, amenaza, preflight y revisión propios. No se 
 
 - Cada paquete inicia con revisión de fuentes canónicas, amenazas, permisos y datos sensibles.
 - La documentación y la decisión preceden al código o DDL.
-- Ningún número de migración se reserva sólo por aprobar un contrato de producto; `0011` permanece inexistente y sin asignar hasta revisar y aprobar por separado el paquete de implementación de `SEM-01`, su preflight, límite de migración, estrategia de verificación y rollback.
+- DEC-067 asigna `0011` a `SEM-01` y autoriza únicamente la preparación local del paquete de base de datos. La revisión, aplicación, verificación, concurrencia, snapshot, reconciliación y aplicación web conservan gates separados.
 - Las migraciones aplicadas permanecen inmutables y todo cambio nuevo es incremental, no destructivo y reconciliable.
 - RLS/RPC construyen el universo autorizado; la interfaz nunca sustituye autorización de base.
 - Todo cambio estructural exige preflight, aplicación coordinada, verificador transaccional, rollback revisado, pruebas, snapshot y reconciliación según riesgo.

@@ -78,6 +78,7 @@ Este archivo conserva decisiones de producto y arquitectura. No se eliminan deci
 | DEC-064 | Inbox interno como entrega primaria de alertas | Aceptada |
 | DEC-065 | Production OAuth acceptance by a complete non-tester journey | Aceptada |
 | DEC-066 | Academic-period administration and automatic-resolution contract for SEM-01 | Aceptada |
+| DEC-067 | SEM-01 database implementation boundary and migration assignment | Aceptada |
 
 ## DEC-001 — Plataforma web y stack base
 
@@ -599,7 +600,7 @@ Toda construcción textual o hash que incluya un campo interno `char` de catálo
 
 **Decisión:** adoptar `MVP_OPERATIONAL_ROADMAP.md` como plan canónico próximo, con los IDs estables `DOC-00`, `AUTH-01`, `SEM-01`, `ATT-01`, `EXP-01`, `ROLE-01`, `GRP-01`, `DASH-01`, `ALERT-01` y `PILOT-01`. El objetivo inmediato es sustituir registro y asistencia manuales y habilitar operación por semestre, rol, grupo y programa. Esta decisión sustituye DEC-004 y el orden de ejecución de DEC-038 para el MVP inmediato, sin retirar sus límites de seguridad.
 
-**Consecuencias:** `DOC-00` y `AUTH-01` están completados. Al seleccionarse `SEM-01` como siguiente paquete estructural, su kickoff todavía estaba pendiente; la decisión canónica posterior aprobó el contrato de producto y dejó la implementación bajo revisión separada. Los demás paquetes de implementación permanecen pendientes. `0011` es sólo el siguiente número disponible, no existe ni está asignado, y únicamente podrá asignarse después de aprobar el paquete de implementación correspondiente. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
+**Consecuencias:** `DOC-00` y `AUTH-01` están completados. Al seleccionarse `SEM-01` como siguiente paquete estructural, su kickoff todavía estaba pendiente y `0011` era sólo el siguiente número disponible. DEC-066 aprobó después el contrato de producto y DEC-067 asignó finalmente `0011` al paquete local de base. Los demás paquetes de implementación permanecen pendientes. La evidencia histórica y las migraciones 0001–0010 no se reescriben.
 
 **Estado:** Aceptada.
 
@@ -745,6 +746,16 @@ Las variaciones de Gmail de consumidor, `pc.puma` / UNAM y organizaciones Worksp
 
 Los borradores pueden conservar `academic_period_id = NULL`. Publicar vuelve a resolver transaccionalmente y bloquea con lenguaje neutral cuando no hay semestre disponible; nunca se ofrece selección manual. Crear un periodo o corregir sus fechas o estado no puede cambiar ni eliminar una atribución almacenada ni modificar la resolución de una actividad no borrador. Se permite que un borrador con `academic_period_id = NULL`, antes no resoluble, pase a ser resoluble, porque la mutación del calendario no escribe la actividad y la publicación posterior vuelve a resolverla transaccionalmente. La creación continúa exenta de un motivo administrativo separado. Los periodos no se eliminan: se desactivan y preservan. Las mutaciones exitosas usarán una auditoría append-only por recurso, sanitizada y no acoplada falsamente a un perfil objetivo.
 
-**Consecuencias:** `/catalogs` permanece de sólo lectura y la administración genérica de catálogos sigue diferida. El contrato de producto está aprobado, pero la implementación, preflight, migración, verificador, concurrencia, rollback y reconciliación permanecen pendientes. `0011` no existe ni está asignada; sólo podrá asignarse tras revisar el paquete de implementación.
+**Consecuencias:** `/catalogs` permanece de sólo lectura y la administración genérica de catálogos sigue diferida. En este punto se aprobó el contrato de producto y se dejó la asignación de migración para una decisión posterior. DEC-067 asigna finalmente `0011` y autoriza la preparación local del paquete, sin afirmar aplicación ni verificación remota.
+
+**Estado:** Aceptada.
+
+## DEC-067 — SEM-01 database implementation boundary and migration assignment
+
+**Contexto:** DEC-066 aprobó el contrato de producto de `SEM-01`. El siguiente paso requiere fijar una frontera de base compatible con la aplicación desplegada, sin adelantar la interfaz ni inventar el horizonte razonable de fechas de actividad.
+
+**Decisión:** asignar la migración `0011` a `SEM-01` y resolver su capa de base en una sola migración. La secuencia será base primero y aplicación después; no se requiere un despliegue de compatibilidad previo al SQL porque se preservan las firmas públicas y contratos de retorno ya consumidos. El paquete incorpora evidencia de auditoría dedicada para periodos y un dominio compartido de serialización entre calendario y actividades. El horizonte razonable de fechas permanece diferido.
+
+**Consecuencias:** preflight, migración, verificador, rollback, checker y plan de pruebas están preparados localmente y pendientes de revisión. `0011` no ha sido aplicada; no se han ejecutado preflight remoto, verificador, rollback, smoke tests ni reconciliación. `/admin/periods` no está implementada y producción permanece post-0010.
 
 **Estado:** Aceptada.

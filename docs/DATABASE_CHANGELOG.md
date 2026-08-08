@@ -4,7 +4,7 @@ Los cambios SQL anteriores a la baseline fueron aplicados manualmente durante el
 
 ## Estado vigente
 
-La cadena `0001`–`0010` está aplicada, verificada y reconciliada. El snapshot canónico `2026-08-06T23:33:15Z` coincide con esa cadena sin deriva inexplicada; los casos 1–20 están aprobados y B.3a está cerrada. `0011` es el siguiente número de migración disponible, pero todavía no se ha creado. B.3b y Fase C permanecen pendientes.
+La cadena `0001`–`0010` está aplicada, verificada y reconciliada. El snapshot canónico `2026-08-06T23:33:15Z` coincide con esa cadena sin deriva inexplicada; los casos 1–20 están aprobados y B.3a está cerrada. `0011` está asignada a `SEM-01` y su paquete de base está preparado localmente, pendiente de revisión y sin aplicar. B.3b y Fase C permanecen pendientes.
 
 ## 0001_baseline_current_schema.sql — baseline reconciliada
 
@@ -62,7 +62,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0010` están aplicadas, verificadas, reconciliadas e inmutables. Los casos 1–20 y los smoke tests productivos están aprobados; B.3a está cerrada. `0011` es el siguiente número disponible, pero no se ha creado. Todo cambio futuro debe:
+`0001`–`0010` están aplicadas, verificadas, reconciliadas e inmutables. Los casos 1–20 y los smoke tests productivos están aprobados; B.3a está cerrada. `0011` está asignada a `SEM-01`, preparada localmente y pendiente de revisión. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0010`;
@@ -330,3 +330,14 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - `live_columns.sql` y `live_functions.sql` conservan el whitespace canónico crudo emitido por PostgreSQL; no se recortaron ni normalizaron. El token aleatorio `\restrict`/`\unrestrict` y el timestamp de metadata son diferencias ambientales esperadas.
 - Resultado: cero deriva inexplicada. El informe completo está en `supabase/reconciliation/0010_post_apply_reconciliation.md`.
 - Cierre: 0010 queda aplicada, inmutable, verificada, probada y reconciliada; los casos 1–20 están aprobados y B.3a queda cerrada. `0011` es el siguiente número disponible, pero no fue creado. B.3b y Fase C continúan pendientes.
+
+## 0011_academic_period_administration.sql — preparada localmente
+
+- Fecha de preparación: 2026-08-07.
+- Estado: asignada a `SEM-01`, preparada localmente y pendiente de revisión; no aplicada.
+- Paquete: preflight independiente de sólo lectura, migración, verificador transaccional de 51 casos, rollback conservador, checker estático y `docs/TEST_PLAN_0011.md`.
+- Alcance: integridad concurrente de periodos ordinarios, resolver compatible, serialización compartida con actividades, autoridad técnica exacta, diagnóstico de impacto sin DML sobre actividades y auditoría dedicada append-only.
+- Compatibilidad: conserva las firmas públicas de resolución y publicación ya consumidas por la aplicación; `/admin/periods` todavía no está implementada.
+- Evidencia remota: ninguna. No se han ejecutado preflight, migración, verificador, rollback, concurrencia, smoke tests, snapshot ni reconciliación.
+- Producción y snapshot vivo: permanecen post-0010.
+- El horizonte razonable de fechas de actividad continúa diferido.

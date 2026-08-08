@@ -207,9 +207,9 @@ El preflight 0008 fue aprobado, la aplicación compatible se publicó, la migrac
 
 ### Controles planificados para el MVP operativo
 
-#### Frontera futura de SEM-01
+#### Frontera local preparada de SEM-01
 
-El contrato de producto está aprobado en `SEM_01_DESIGN.md`, pero todavía no está implementado y no tiene migración asignada.
+El contrato de producto está aprobado en `SEM_01_DESIGN.md`. La migración `0011`, su preflight, verificador y rollback están preparados localmente y pendientes de revisión; no se han ejecutado y producción permanece post-0010. La interfaz `/admin/periods` todavía no está implementada.
 
 - La futura `/admin/periods` y cada Server Action/RPC exigirán perfil activo, `profiles.is_active = true` y asignación vigente `technical_admin/system/technical`, sin programa ni división, con extremos inclusivos según la fecha de `America/Mexico_City`. Ocultar navegación no sustituye autorización.
 - Cada RPC revalidará esa autoridad exacta después de adquirir locks y antes de diagnosticar, auditar o escribir. No se usará `hasActiveRole` como decisión final ni se otorgará `EXECUTE` cliente a helpers privados.

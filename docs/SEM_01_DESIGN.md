@@ -2,7 +2,7 @@
 
 ## Estado y alcance
 
-**Estado:** contrato de producto aprobado por el operador y documentación canónica creada. La implementación no ha comenzado. No se ha asignado un número de migración y `0011` no existe.
+**Estado:** contrato de producto aprobado. La implementación de base de datos `0011` está preparada localmente y pendiente de revisión; no ha sido aplicada ni ejecutada remotamente. La interfaz `/admin/periods` no está implementada.
 
 Este documento define la administración mínima de semestres oficiales y la resolución automática de `academic_period_id` para `SEM-01`. Complementa DEC-022, DEC-024 y DEC-056. No autoriza código, DDL, migraciones, despliegues ni operaciones remotas.
 
@@ -189,9 +189,9 @@ Los periodos son configuración de referencia, no datos personales. Se preservan
 
 Leer periodos no concede capacidad de mutación, no amplía el universo de actividades visible y no justifica DML directo de clientes autenticados. Cada selector operativo ordinario podrá limitar su proyección a los periodos que requiera su flujo aprobado, sin convertir esa selección en autoridad administrativa.
 
-## Límite del futuro paquete de implementación
+## Límite del paquete de implementación
 
-Un ticket separado, revisado antes de asignar migración, probablemente abarcará:
+El paquete local asignado a `0011` abarca las capas A–D, F y G descritas a continuación. La capa E de aplicación permanece fuera de este ticket y se implementará sólo después de aplicar, verificar y reconciliar la base.
 
 ### A. Integridad de base
 
@@ -234,9 +234,9 @@ Un ticket separado, revisado antes de asignar migración, probablemente abarcar�
 - preservación de actividades, referencias y auditoría;
 - locks explícitos y rechazo ante mutación concurrente.
 
-Ningún artefacto de estas categorías se crea en este ticket.
+Los artefactos de base, preflight, verificador, rollback, checker y plan de pruebas están preparados localmente. No han sido ejecutados contra ningún entorno.
 
-## Preflight futuro obligatorio
+## Preflight obligatorio antes de aplicar
 
 El preflight será de sólo lectura, fallará de forma cerrada y terminará sin mutar producción. Como mínimo inspeccionará:
 
@@ -263,7 +263,7 @@ El preflight será de sólo lectura, fallará de forma cerrada y terminará sin 
 21. identidad de Git y del snapshot base;
 22. privilegios predeterminados relevantes para nuevas tablas y funciones.
 
-## Verificador y concurrencia futuros
+## Verificador y concurrencia posteriores a la aplicación
 
 El verificador transaccional y las pruebas complementarias cubrirán, como mínimo:
 
@@ -321,9 +321,9 @@ El verificador transaccional y las pruebas complementarias cubrirán, como míni
 
 El verificador SQL no sustituye el arnés multisesión: las carreras de solapamiento, espera de locks y pérdida de autoridad requieren conexiones reales independientes y evidencia sanitizada.
 
-## Rollback futuro
+## Rollback conservador preparado
 
-El rollback sólo restaurará objetos introducidos o reemplazados por la migración futura y preservará contratos post-0010 no sustituidos. Debe:
+El rollback preparado sólo restaurará objetos introducidos o reemplazados por la migración `0011` y preservará contratos post-0010 no sustituidos. Debe:
 
 - negarse si la auditoría de periodos contiene evidencia operativa, salvo procedimiento irreversible aprobado;
 - negarse si nuevos periodos o semánticas ya usadas no pueden revertirse sin eliminar o reatribuir historia;
@@ -346,6 +346,7 @@ Falta aprobar la definición numérica —o dependiente de periodos configurados
 - Contrato de producto: **aprobado**.
 - Documentación canónica: **creada**.
 - Revisión del paquete de implementación: **pendiente**.
-- Implementación: **no iniciada**.
-- Migración: **sin número asignado**.
-- `0011`: **inexistente y no asignada**.
+- Implementación de base de datos: **preparada localmente, no aplicada**.
+- Migración: **`0011` asignada a SEM-01**.
+- Preflight remoto, verificador, rollback, smoke tests y reconciliación: **no ejecutados**.
+- Interfaz `/admin/periods`: **no implementada**.

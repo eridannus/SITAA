@@ -1335,6 +1335,14 @@ for (const [file, expected] of immutable) {
   const digest = immutableTextArtifactSha256(path.join(root, "supabase/migrations", file));
   assert.equal(digest, expected, `Migración inmutable modificada: ${file}`);
 }
+assert.equal(
+  immutableTextArtifactSha256(path.join(
+    root,
+    "supabase/migrations/0010_coordinated_auth_session_suspension.sql",
+  )),
+  "d6d809174c377d9a625097c12299b0e02368466256d25cee3e9a0dbc5e16cf0f",
+  "La migración canónica 0010 fue modificada",
+);
 
 const immutableHashRegressionBase = "begin;\n-- comentario base\nselect 1;\ncommit;\n";
 const immutableHashRegressionDigest = immutableTextSha256(immutableHashRegressionBase);
@@ -1365,7 +1373,40 @@ for (const [label, mutated] of [
   );
 }
 
-assert.equal(fs.readdirSync(path.join(root, "supabase/migrations")).some((name) => /^0011_/.test(name)), false);
+// Los checkers históricos protegen su propio paquete y sus predecesores
+// inmutables; no convierten la ausencia permanente de sucesores en contrato.
+const migrationFiles = fs.readdirSync(path.join(root, "supabase/migrations"));
+assert.equal(
+  migrationFiles.filter((name) => /^0010_/.test(name)).length,
+  1,
+  "Debe existir exactamente una migración canónica 0010",
+);
+assert.ok(
+  migrationFiles.includes("0010_coordinated_auth_session_suspension.sql"),
+  "Falta la migración canónica 0010",
+);
+assert.deepEqual(
+  Object.values(artifacts),
+  [
+    "supabase/migrations/0010_coordinated_auth_session_suspension.sql",
+    "supabase/reconciliation/0010_coordinated_auth_session_suspension_preflight.sql",
+    "supabase/reconciliation/0010_coordinated_auth_session_suspension_verify.sql",
+    "supabase/reconciliation/0010_coordinated_auth_session_suspension_rollback.sql",
+  ],
+  "El checker 0010 debe leer sólo sus artefactos SQL canónicos",
+);
+assert.ok(
+  Object.values(artifacts).every((relative) => /\/0010_/.test(relative)),
+  "Los artefactos SQL del checker deben permanecer acotados a 0010",
+);
+assert.ok(
+  Object.values(artifacts).every((relative) => coreArtifacts.includes(relative)),
+  "El paquete central debe incluir los cuatro artefactos SQL 0010",
+);
+assert.ok(
+  coreArtifacts.every((relative) => !relative.includes("0011")),
+  "coreArtifacts no debe incorporar artefactos sucesores",
+);
 assert.equal(coreArtifacts.length, 16);
 console.log("Immutable migration hashes:");
 console.log("- canonical EOL mode: LF");

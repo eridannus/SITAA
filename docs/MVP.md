@@ -20,6 +20,7 @@ La secuencia canónica de entrega está en `MVP_OPERATIONAL_ROADMAP.md`.
 
 ### Configuración de semestre
 
+- La capa de base de datos de `SEM-01` está preparada localmente en la migración asignada `0011`, pendiente de revisión y sin aplicar. Producción continúa en estado post-0010 y `/admin/periods` todavía no existe.
 - `academic_periods` representa semestres oficiales. Los nuevos periodos ordinarios usan código único e inmutable `YYYY-1|YYYY-2`, fechas completas y rangos activos no traslapados; la fila inactiva heredada `pilot` se preserva como excepción controlada.
 - Pueden coexistir periodos activos históricos, actuales y futuros. El último periodo configurado deja de resolver después de `ends_on`; sólo cuando ya existe un sucesor, el periodo anterior cubre el intersemestre hasta el día previo al siguiente `starts_on`.
 - La futura superficie dedicada será `/admin/periods`. Sólo una autoridad `technical_admin/system/technical` exacta, activa, vigente en fecha de Ciudad de México y sin programa ni división podrá listar administrativamente, crear, corregir, activar o desactivar semestres.

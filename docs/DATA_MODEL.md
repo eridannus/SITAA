@@ -1,6 +1,6 @@
 # Modelo de datos
 
-> **Vigencia:** este documento describe el esquema vivo reconciliado después de 0010 y distingue el contrato físico actual del diseño futuro aprobado. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
+> **Vigencia:** este documento describe el esquema vivo reconciliado después de 0010 y distingue ese contrato físico del paquete `0011` preparado localmente, pendiente de revisión y sin aplicar. El modelo funcional de identidad y cuentas técnicas está en `IDENTITY_AND_REGISTRATION.md`; el modelo futuro de roles permanece en `ROLES_AND_PERMISSIONS_V2.md`.
 
 ## Tablas implementadas
 
@@ -23,6 +23,10 @@ La integración actual utiliza tablas institucionales y catálogos operativos p�
 | `participant_roles` | Roles dentro de una actividad | `id`, `code`, `label` o `name`, `description`, `is_active` |
 | `activities` | Núcleo operativo de tutorías, asesorías y acompañamiento | `id`, `title`, `description`, `academic_period_id`, `scope_type`, `division_id`, `program_id`, códigos de catálogos, ubicación, `start_date`, `start_time`, `end_date`, `end_time`, `duration_mode`, `starts_at`, `ends_at`, `responsible_profile_id`, `created_by`, `status_code` |
 | `admin_audit_events` | Bitácora administrativa append-only de Fase B | `id`, actor, objetivo, acción, resultado, motivo, asignación opcional, metadata segura y `occurred_at` |
+
+### Tabla preparada localmente por 0011
+
+`academic_period_audit_events` está definida en el paquete local, aún no aplicado, como auditoría append-only dedicada a semestres: evento, actor, periodo, código copiado, acción, resultado, motivo, campos y valores cambiados y timestamp autoritativo. No forma parte del inventario vivo post-0010.
 
 `profiles` contiene identidad estable y no almacena rol ni semestre actual. Todo Auth user admitido por SITAA tiene exactamente un perfil; un perfil `pending_registration` existe pero todavía no está activado para la operación normal.
 
@@ -83,6 +87,8 @@ Los catálogos operativos se consultan por `code` y muestran `label` o `name`. S
 
 
 ### Reglas de semestre académico
+
+El paquete de base `0011` prepara estas reglas, la auditoría dedicada y la serialización compartida con actividades. Todavía no forma parte del esquema vivo: producción permanece post-0010, no se ha ejecutado el preflight remoto y `/admin/periods` no existe.
 
 - La interfaz debe mostrar la etiqueta **Semestre**; no debe mostrar “periodo calculado”.
 - `code` es único. Los nuevos periodos ordinarios usan exclusivamente `YYYY-1|YYYY-2`; el código queda normalizado e inmutable. `name` es la etiqueta visible almacenada e inicia con el mismo valor. `sort_order` es compatibilidad interna y no un campo editable.
@@ -170,7 +176,7 @@ Tampoco se modelan carteles, fotografías, oficios, materiales, carpetas de Driv
 
 ## Estado de implementación
 
-La Fase A de identidad Google y los nombres estructurados de 0006 están aplicados, verificados y reconciliados. Participantes, asistencia y check-in son módulos implementados. La Fase B.1 está cerrada mediante 0007, B.2a mediante 0008, B.2b mediante 0009 y B.3a mediante 0010. B.3b y Fase C permanecen pendientes.
+La Fase A de identidad Google y los nombres estructurados de 0006 están aplicados, verificados y reconciliados. Participantes, asistencia y check-in son módulos implementados. La Fase B.1 está cerrada mediante 0007, B.2a mediante 0008, B.2b mediante 0009 y B.3a mediante 0010. La migración `0011` de `SEM-01` está preparada localmente y pendiente de revisión; no se ha aplicado, verificado, probado ni reconciliado. B.3b y Fase C permanecen pendientes.
 
 ### Accesos de asistencia por QR, enlace y código
 
