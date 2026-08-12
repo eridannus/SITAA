@@ -15,7 +15,7 @@ La ejecución inmediata se rige por `MVP_OPERATIONAL_ROADMAP.md`. Sus paquetes c
 9. `ALERT-01`: alertas de riesgo e inboxes, pendiente.
 10. `PILOT-01`: preparación y decisión go/no-go, pendiente.
 
-`DOC-00` y `AUTH-01` están completados. El contrato de producto de `SEM-01` está aprobado y documentado en `SEM_01_DESIGN.md`; la implementación no ha comenzado. `0011` continúa sin asignarse y no existe; sólo podrá asignarse después de revisar el paquete de implementación correspondiente. La ejecución canónica se mantiene en `MVP_OPERATIONAL_ROADMAP.md`.
+`DOC-00` y `AUTH-01` están completados. El contrato de producto de `SEM-01` está aprobado y documentado en `SEM_01_DESIGN.md`; `0011` fue aplicada en producción y su verificador transaccional corregido aprobó los casos 1–51. SEM-01 continúa activo: el arnés multisesión y la reconciliación post-0011 son los siguientes gates antes de implementar `/admin/periods`. La ejecución canónica se mantiene en `MVP_OPERATIONAL_ROADMAP.md`.
 
 ## Secuencia histórica supersedida
 

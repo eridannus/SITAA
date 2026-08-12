@@ -756,6 +756,6 @@ Los borradores pueden conservar `academic_period_id = NULL`. Publicar vuelve a r
 
 **Decisión:** asignar la migración `0011` a `SEM-01` y resolver su capa de base en una sola migración. La secuencia será base primero y aplicación después; no se requiere un despliegue de compatibilidad previo al SQL porque se preservan las firmas públicas y contratos de retorno ya consumidos. El paquete incorpora evidencia de auditoría dedicada para periodos y un dominio compartido de serialización entre calendario y actividades. El horizonte razonable de fechas permanece diferido.
 
-**Consecuencias:** preflight, migración, verificador, rollback, checker y plan de pruebas están preparados localmente y pendientes de revisión. `0011` no ha sido aplicada; no se han ejecutado preflight remoto, verificador, rollback, smoke tests ni reconciliación. `/admin/periods` no está implementada y producción permanece post-0010.
+**Consecuencias:** `0011` fue aplicada correctamente en producción el 2026-08-12. El primer intento del verificador fue rechazado sin aceptar casos; el verificador corregido aprobó después los casos 1–51 y terminó con su propio `ROLLBACK` explícito. El rollback de la migración no fue ejecutado. Esta aprobación no cierra SEM-01: el arnés multisesión, el snapshot y la reconciliación post-0011, `/admin/periods` y sus smoke tests permanecen pendientes. El snapshot rastreado continúa post-0010 hasta su regeneración. El horizonte razonable de fechas continúa diferido.
 
 **Estado:** Aceptada.

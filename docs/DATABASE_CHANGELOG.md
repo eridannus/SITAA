@@ -4,7 +4,7 @@ Los cambios SQL anteriores a la baseline fueron aplicados manualmente durante el
 
 ## Estado vigente
 
-La cadena `0001`–`0010` está aplicada, verificada y reconciliada. El snapshot canónico `2026-08-06T23:33:15Z` coincide con esa cadena sin deriva inexplicada; los casos 1–20 están aprobados y B.3a está cerrada. `0011` está asignada a `SEM-01` y su paquete de base está preparado localmente, pendiente de revisión y sin aplicar. B.3b y Fase C permanecen pendientes.
+La cadena `0001`–`0010` está aplicada, verificada y reconciliada. El snapshot canónico `2026-08-06T23:33:15Z` coincide con esa cadena sin deriva inexplicada; los casos 1–20 están aprobados y B.3a está cerrada. `0011` está asignada a `SEM-01`, aplicada en producción y aprobada por su verificador transaccional corregido. El snapshot rastreado continúa post-0010 hasta su regeneración y reconciliación; SEM-01 permanece activo. B.3b y Fase C permanecen pendientes.
 
 ## 0001_baseline_current_schema.sql — baseline reconciliada
 
@@ -62,7 +62,7 @@ Esta baseline sustituyó el intento anterior basado en snapshots JSON incompleto
 
 ## Flujo obligatorio para cambios posteriores
 
-`0001`–`0010` están aplicadas, verificadas, reconciliadas e inmutables. Los casos 1–20 y los smoke tests productivos están aprobados; B.3a está cerrada. `0011` está asignada a `SEM-01`, preparada localmente y pendiente de revisión. Todo cambio futuro debe:
+`0001`–`0010` están aplicadas, verificadas, reconciliadas e inmutables. Los casos 1–20 y los smoke tests productivos están aprobados; B.3a está cerrada. `0011` está asignada a `SEM-01`, aplicada y aprobada por su verificador transaccional, con multisesión y reconciliación pendientes. Todo cambio futuro debe:
 
 1. revisar `0001` y todas las migraciones posteriores;
 2. crear una nueva migración numerada, sin reescribir `0001`–`0010`;
@@ -331,13 +331,17 @@ Los snapshots bajo `supabase/reconciliation/live/` son evidencia de reconciliaci
 - Resultado: cero deriva inexplicada. El informe completo está en `supabase/reconciliation/0010_post_apply_reconciliation.md`.
 - Cierre: 0010 queda aplicada, inmutable, verificada, probada y reconciliada; los casos 1–20 están aprobados y B.3a queda cerrada. `0011` es el siguiente número disponible, pero no fue creado. B.3b y Fase C continúan pendientes.
 
-## 0011_academic_period_administration.sql — preparada localmente
+## 0011_academic_period_administration.sql — aplicada y verificada transaccionalmente
 
 - Fecha de preparación: 2026-08-07.
-- Estado: asignada a `SEM-01`, preparada localmente y pendiente de revisión; no aplicada.
+- Fecha de aplicación y verificación aprobada: 2026-08-12.
+- Estado: asignada a `SEM-01`, aplicada correctamente en producción y aprobada por el verificador transaccional corregido. SEM-01 no está cerrado.
 - Paquete: preflight independiente de sólo lectura, migración, verificador transaccional de 51 casos, rollback conservador, checker estático y `docs/TEST_PLAN_0011.md`.
 - Alcance: integridad concurrente de periodos ordinarios, resolver compatible, serialización compartida con actividades, autoridad técnica exacta, diagnóstico de impacto sin DML sobre actividades y auditoría dedicada append-only.
 - Compatibilidad: conserva las firmas públicas de resolución y publicación ya consumidas por la aplicación; `/admin/periods` todavía no está implementada.
-- Evidencia remota: ninguna. No se han ejecutado preflight, migración, verificador, rollback, concurrencia, smoke tests, snapshot ni reconciliación.
-- Producción y snapshot vivo: permanecen post-0010.
+- Primer intento del verificador: rechazado con salida 3 y `42501/sitaa_activity_writer_identity_mismatch`; no alcanzó `COMMIT` ni el `ROLLBACK` final, la sesión fallida descartó la transacción y cero casos fueron aceptados.
+- Segundo intento del verificador corregido: salida 0, conjunto exacto y único de casos 1–51, sin faltantes ni duplicados, un `ROLLBACK` final explícito y cero `COMMIT`. La evidencia sanitizada está en `supabase/reconciliation/0011_academic_period_administration_verification_evidence.md`.
+- Rollback de la migración: no ejecutado. La migración no fue reaplicada durante la verificación.
+- Gates pendientes: arnés multisesión real, snapshot/reconciliación post-0011, implementación y despliegue de `/admin/periods`, y smoke tests de interfaz.
+- Snapshot vivo rastreado: permanece post-0010 hasta regeneración y revisión; no se infiere el inventario físico post-0011 desde la migración.
 - El horizonte razonable de fechas de actividad continúa diferido.

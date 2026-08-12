@@ -2,11 +2,13 @@
 
 ## Estado
 
-**Aplicada en producción; verificación pendiente.** La migración `0011_academic_period_administration.sql` se aplicó correctamente el 2026-08-12 y confirmó su transacción. SEM-01 permanece aplicada pero no verificada; `/admin/periods` todavía no existe y no forma parte de este paquete.
+**Aplicada en producción y verificador transaccional aprobado.** La migración `0011_academic_period_administration.sql` se aplicó correctamente el 2026-08-12 y confirmó su transacción. La ejecución productiva del verificador corregido aprobó después el conjunto exacto de casos 1–51 y terminó con su propio `ROLLBACK` explícito. El rollback de la migración no fue ejecutado. SEM-01 permanece activo y no está cerrado; `/admin/periods` todavía no existe y no forma parte de este paquete.
 
-La primera ejecución productiva del verificador, el 2026-08-12, terminó antes de completar los casos: `psql` devolvió código 3 y PostgreSQL rechazó con `42501` / `sitaa_activity_writer_identity_mismatch` la construcción del fixture sintético de actividad. El verificador no alcanzó su `ROLLBACK` explícito final; al terminar la sesión `psql` fallida sin `COMMIT`, PostgreSQL descartó la transacción abierta. Ningún caso 1–51 se acepta de esa ejecución, el fallo no justifica ejecutar el rollback de la migración y todavía no puede declararse aprobación hospedada. El verificador debe corregirse y ejecutarse de nuevo por completo.
+La primera ejecución productiva del verificador, el 2026-08-12, terminó antes de completar los casos: `psql` devolvió código 3 y PostgreSQL rechazó con `42501` / `sitaa_activity_writer_identity_mismatch` la construcción del fixture sintético de actividad. El verificador no alcanzó su `ROLLBACK` explícito final; al terminar la sesión `psql` fallida sin `COMMIT`, PostgreSQL descartó la transacción abierta. Ningún caso 1–51 se acepta de esa ejecución y el fallo no justificó ejecutar el rollback de la migración. Este intento se conserva únicamente como cronología histórica rechazada.
 
-No se declara verificación hospedada aprobada, smoke test ni reconciliación de 0011. El horizonte de fecha de actividad «razonable» permanece diferido y no se implementa como regla de base de datos.
+La segunda ejecución productiva del verificador corregido, identificada en UTC como `2026-08-12T19:25:25Z`, terminó con código 0: emitió exactamente 51 filas, conjunto único 1–51, cero faltantes, cero duplicados, un `ROLLBACK` final explícito, cero `COMMIT` y ninguna solicitud interactiva de contraseña. Los fixtures y eventos de auditoría del verificador no persistieron. Esta ejecución aprueba el gate transaccional, no el arnés multisesión ni la reconciliación.
+
+No se declaran aprobados el arnés multisesión, el snapshot/reconciliación post-0011, la implementación o despliegue de `/admin/periods`, ni los smoke tests de interfaz. El snapshot rastreado permanece post-0010. El horizonte de fecha de actividad «razonable» permanece diferido y no se implementa como regla de base de datos.
 
 ## Alcance del paquete
 
@@ -18,7 +20,7 @@ El paquete de base de datos consta de:
 4. `supabase/reconciliation/0011_academic_period_administration_rollback.sql`;
 5. `scripts/check-sql-0011.mjs`.
 
-La migración es database-first, ya fue aplicada y todavía debe verificarse por completo antes de implementar la aplicación SEM-01. No requirió un despliegue de compatibilidad previo porque conserva todas las firmas y contratos actualmente consumidos.
+La migración es database-first, ya fue aplicada y verificada transaccionalmente. Todavía deben aprobarse el arnés multisesión y la reconciliación post-0011 antes de implementar la aplicación SEM-01. No requirió un despliegue de compatibilidad previo porque conserva todas las firmas y contratos actualmente consumidos.
 
 El preflight independiente es obligatorio, pero no se trata como una instantánea inmutable: su lectura puede quedar obsoleta mientras la migración espera adquirir locks. Antes de 0011, el DML de `activities` todavía no participa en el advisory de SEM-01. Por ello, después de adquirir el advisory y los locks estructurales sobre `academic_periods` y `activities`, la migración repite de forma autoritativa todas las comprobaciones mutables de periodos y de transición de actividades antes de ejecutar DDL. La guarda post-lock vuelve a congelar la semilla completa y su huella histórica, integridad y traslapes, y compara atribución almacenada, resolución post-0010 y resolución SEM-01 para todas las actividades. Una deriva observada en ese punto falla cerrada; no repara ni modifica filas.
 
@@ -437,20 +439,20 @@ Este paquete no crea ni ejecuta ese arnés.
 
 ## Orden obligatorio de ejecución futura
 
-Esta lista conserva la secuencia aprobada durante la preparación. La migración ya fue aplicada; el cierre pendiente comienza con una ejecución completa del verificador corregido y continúa sin omitir las etapas posteriores.
+Esta lista conserva la secuencia aprobada durante la preparación y registra los gates ya completados. La migración y el verificador corregido están aprobados; el siguiente gate obligatorio es el arnés multisesión y la secuencia continúa sin omitir las etapas posteriores.
 
-1. Revisar y aprobar el paquete local completo.
-2. Commit y push del paquete sólo de base de datos.
-3. Confirmar build de Vercel verde.
-4. Ejecutar manualmente el preflight independiente.
-5. Revisar todas las categorías bloqueantes e informativas.
-6. Aplicar manualmente `0011`.
-7. Ejecutar el verificador transaccional.
-8. Crear, revisar y ejecutar el arnés multisesión separado.
-9. Regenerar el snapshot vivo y reconciliarlo.
-10. Sólo entonces implementar y desplegar `/admin/periods`.
-11. Ejecutar smoke tests de UI.
-12. Cerrar SEM-01 únicamente al aprobar toda la evidencia.
+1. [x] Revisar y aprobar el paquete local completo.
+2. [x] Commit y push del paquete sólo de base de datos.
+3. [x] Confirmar build de Vercel verde.
+4. [x] Ejecutar manualmente el preflight independiente.
+5. [x] Revisar todas las categorías bloqueantes e informativas.
+6. [x] Aplicar manualmente `0011`.
+7. [x] Ejecutar y aprobar el verificador transaccional corregido.
+8. [ ] Crear, revisar y ejecutar el arnés multisesión separado.
+9. [ ] Regenerar el snapshot vivo y reconciliarlo.
+10. [ ] Sólo entonces implementar y desplegar `/admin/periods`.
+11. [ ] Ejecutar smoke tests de UI.
+12. [ ] Cerrar SEM-01 únicamente al aprobar toda la evidencia.
 
 ## Smoke tests futuros
 

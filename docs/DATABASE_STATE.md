@@ -5,7 +5,9 @@
 
 La cadena `0001`–`0010` está aplicada, verificada y reconciliada sin deriva inexplicada; todas sus migraciones son inmutables. Los casos 1–20 y los smoke tests productivos están aprobados con su atribución correspondiente. El snapshot canónico bajo `supabase/reconciliation/live/` representa el estado estructural post‑0010 y cierra B.3a dentro de su alcance aprobado.
 
-`0011_academic_period_administration.sql` está asignada a `SEM-01` y preparada localmente junto con preflight, verificador, rollback, checker y plan de pruebas. Está pendiente de revisión: no se ha aplicado, no se ha ejecutado ningún artefacto SQL remotamente y no altera el inventario vivo descrito en este documento. `/admin/periods` todavía no existe.
+`0011_academic_period_administration.sql` está asignada a `SEM-01` y fue aplicada correctamente en producción el 2026-08-12. El primer intento del verificador fue rechazado y conserva valor histórico únicamente; la segunda ejecución del verificador corregido aprobó el conjunto exacto de casos 1–51 y terminó con su propio `ROLLBACK` explícito. El script de rollback de la migración no fue ejecutado. SEM-01 continúa activo: el arnés multisesión, el snapshot/reconciliación post-0011 y `/admin/periods` siguen pendientes.
+
+El snapshot vivo rastreado continúa siendo la evidencia canónica reconciliada post-0010 hasta que se regenere y revise. Por ello, este documento no infiere el inventario físico post-0011 a partir de la migración aplicada.
 
 ## Cadena aplicada
 
@@ -168,7 +170,7 @@ Estas dos filas operativas no forman parte del inventario estructural. El snapsh
 - El paquete 0010 exige casts `::text` al serializar campos internos `char` de catálogo y revalida B.1 después de los locks en todas sus RPC mutables. Su verificador PostgreSQL está aprobado, pero no demuestra por sí solo la semántica hospedada de Auth.
 - B.3a está cerrada: verificador, casos 1–20, smoke tests y reconciliación post‑0010 están aprobados.
 - B.3b, administración de roles/Fase C, retiro de A-02, paneles especializados, formularios dinámicos, reportes y exportaciones continúan pendientes.
-- `0011` está asignada a `SEM-01` y preparada localmente, pendiente de revisión y sin aplicar.
+- `0011` está asignada a `SEM-01`, aplicada en producción y aprobada por su verificador transaccional de casos 1–51; el arnés multisesión y la reconciliación post-0011 permanecen pendientes.
 
 ## Evidencia y rollback
 

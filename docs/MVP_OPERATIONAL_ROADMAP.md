@@ -15,7 +15,7 @@ Línea base aprobada:
 - [x] **DOC-00 — Completado y publicado:** rebase documental aprobada como fuente canónica.
 - [x] **AUTH-01 — Completado:** gate de lanzamiento público satisfecho y respaldado por evidencia sanitizada.
 
-`SEM-01` es el siguiente paquete estructural activo. Su contrato de producto fue aprobado y quedó documentado en `SEM_01_DESIGN.md`; `0011` está asignada y el paquete de base de datos está preparado localmente, pendiente de revisión y sin aplicar. No se ha ejecutado preflight remoto, verificador ni rollback, y `/admin/periods` todavía no existe.
+`SEM-01` es el siguiente paquete estructural activo. Su contrato de producto fue aprobado y quedó documentado en `SEM_01_DESIGN.md`; `0011` fue aplicada en producción el 2026-08-12 y el verificador transaccional corregido aprobó los casos 1–51 con `ROLLBACK` final explícito. El arnés multisesión y la reconciliación post-0011 siguen pendientes, y `/admin/periods` todavía no existe.
 
 ## 2. Principio del MVP inmediato
 
@@ -54,7 +54,7 @@ DOC-00
                  └─ ALERT-01 --------------------------┘
 ```
 
-`DOC-00` y el gate obligatorio `AUTH-01` están completados. `SEM-01` es el siguiente paquete estructural activo: diseño canónico aprobado y paquete de base de datos `0011` preparado localmente, pendiente de revisión. `PILOT-01` no puede aprobarse hasta que las ramas pendientes hayan producido evidencia suficiente.
+`DOC-00` y el gate obligatorio `AUTH-01` están completados. `SEM-01` es el siguiente paquete estructural activo: diseño canónico aprobado, `0011` aplicada y verificador transaccional aprobado; multisesión y reconciliación permanecen pendientes. `PILOT-01` no puede aprobarse hasta que las ramas pendientes hayan producido evidencia suficiente.
 
 ## 5. Resumen de paquetes
 
@@ -62,7 +62,7 @@ DOC-00
 | --- | --- | --- | --- | --- | --- |
 | `DOC-00` | Rebase documental | Completado | Bloqueante | S | Ninguna |
 | `AUTH-01` | Publicación de Google OAuth | Completado | Gate satisfecho | M | `DOC-00` |
-| `SEM-01` | Administración mínima de semestres | Paquete DB `0011` preparado / revisión pendiente | Crítica | M | `DOC-00` |
+| `SEM-01` | Administración mínima de semestres | `0011` aplicada y verificador aprobado; multisesión y reconciliación pendientes | Crítica | M | `DOC-00` |
 | `ATT-01` | Registro y asistencia atómicos | Pendiente | Crítica | L | `DOC-00` |
 | `EXP-01` | Exportaciones CSV y PDF | Pendiente | Crítica | M | `DOC-00` |
 | `ROLE-01` | Autoridad y roles mínimos del piloto | Pendiente | Crítica | L | `DOC-00` |
@@ -109,7 +109,9 @@ DOC-00
 
 - [x] Aprobar el contrato de producto y documentarlo canónicamente en `SEM_01_DESIGN.md`.
 - [x] Asignar `0011` y preparar localmente el preflight, migración, verificador, rollback, checker y plan de pruebas de base de datos.
-- [ ] Revisar y aprobar el paquete completo antes de cualquier ejecución remota.
+- [x] Revisar el paquete, aplicar `0011` y aprobar el verificador transaccional corregido de casos 1–51.
+- [ ] Crear, revisar y ejecutar el arnés multisesión real.
+- [ ] Regenerar el snapshot vivo y reconciliar post-0011.
 - [ ] Implementar `/admin/periods` como superficie dedicada, sin convertir `/catalogs` en editor genérico.
 - [ ] Aplicar la autoridad exacta `technical_admin/system/technical`, activa, vigente y sin programa o división en ruta, acciones y RPC independientes.
 - [ ] Preservar las lecturas de referencia autorizadas sin conceder administración ni ampliar universos visibles.
@@ -118,9 +120,9 @@ DOC-00
 - [ ] Garantizar código ordinario estable, fechas completas y no traslape activo bajo concurrencia, conservando la excepción histórica `pilot`.
 - [ ] Implementar diagnóstico transaccional de impacto sin remapeo silencioso y sin ruta de eliminación.
 - [ ] Añadir auditoría append-only sanitizada y desacoplada de perfiles.
-- [ ] Aprobar el checker SQL, verificador transaccional y arnés multisesión de concurrencia y pérdida de autoridad.
+- [ ] Conservar aprobados checker y verificador transaccional y completar el arnés multisesión de concurrencia y pérdida de autoridad.
 - [ ] Revisar un rollback fail-closed que preserve historia, referencias y auditoría.
-- [ ] Aplicar, verificar, probar, capturar snapshot y reconciliar sólo después de las aprobaciones anteriores.
+- [ ] Completar las pruebas pendientes, capturar snapshot y reconciliar antes de implementar la aplicación.
 
 La administración general de catálogos permanece diferida.
 
@@ -336,7 +338,7 @@ Estos detalles requieren diseño, amenaza, preflight y revisión propios. No se 
 
 - Cada paquete inicia con revisión de fuentes canónicas, amenazas, permisos y datos sensibles.
 - La documentación y la decisión preceden al código o DDL.
-- DEC-067 asigna `0011` a `SEM-01` y autoriza únicamente la preparación local del paquete de base de datos. La revisión, aplicación, verificación, concurrencia, snapshot, reconciliación y aplicación web conservan gates separados.
+- DEC-067 asigna `0011` a `SEM-01`. La migración y el verificador transaccional ya fueron aprobados; concurrencia multisesión, snapshot, reconciliación y aplicación web conservan gates separados.
 - Las migraciones aplicadas permanecen inmutables y todo cambio nuevo es incremental, no destructivo y reconciliable.
 - RLS/RPC construyen el universo autorizado; la interfaz nunca sustituye autorización de base.
 - Todo cambio estructural exige preflight, aplicación coordinada, verificador transaccional, rollback revisado, pruebas, snapshot y reconciliación según riesgo.

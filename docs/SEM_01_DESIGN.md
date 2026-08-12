@@ -2,7 +2,7 @@
 
 ## Estado y alcance
 
-**Estado:** contrato de producto aprobado. La implementación de base de datos `0011` está preparada localmente y pendiente de revisión; no ha sido aplicada ni ejecutada remotamente. La interfaz `/admin/periods` no está implementada.
+**Estado:** contrato de producto aprobado. La migración `0011` fue aplicada en producción el 2026-08-12 y su verificador transaccional corregido aprobó los casos 1–51. El arnés multisesión y la reconciliación post-0011 permanecen pendientes; la interfaz `/admin/periods` no está implementada y SEM-01 no está cerrado.
 
 Este documento define la administración mínima de semestres oficiales y la resolución automática de `academic_period_id` para `SEM-01`. Complementa DEC-022, DEC-024 y DEC-056. No autoriza código, DDL, migraciones, despliegues ni operaciones remotas.
 
@@ -191,7 +191,7 @@ Leer periodos no concede capacidad de mutación, no amplía el universo de activ
 
 ## Límite del paquete de implementación
 
-El paquete local asignado a `0011` abarca las capas A–D, F y G descritas a continuación. La capa E de aplicación permanece fuera de este ticket y se implementará sólo después de aplicar, verificar y reconciliar la base.
+El paquete asignado a `0011` abarca las capas A–D, F y G descritas a continuación. La migración está aplicada y su verificador transaccional aprobado; la capa E de aplicación permanece fuera de este ticket y se implementará sólo después de aprobar el arnés multisesión y reconciliar la base.
 
 ### A. Integridad de base
 
@@ -234,7 +234,7 @@ El paquete local asignado a `0011` abarca las capas A–D, F y G descritas a con
 - preservación de actividades, referencias y auditoría;
 - locks explícitos y rechazo ante mutación concurrente.
 
-Los artefactos de base, preflight, verificador, rollback, checker y plan de pruebas están preparados localmente. No han sido ejecutados contra ningún entorno.
+Los artefactos de base, preflight, verificador, rollback, checker y plan de pruebas fueron preparados. `0011` fue aplicada en producción el 2026-08-12 y el verificador corregido aprobó los casos 1–51 con su propio `ROLLBACK`; el rollback de la migración no fue ejecutado. El arnés multisesión y la reconciliación post-0011 permanecen pendientes.
 
 ## Preflight obligatorio antes de aplicar
 
@@ -345,8 +345,10 @@ Falta aprobar la definición numérica —o dependiente de periodos configurados
 
 - Contrato de producto: **aprobado**.
 - Documentación canónica: **creada**.
-- Revisión del paquete de implementación: **pendiente**.
-- Implementación de base de datos: **preparada localmente, no aplicada**.
+- Revisión del paquete de implementación: **aprobada para la aplicación ejecutada**.
+- Implementación de base de datos: **aplicada en producción el 2026-08-12; verificador transaccional aprobado**.
 - Migración: **`0011` asignada a SEM-01**.
-- Preflight remoto, verificador, rollback, smoke tests y reconciliación: **no ejecutados**.
+- Verificador productivo: **casos 1–51 aprobados; primer intento rechazado conservado como historia**.
+- Rollback de la migración: **no ejecutado**.
+- Arnés multisesión, snapshot/reconciliación post-0011 y smoke tests: **pendientes**.
 - Interfaz `/admin/periods`: **no implementada**.
