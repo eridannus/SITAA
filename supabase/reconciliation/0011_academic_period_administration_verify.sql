@@ -737,6 +737,17 @@ end;
 $case_42$;
 
 -- Fixtures para casos 29, 30 y 46–51.
+reset role;
+select pg_temp.set_request_user('admin_exact');
+
+do $activity_fixture_identity_guard$
+begin
+  if auth.uid() is distinct from pg_temp.case_id('admin_exact') then
+    raise exception 'sitaa_0011_verify_activity_fixture_identity_mismatch';
+  end if;
+end;
+$activity_fixture_identity_guard$;
+
 insert into public.activities(
   id, title, description, academic_period_id, program_id,
   activity_type_code, service_type_code, attention_category_code,
@@ -761,7 +772,6 @@ select
 from public.activities activity
 where activity.id = (select benign_activity_id from sitaa_0011_context);
 
-select pg_temp.set_request_user('admin_exact');
 set local role authenticated;
 
 -- CASE 46: creación activa sólo habilita un borrador no asignado.

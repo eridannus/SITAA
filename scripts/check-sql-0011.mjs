@@ -317,6 +317,33 @@ function exactVerifierCaseNumbers(source, label) {
   return caseNumbers;
 }
 
+const activityFixtureSectionMarker = "-- Fixtures para casos 29, 30 y 46–51.";
+
+function assertActivityFixtureRequestIdentityContract(source, label) {
+  const sectionStart = source.indexOf(activityFixtureSectionMarker);
+  assert.ok(sectionStart >= 0, `${label}: falta la sección canónica de fixtures de actividad`);
+  const section = source.slice(sectionStart);
+  const firstActivityInsertMatch = /\binsert\s+into\s+public\.activities\s*\(/i.exec(section);
+  assert.ok(firstActivityInsertMatch, `${label}: falta el primer INSERT de actividad sintética`);
+  const firstActivityInsertOffset = firstActivityInsertMatch.index;
+  const setup = section.slice(0, firstActivityInsertOffset);
+
+  assert.match(setup, /\breset\s+role\s*;/i,
+    `${label}: debe restablecer el rol antes del fixture de actividad`);
+  assert.match(setup, /pg_temp\.set_request_user\s*\(\s*'admin_exact'\s*\)/i,
+    `${label}: debe fijar admin_exact antes del INSERT de actividad`);
+  assert.match(
+    setup,
+    /if\s+auth\.uid\(\)\s+is\s+distinct\s+from\s+pg_temp\.case_id\s*\(\s*'admin_exact'\s*\)\s+then[\s\S]*?raise\s+exception\s+'sitaa_0011_verify_activity_fixture_identity_mismatch'/i,
+    `${label}: debe comprobar auth.uid() contra admin_exact con el error estable`,
+  );
+  assert.doesNotMatch(
+    section,
+    /\bsession_replication_role\b|alter\s+table\s+public\.activities[\s\S]{0,160}?disable\s+trigger|drop\s+trigger(?:\s+if\s+exists)?\s+enforce_activity_writer_integrity_b2a|security\s+definer|sitaa_activity_writer_identity_mismatch/i,
+    `${label}: no puede deshabilitar, eliminar, eludir ni absorber el trigger B.2a`,
+  );
+}
+
 for (const [label, source] of Object.entries(sqlSources)) {
   assertLexicallyBalanced(source, label);
   assert.match(source, /^(?:\s*--[^\n]*\n)*\s*begin\s*;/i,
@@ -713,6 +740,76 @@ assert.match(sources.testPlan, /20 tablas, 194 columnas, 105 restricciones, 52 �
   "TEST_PLAN_0011 debe congelar el inventario post-0011");
 
 const verifierCaseNumbers = exactVerifierCaseNumbers(sources.verify, "verificador 0011");
+assertActivityFixtureRequestIdentityContract(sources.verify, "verificador 0011");
+
+const canonicalActivityFixtureIdentity = `${activityFixtureSectionMarker}
+reset role;
+select pg_temp.set_request_user('admin_exact');
+do $activity_fixture_identity_guard$
+begin
+  if auth.uid() is distinct from pg_temp.case_id('admin_exact') then
+    raise exception 'sitaa_0011_verify_activity_fixture_identity_mismatch';
+  end if;
+end;
+$activity_fixture_identity_guard$;
+insert into public.activities(id, responsible_profile_id, created_by)
+values (gen_random_uuid(), pg_temp.case_id('admin_exact'), pg_temp.case_id('admin_exact'));`;
+assertActivityFixtureRequestIdentityContract(
+  canonicalActivityFixtureIdentity,
+  "fixture canónica de identidad de actividad",
+);
+
+const lateActivityFixtureIdentity = canonicalActivityFixtureIdentity.replace(
+  "select pg_temp.set_request_user('admin_exact');",
+  "",
+) + "\nselect pg_temp.set_request_user('admin_exact');";
+assert.throws(
+  () => assertActivityFixtureRequestIdentityContract(
+    lateActivityFixtureIdentity,
+    "fixture con identidad posterior al INSERT",
+  ),
+  /debe fijar admin_exact antes del INSERT/,
+  "La regresión negativa debe rechazar la identidad establecida después del INSERT",
+);
+
+const missingActivityFixtureAssertion = canonicalActivityFixtureIdentity.replace(
+  /do \$activity_fixture_identity_guard\$[\s\S]*?\$activity_fixture_identity_guard\$;\n/,
+  "",
+);
+assert.throws(
+  () => assertActivityFixtureRequestIdentityContract(
+    missingActivityFixtureAssertion,
+    "fixture sin aserción de identidad",
+  ),
+  /debe comprobar auth\.uid\(\) contra admin_exact/,
+  "La regresión negativa debe rechazar la ausencia de la aserción auth.uid()",
+);
+
+const wrongActivityFixtureIdentity = canonicalActivityFixtureIdentity.replace(
+  "pg_temp.case_id('admin_exact') then",
+  "pg_temp.case_id('ordinary') then",
+);
+assert.throws(
+  () => assertActivityFixtureRequestIdentityContract(
+    wrongActivityFixtureIdentity,
+    "fixture con identidad distinta",
+  ),
+  /debe comprobar auth\.uid\(\) contra admin_exact/,
+  "La regresión negativa debe rechazar una identidad distinta de admin_exact",
+);
+
+const bypassedActivityFixtureTrigger = canonicalActivityFixtureIdentity.replace(
+  "insert into public.activities",
+  "set local session_replication_role = replica;\ninsert into public.activities",
+);
+assert.throws(
+  () => assertActivityFixtureRequestIdentityContract(
+    bypassedActivityFixtureTrigger,
+    "fixture con bypass del trigger",
+  ),
+  /no puede deshabilitar, eliminar, eludir ni absorber el trigger B\.2a/,
+  "La regresión negativa debe rechazar un bypass del trigger B.2a",
+);
 assert.match(sources.verify,
   /publication_definition[\s\S]*validator_definition[\s\S]*clock_timestamp\(\)[\s\S]*current_timestamp[\s\S]*transaction_timestamp[\s\S]*case_30_wall_clock_definition_failed/i,
   "El caso 30 debe inspeccionar las definiciones desplegadas para el contrato wall-clock");
