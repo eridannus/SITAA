@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run check:text && npm run check:ui && npm run check:permissions && npm run check:lifecycle && npm run check:auth-lifecycle && npm run check:sql:0009 && npm run check:sql:0010 && npm run check:sql:0011 && next build",
+    "build": "npm run check:text && npm run check:ui && npm run check:permissions && npm run check:lifecycle && npm run check:auth-lifecycle && npm run check:sql:0009 && npm run check:sql:0010 && npm run check:sql:0011 && npm run check:sem01:multisession && next build",
     "start": "next start",
     "lint": "eslint .",
     "check:text": "node scripts/check-text-integrity.mjs",
@@ -14,7 +14,8 @@
     "check:sql:0009": "node scripts/check-sql-0009.mjs",
     "check:auth-lifecycle": "node scripts/check-auth-lifecycle-b3a.mjs",
     "check:sql:0010": "node scripts/check-sql-0010.mjs",
-    "check:sql:0011": "node scripts/check-sql-0011.mjs"
+    "check:sql:0011": "node scripts/check-sql-0011.mjs",
+    "check:sem01:multisession": "node scripts/check-sem01-0011-multisession.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
